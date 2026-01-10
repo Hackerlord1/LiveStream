@@ -1,26 +1,49 @@
+/* app/globals.css */
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Ensure good contrast for all text */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #e8e8e8;
+  color: #111827;
+}
+
+/* Override any light text colors */
+h1, h2, h3, h4, h5, h6 {
+  color: #111827;
+}
+
+p, span, div {
+  color: #374151;
+}
+
+/* Form elements */
+input, select, textarea {
+  color: #111827 !important;
+}
+
+input::placeholder {
+  color: #6b7280 !important;
+}
+
+/* Card text visibility */
+.card h3,
+.card p,
+.card span {
+  color: #111827 !important;
+}
+
+/* Status badges */
+.status-live {
+  background-color: #fee2e2 !important;
+  color: #dc2626 !important;
+}
+
+.status-upcoming {
+  background-color: #dbeafe !important;
+  color: #2563eb !important;
+}
+
+.status-ended {
+  background-color: #f3f4f6 !important;
+  color: #6b7280 !important;
 }
