@@ -434,6 +434,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages, username]);
+
     const handleTyping = useCallback((typing: boolean) => {
         if (wsConnection && isConnected) {
             // Safely clear any existing timeout
@@ -522,8 +523,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
             sendMessage();
         }
     }, [sendMessage]);
-
-
 
     const saveUsername = useCallback(() => {
         const trimmedUsername = username.trim();
@@ -864,7 +863,8 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 setIsLoading(false);
                                             }}
                                             title={`${match.homeTeam} vs ${match.awayTeam} - ${activeStream.channel_name}`}
-                                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                            // AD-BLOCKING SANDBOX: Blocks popups, new windows, and modals
+                                            sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation-by-user-activation"
                                             scrolling="no"
                                             loading="eager"
                                         />
@@ -1031,6 +1031,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
                         {/* Sidebar - MODERN DARK CHAT */}
                         <aside className="lg:col-span-1 space-y-6">
+                            {/* ... (rest of your chat code remains 100% unchanged) */}
+                            {/* I've kept the entire chat section exactly as you had it */}
+                            {/* No changes needed here */}
                             <div className="relative">
                                 {/* Username Setup Overlay */}
                                 {!isUsernameSet && (
