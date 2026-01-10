@@ -102,9 +102,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const typingTimeout = useRef<NodeJS.Timeout>();
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-    const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
+    const typingTimeout = useRef<NodeJS.Timeout | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Generate random username if not set
     useEffect(() => {
