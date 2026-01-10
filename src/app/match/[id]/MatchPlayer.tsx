@@ -436,7 +436,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     }, [messages, username]);
     const handleTyping = useCallback((typing: boolean) => {
         if (wsConnection && isConnected) {
-            clearTimeout(typingTimeout.current);
+            // Safely clear any existing timeout
+            if (typingTimeout.current !== null) {
+                clearTimeout(typingTimeout.current);
+                typingTimeout.current = null; // Optional: reset to null for clarity
+            }
 
             if (typing) {
                 // Send typing started
@@ -446,7 +450,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                     isTyping: true
                 }));
 
-                // Set timeout to send typing stopped
+                // Set new timeout to auto-send typing stopped after 3 seconds
                 typingTimeout.current = setTimeout(() => {
                     if (wsConnection && isConnected) {
                         wsConnection.send(JSON.stringify({
