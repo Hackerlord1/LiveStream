@@ -23,7 +23,7 @@ export default function DMCAPage() {
                             Digital Millennium Copyright Act (DMCA) Policy
                         </h1>
                         <p className="text-lg text-gray-700">
-                            StreamSports respects intellectual property rights and complies with the DMCA.
+                            BraveStream respects intellectual property rights and complies with the DMCA.
                         </p>
                     </div>
                 </div>
@@ -35,7 +35,7 @@ export default function DMCAPage() {
                         <div>
                             <h3 className="text-xl font-bold mb-2 text-gray-900">Important Notice</h3>
                             <p className="text-gray-700">
-                                StreamSports is a platform that aggregates and indexes sports streaming links from various sources. We do not host or store any video content on our servers.
+                                BraveStream is a platform that aggregates and indexes sports streaming links from various sources. We do not host or store any video content on our servers.
                             </p>
                         </div>
                     </div>
@@ -94,8 +94,8 @@ export default function DMCAPage() {
                                 </p>
                                 <div className="bg-white p-4 rounded-lg border border-gray-300">
                                     <p className="font-semibold text-gray-900">DMCA Agent</p>
-                                    <p className="text-gray-700">StreamSports Legal Department</p>
-                                    <p className="text-gray-700">Email: dmca@streamsports.com</p>
+                                    <p className="text-gray-700">BraveStream Legal Department</p>
+                                    <p className="text-gray-700">Email: dmca@BraveStream.com</p>
                                     <p className="text-gray-700 text-sm mt-2">Response Time: 24-48 hours</p>
                                 </div>
                             </div>
@@ -110,7 +110,7 @@ export default function DMCAPage() {
                             <div>
                                 <h3 className="text-xl font-bold mb-2 text-gray-900">Repeat Infringers</h3>
                                 <p className="text-gray-700 mb-3">
-                                    StreamSports maintains a policy for terminating repeat infringers in appropriate circumstances.
+                                    BraveStream maintains a policy for terminating repeat infringers in appropriate circumstances.
                                 </p>
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2">
@@ -136,7 +136,7 @@ export default function DMCAPage() {
                     <h2 className="text-2xl font-bold mb-4 text-gray-900">Disclaimer</h2>
                     <div className="space-y-4 text-gray-700">
                         <p>
-                            StreamSports acts as an intermediary service provider under the DMCA. We respond expeditiously to claims of copyright infringement.
+                            BraveStream acts as an intermediary service provider under the DMCA. We respond expeditiously to claims of copyright infringement.
                         </p>
                         <p>
                             The information provided on this page is for informational purposes only and does not constitute legal advice. For legal advice regarding DMCA compliance, please consult with an attorney.

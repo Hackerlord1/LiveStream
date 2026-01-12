@@ -84,7 +84,7 @@ export default function ContactPage() {
                                     <FaEnvelope className="text-red-600 mt-1" />
                                     <div>
                                         <p className="font-medium text-gray-900">Email</p>
-                                        <p className="text-gray-700">support@streamsports.com</p>
+                                        <p className="text-gray-700">support@BraveStream.com</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -194,12 +194,12 @@ export default function ContactPage() {
                                         a: "Use the 'Report Stream' button on the player page or contact support immediately."
                                     },
                                     {
-                                        q: "Is StreamSports available in my country?",
+                                        q: "Is BraveStream available in my country?",
                                         a: "We're available worldwide. Some content may have regional restrictions based on broadcasting rights."
                                     },
                                     {
                                         q: "How can I become a content partner?",
-                                        a: "Email partnerships@streamsports.com with details about your content."
+                                        a: "Email partnerships@BraveStream.com with details about your content."
                                     },
                                     {
                                         q: "Do you offer mobile apps?",

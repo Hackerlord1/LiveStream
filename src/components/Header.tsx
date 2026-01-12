@@ -211,7 +211,7 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
                                     scrolled ? 'text-2xl' : 'text-3xl'
                                 }`}>
                                     <span className="bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                        StreamSports
+                                        BraveStream
                                     </span>
                                 </span>
                                 <span className="text-xs text-gray-600 hidden sm:block">Live Sports Streaming</span>

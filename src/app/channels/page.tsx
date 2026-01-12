@@ -507,11 +507,11 @@ export default function ChannelsPage() {
                     <div className="text-center">
                         <div className="mb-6">
               <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                StreamSports Channels
+                BraveStream Channels
               </span>
                         </div>
                         <p className="text-gray-600">
-                            © {new Date().getFullYear()} StreamSports. {channels.length} channels available.
+                            © {new Date().getFullYear()} BraveStream. {channels.length} channels available.
                         </p>
                         <p className="text-sm text-gray-500 mt-4">
                             Watch live TV channels from around the world. All streams are provided by third-party sources.

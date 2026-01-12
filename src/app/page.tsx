@@ -471,11 +471,11 @@ export default function Home() {
                     <div className="text-center">
                         <div className="mb-4">
                             <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                StreamSports
+                                BraveStream
                             </span>
                         </div>
                         <p className="text-gray-600 text-sm">
-                            © {new Date().getFullYear()} StreamSports. All rights reserved.
+                            © {new Date().getFullYear()} BraveStream. All rights reserved.
                         </p>
                         <p className="text-xs text-gray-500 mt-3">
                             Just click & play. Watch HD sports events from around the world.

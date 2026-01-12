@@ -15,7 +15,7 @@ export default function AboutPage() {
                 <div className="neumorphic-card mb-8 text-center">
                     <div className="max-w-4xl mx-auto">
                         <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                            About StreamSports
+                            About BraveStream
                         </h1>
                         <p className="text-lg text-gray-700 mb-6">
                             The world's leading platform for live sports streaming. Bringing fans together from every corner of the globe.
@@ -108,7 +108,7 @@ export default function AboutPage() {
 
                 {/* Team */}
                 <div className="neumorphic-card">
-                    <h2 className="text-2xl font-bold mb-6 text-center text-gray-900">The Team Behind StreamSports</h2>
+                    <h2 className="text-2xl font-bold mb-6 text-center text-gray-900">The Team Behind BraveStream</h2>
                     <p className="text-gray-700 mb-6 text-center max-w-3xl mx-auto">
                         We're a diverse team of sports enthusiasts, tech experts, and content specialists working together to deliver the best streaming experience.
                     </p>
