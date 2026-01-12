@@ -16,9 +16,8 @@ export const metadata: Metadata = {
     title: "Brave Streams",
     description: "Designed by Herman",
     icons: {
-        icon: "./favicon2.ico",                  // Main tab favicon
-
-        shortcut: "./favicon2.ico",
+        icon: "/favicon.ico",
+        shortcut: "/favicon.ico",
     },
 };
 
