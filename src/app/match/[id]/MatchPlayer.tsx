@@ -570,7 +570,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         if (navigator.share) {
             navigator.share({
                 title: `${match.homeTeam} vs ${match.awayTeam}`,
-                text: `Watch ${match.homeTeam} vs ${match.awayTeam} live on StreamSports`,
+                text: `Watch ${match.homeTeam} vs ${match.awayTeam} live on BraveStream`,
                 url: window.location.href,
             }).catch(err => console.error('Error sharing:', err));
         } else {
@@ -1282,11 +1282,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                     <div className="text-center">
                         <div className="mb-6">
                             <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                StreamSports
+                                BraveStream
                             </span>
                         </div>
                         <p className="text-gray-600">
-                            © {new Date().getFullYear()} StreamSports. All rights reserved.
+                            © {new Date().getFullYear()} BraveStream. All rights reserved.
                         </p>
                         <p className="text-sm text-gray-500 mt-4">
                             Watch live sports in crystal clear HD. No blackouts, no restrictions.
