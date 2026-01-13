@@ -1,4 +1,4 @@
-// src/lib/api.ts - Clean and Organized Version
+// src/lib/api.ts - Updated with better error handling and increased timeouts
 export interface Channel {
     channel_name: string;
     channel_code: string;
@@ -94,52 +94,121 @@ const SPORTS_CONFIG: Record<string, { name: string; color: string; icon: string 
     }
 };
 
-const CACHE_DURATION = 30; // seconds
+const CACHE_DURATION = 300; // 5 minutes in seconds
 
 // ========== UTILITY FUNCTIONS ==========
+const isAbortError = (error: any): boolean => {
+    return error?.name === 'AbortError' ||
+        error?.message?.includes('aborted') ||
+        error?.message?.includes('signal');
+};
+
 async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
     for (let i = 0; i < retries; i++) {
+        let controller: AbortController | null = null;
+        let timeoutId: NodeJS.Timeout | null = null;
+
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            controller = new AbortController();
+            // Increase timeout significantly for channel data
+            const timeoutDuration = url.includes('/channels') ? 45000 : 30000; // 45s for channels, 30s for sports
+            timeoutId = setTimeout(() => {
+                if (controller) {
+                    controller.abort();
+                    console.warn(`Request timeout after ${timeoutDuration}ms for:`, url);
+                }
+            }, timeoutDuration);
+
+            console.log(`Attempt ${i + 1}/${retries} for:`, url);
 
             const response = await fetch(url, {
                 signal: controller.signal,
                 headers: {
                     'Accept': 'application/json',
+                    'User-Agent': 'BraveStream/1.0',
                 },
-                cache: 'default'
+                cache: 'no-cache', // Changed from 'default' to avoid stale cache
+                mode: 'cors',
+                credentials: 'omit',
             });
 
-            clearTimeout(timeoutId);
+            if (timeoutId) clearTimeout(timeoutId);
 
-            if (response.ok) return response;
+            if (!response.ok) {
+                if (response.status === 429) { // Rate limit
+                    console.warn('Rate limited, waiting before retry...');
+                    await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+                    continue;
+                }
 
-            if (response.status >= 500 && i < retries - 1) {
-                await new Promise(resolve =>
-                    setTimeout(resolve, 1000 * Math.pow(2, i))
-                );
-                continue;
+                if (response.status >= 500 && i < retries - 1) {
+                    throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+                }
+
+                console.error(`HTTP ${response.status} for API`);
+                return response;
             }
 
-            console.error(`HTTP ${response.status} for API`);
+            console.log(`Attempt ${i + 1} successful for:`, url);
             return response;
-        } catch (error: any) {
-            console.error(`Attempt ${i + 1} failed:`, error.message);
 
-            if (i === retries - 1) {
-                console.error('Failed to fetch API after retries:', error);
-                throw error;
+        } catch (error: any) {
+            if (timeoutId) clearTimeout(timeoutId);
+
+            // Handle abort errors specially
+            if (isAbortError(error)) {
+                console.warn(`Attempt ${i + 1} aborted:`, error.message);
+
+                if (i === retries - 1) {
+                    throw new Error('Request timed out after multiple attempts. Please check your internet connection.');
+                }
+            } else {
+                console.error(`Attempt ${i + 1} failed:`, error.message);
+
+                if (i === retries - 1) {
+                    throw error;
+                }
             }
-            await new Promise(resolve =>
-                setTimeout(resolve, 1000 * Math.pow(2, i))
-            );
+
+            // Wait before retry with exponential backoff
+            const delay = 1000 * Math.pow(2, i);
+            console.log(`Waiting ${delay}ms before retry ${i + 2}...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
     throw new Error('Max retries exceeded');
 }
 
+// Cache management
+const getCachedData = <T>(key: string): T | null => {
+    if (typeof window === 'undefined') return null;
 
+    try {
+        const cached = localStorage.getItem(key);
+        const cacheTime = localStorage.getItem(`${key}-time`);
+
+        if (cached && cacheTime &&
+            Date.now() - parseInt(cacheTime) < CACHE_DURATION * 1000) {
+            console.log('Using cached data for:', key);
+            return JSON.parse(cached);
+        }
+    } catch (error) {
+        console.warn('Cache read failed:', error);
+    }
+    return null;
+};
+
+const setCachedData = (key: string, data: any): void => {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(key, JSON.stringify(data));
+        localStorage.setItem(`${key}-time`, Date.now().toString());
+        console.log('Data cached for:', key);
+    } catch (error) {
+        console.warn('Cache write failed:', error);
+    }
+};
 
 // ========== CHANNEL DATA TRANSFORMERS ==========
 function transformChannelData(channel: any): ApiChannel {
@@ -256,7 +325,7 @@ function extractCategoryFromName(name: string): string {
     const sportsKeywords = [
         'sports', 'sport', 'espn', 'bein', 'sky sports', 'fox sports',
         'nbc sports', 'cbs sports', 'acc network', 'bt sport', 'tnt sports',
-        'super sport', 'supersport'
+        'super sport', 'supersport', 'cricket'
     ];
     if (sportsKeywords.some(keyword => lowerName.includes(keyword))) {
         return "Sports";
@@ -343,12 +412,21 @@ function transformMatchData(match: any, sport: SportType): Match {
 export async function fetchAllMatches(): Promise<Match[]> {
     console.log('Fetching all sports from single endpoint...');
 
+    // Check cache first
+    const cachedMatches = getCachedData<Match[]>('matches-cache');
+    if (cachedMatches) {
+        console.log('Using cached matches data');
+        return cachedMatches;
+    }
+
     try {
         const response = await fetchWithRetry(SPORTS_API_URL);
 
         if (!response.ok) {
             console.error(`API responded with ${response.status}: ${response.statusText}`);
-            return getMockMatches(); // Fallback to mock data
+            const mockData = getMockMatches();
+            setCachedData('matches-cache', mockData); // Cache mock data as fallback
+            return mockData;
         }
 
         const data: ApiResponse = await response.json();
@@ -411,31 +489,35 @@ export async function fetchAllMatches(): Promise<Match[]> {
         });
 
         // Cache the results
-        if (typeof window !== 'undefined') {
-            try {
-                sessionStorage.setItem('matches-cache', JSON.stringify(sortedMatches));
-                sessionStorage.setItem('matches-timestamp', Date.now().toString());
-            } catch (error) {
-                console.warn('Cache write failed:', error);
-            }
-        }
+        setCachedData('matches-cache', sortedMatches);
 
         return sortedMatches;
     } catch (error) {
         console.error("Error fetching matches:", error);
-        return getMockMatches(); // Fallback to mock data
+        const mockData = getMockMatches();
+        setCachedData('matches-cache', mockData); // Cache mock data as fallback
+        return mockData;
     }
 }
 
 export async function fetchAllChannels(): Promise<ChannelsResponse> {
     console.log('Fetching all channels...');
 
+    // Check cache first
+    const cachedChannels = getCachedData<ChannelsResponse>('channels-cache');
+    if (cachedChannels) {
+        console.log('Using cached channels data');
+        return cachedChannels;
+    }
+
     try {
         const response = await fetchWithRetry(CHANNELS_API_URL);
 
         if (!response.ok) {
             console.error(`Channels API responded with ${response.status}: ${response.statusText}`);
-            return getMockChannels(); // Fallback to mock data
+            const mockData = getMockChannels();
+            setCachedData('channels-cache', mockData); // Cache mock data as fallback
+            return mockData;
         }
 
         const data: ChannelsResponse = await response.json();
@@ -477,13 +559,30 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
             return enhanced;
         });
 
-        return {
+        const result = {
             total_channels: data.total_channels,
             channels: enhancedChannels
         };
-    } catch (error) {
+
+        // Cache the results
+        setCachedData('channels-cache', result);
+
+        return result;
+    } catch (error: any) {
         console.error("Error fetching channels:", error);
-        return getMockChannels(); // Fallback to mock data
+
+        // Provide more specific error messages
+        if (isAbortError(error)) {
+            console.warn('Channel fetch aborted due to timeout');
+        } else if (error.message.includes('timed out')) {
+            console.warn('Channel fetch timed out');
+        } else if (error.message.includes('Failed to fetch')) {
+            console.warn('Network error while fetching channels');
+        }
+
+        const mockData = getMockChannels();
+        setCachedData('channels-cache', mockData); // Cache mock data as fallback
+        return mockData;
     }
 }
 
@@ -551,6 +650,142 @@ export function getTopChannelsByViewers(channels: ApiChannel[], limit = 10): Api
 
 export function getOnlineChannels(channels: ApiChannel[]): ApiChannel[] {
     return channels.filter(channel => channel.status === 'online');
+}
+
+
+// ========== STREAMING FUNCTIONS ==========
+
+export function getEmbedUrl(channel: ApiChannel): string {
+    const url = channel.url;
+
+    console.log('Original channel URL:', url);
+
+    // Check if this is a direct player URL
+    if (url.includes('/api/v1/channels/player/')) {
+        // This is already a player URL with required parameters
+        // Just add embed parameters if not present
+        let embedUrl = url;
+
+        // Ensure required parameters are present
+        if (!embedUrl.includes('user=')) {
+            embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'user=cdnlivetv';
+        }
+        if (!embedUrl.includes('plan=')) {
+            embedUrl += '&plan=free';
+        }
+
+        // Add embed/iframe parameters
+        if (!embedUrl.includes('embed=')) {
+            embedUrl += '&embed=true';
+        }
+        if (!embedUrl.includes('autoplay=')) {
+            embedUrl += '&autoplay=1';
+        }
+        if (!embedUrl.includes('mute=')) {
+            embedUrl += '&mute=0';
+        }
+
+        console.log('Final embed URL:', embedUrl);
+        return embedUrl;
+    }
+
+    // For other URL formats, construct the proper player URL
+    const baseUrl = 'https://cdn-live.tv/api/v1/channels/player/';
+    const params = new URLSearchParams({
+        name: encodeURIComponent(channel.name),
+        code: channel.code,
+        user: 'cdnlivetv',
+        plan: 'free',
+        embed: 'true',
+        autoplay: '1',
+        mute: '0',
+        controls: '1'
+    });
+
+    const embedUrl = `${baseUrl}?${params.toString()}`;
+    console.log('Constructed embed URL:', embedUrl);
+
+    return embedUrl;
+}
+
+// Alternative: Get direct iframe embed URL
+export function getIframeEmbedUrl(channel: ApiChannel): string {
+    const baseUrl = 'https://cdn-live.tv/api/v1/channels/embed/';
+    const params = new URLSearchParams({
+        name: encodeURIComponent(channel.name),
+        code: channel.code,
+        user: 'cdnlivetv',
+        plan: 'free',
+        autoplay: '1'
+    });
+
+    return `${baseUrl}?${params.toString()}`;
+}
+
+// Check if URL is already properly formatted
+export function isProperlyFormatted(url: string): boolean {
+    return url.includes('user=') && url.includes('plan=');
+}
+
+// Create a safe URL for iframe embedding
+export function getSafeEmbedUrl(channel: ApiChannel): string {
+    const url = channel.url;
+
+    // If URL is already from cdn-live.tv and has required params, use as-is
+    if (url.includes('cdn-live.tv') && isProperlyFormatted(url)) {
+        // Convert player URL to iframe-friendly URL
+        let safeUrl = url;
+
+        // Add iframe-specific parameters
+        const params = new URLSearchParams(safeUrl.split('?')[1] || '');
+
+        // Ensure required params
+        if (!params.has('user')) params.set('user', 'cdnlivetv');
+        if (!params.has('plan')) params.set('plan', 'free');
+
+        // Add embed parameters
+        params.set('embed', 'true');
+        params.set('autoplay', '1');
+        params.set('mute', '0');
+
+        // Reconstruct URL
+        const baseUrl = safeUrl.split('?')[0];
+        return `${baseUrl}?${params.toString()}`;
+    }
+
+    // Fallback to constructing URL
+    return getEmbedUrl(channel);
+}
+
+// Test the URL before using it
+export async function testStreamUrl(url: string): Promise<boolean> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(url, {
+            method: 'HEAD',
+            headers: {
+                'Accept': '*/*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('URL test result:', {
+            url,
+            status: response.status,
+            contentType: response.headers.get('content-type'),
+            ok: response.ok
+        });
+
+        return response.ok;
+    } catch (error) {
+        console.error('URL test failed:', error);
+        return false;
+    }
 }
 
 // ========== MATCH UTILITY FUNCTIONS ==========
@@ -633,6 +868,17 @@ function getMockChannels(): ChannelsResponse {
             category: "Sports",
             language: "English",
             country: "United States"
+        },
+        {
+            name: "SuperSport Cricket",
+            code: "za",
+            url: "https://cdn-live.tv/api/v1/channels/player/?name=supersport+cricket&code=za&user=cdnlivetv&plan=free",
+            image: "https://api.cdn-live.tv/api/v1/channels/images6318/south-africa/supersport-cricket.webp",
+            status: "online",
+            viewers: 42,
+            category: "Sports",
+            language: "English",
+            country: "South Africa"
         },
         {
             name: "SuperSport Variety 1",
@@ -802,4 +1048,19 @@ export function filterMatches(
         }
         return true;
     });
+}
+
+// Clear all cache
+export function clearApiCache(): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.removeItem('matches-cache');
+        localStorage.removeItem('matches-cache-time');
+        localStorage.removeItem('channels-cache');
+        localStorage.removeItem('channels-cache-time');
+        console.log('API cache cleared');
+    } catch (error) {
+        console.warn('Failed to clear cache:', error);
+    }
 }
