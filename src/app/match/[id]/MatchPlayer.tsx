@@ -906,47 +906,48 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Main Video Player Section */}
-                        <div
-                            ref={videoContainerRef}
-                            className="neumorphic-video-container relative"
-                            tabIndex={streamError ? 0 : -1}
-                        >
-                            {activeStream && !streamError ? (
-                                <div className="absolute inset-0 w-full h-full">
-                                    {isLoading && (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/10 z-10">
-                                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
-                                            <span className="ml-4 text-gray-700">
-            {adBlockActive ? 'Loading ad-free stream...' : 'Loading stream...'}
-          </span>
-                                        </div>
-                                    )}
+                        <div className="lg:col-span-2 space-y-6">
+                            <div
+                                ref={videoContainerRef}
+                                className="neumorphic-video-container relative"
+                                tabIndex={streamError ? 0 : -1}
+                            >
+                                {activeStream && !streamError ? (
+                                    <div className="absolute inset-0 w-full h-full">
+                                        {isLoading && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/10 z-10">
+                                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+                                                <span className="ml-4 text-gray-700">
+                                                    {adBlockActive ? 'Loading ad-free stream...' : 'Loading stream...'}
+                                                </span>
+                                            </div>
+                                        )}
 
-                                    {/* Client-only iframe to avoid hydration mismatch */}
-                                    {typeof window !== 'undefined' && (
-                                        <iframe
-                                            ref={iframeRef}
-                                            key={iframeKey}
-                                            src={getEmbedUrl(activeStream)}
-                                            className="absolute inset-0 w-full h-full border-0 rounded-xl"
-                                            allowFullScreen
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                            onError={handleStreamError}
-                                            onLoad={() => {
-                                                fixIframeSize();
-                                                setIsLoading(false);
-                                                setTimeout(forceSkipAds, 2000);
-                                            }}
-                                            title={`${match.homeTeam} vs ${match.awayTeam} - ${activeStream.channel_name}`}
-                                            sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation-by-user-activation allow-popups"
-                                            referrerPolicy="no-referrer"
-                                            data-stream="true"
-                                            data-player="main"
-                                            data-ad-block="active"
-                                            loading="eager"
-                                            name={`player_${Math.random().toString(36).substr(2, 8)}`}
-                                        />
-                                    )}
+                                        {/* Client-only iframe to avoid hydration mismatch */}
+                                        {typeof window !== 'undefined' && (
+                                            <iframe
+                                                ref={iframeRef}
+                                                key={iframeKey}
+                                                src={getEmbedUrl(activeStream)}
+                                                className="absolute inset-0 w-full h-full border-0 rounded-xl"
+                                                allowFullScreen
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                onError={handleStreamError}
+                                                onLoad={() => {
+                                                    fixIframeSize();
+                                                    setIsLoading(false);
+                                                    setTimeout(forceSkipAds, 2000);
+                                                }}
+                                                title={`${match.homeTeam} vs ${match.awayTeam} - ${activeStream.channel_name}`}
+                                                sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation-by-user-activation allow-popups"
+                                                referrerPolicy="no-referrer"
+                                                data-stream="true"
+                                                data-player="main"
+                                                data-ad-block="active"
+                                                loading="eager"
+                                                name={`player_${Math.random().toString(36).substr(2, 8)}`}
+                                            />
+                                        )}
 
                                         {/* Ad-Block Status Overlay */}
                                         {adBlockActive && (
@@ -1543,31 +1544,31 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </aside>
                     </div>
                 </div>
-            </main>
 
-            {/* Footer */}
-            <footer className="bg-white border-t border-gray-300 mt-12 py-8">
-                <div className="max-w-7xl mx-auto px-4">
-                    <div className="text-center">
-                        <div className="mb-6">
-                            <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                BraveStream
-                            </span>
-                        </div>
-                        <p className="text-gray-600">
-                            © {new Date().getFullYear()} BraveStream. All rights reserved.
-                        </p>
-                        <p className="text-sm text-gray-500 mt-4">
-                            Watch live sports in crystal clear HD. No blackouts, no restrictions.
-                        </p>
-                        <div className="mt-6 flex justify-center gap-4">
-                            <button className="text-xs text-gray-500 hover:text-gray-700">Terms</button>
-                            <button className="text-xs text-gray-500 hover:text-gray-700">Privacy</button>
-                            <button className="text-xs text-gray-500 hover:text-gray-700">Contact</button>
+                {/* Footer */}
+                <footer className="bg-white border-t border-gray-300 mt-12 py-8">
+                    <div className="max-w-7xl mx-auto px-4">
+                        <div className="text-center">
+                            <div className="mb-6">
+                                <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
+                                    BraveStream
+                                </span>
+                            </div>
+                            <p className="text-gray-600">
+                                © {new Date().getFullYear()} BraveStream. All rights reserved.
+                            </p>
+                            <p className="text-sm text-gray-500 mt-4">
+                                Watch live sports in crystal clear HD. No blackouts, no restrictions.
+                            </p>
+                            <div className="mt-6 flex justify-center gap-4">
+                                <button className="text-xs text-gray-500 hover:text-gray-700">Terms</button>
+                                <button className="text-xs text-gray-500 hover:text-gray-700">Privacy</button>
+                                <button className="text-xs text-gray-500 hover:text-gray-700">Contact</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </footer>
+                </footer>
+            </main>
 
             {/* Inline Styles */}
             <style jsx global>{`
