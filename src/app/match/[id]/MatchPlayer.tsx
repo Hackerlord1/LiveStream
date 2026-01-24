@@ -5,7 +5,6 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Match, Channel } from '@/lib/api';
-import { useAdBlock } from '@/hooks/useAdBlock';
 import {
     FaExpand,
     FaRedoAlt,
@@ -89,16 +88,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const [showShareOptions, setShowShareOptions] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [iframeKey, setIframeKey] = useState<string>(`iframe-${Date.now()}`);
-
-    // Ad-Block Hook
-    const {
-        isActive: adBlockActive,
-        isChecking: adBlockChecking,
-        stats: { blockedAds, adSegmentsRemoved },
-        activate: activateAdBlock,
-        forceSkip: forceSkipAds,
-        notifyStreamChange,
-    } = useAdBlock();
 
     // Chat State
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -531,23 +520,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [username, match.gameID]);
 
-    // Enhanced embed URL with ad-block bypass
+    // Simple embed URL
     const getEmbedUrl = useCallback((channel: Channel): string => {
-        const baseUrl = channel.url;
-
-        // Add parameters to help DNS ad-blocking
-        const params = new URLSearchParams();
-        params.append('ref', 'bravestream.com');
-        params.append('ts', Date.now().toString());
-        params.append('v', '2');
-        params.append('nocache', Math.random().toString(36).substr(2, 8));
-
-        // Add headers to help service worker identify stream
-        params.append('stream-type', 'hls');
-        params.append('content-type', 'video');
-
-        const separator = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${separator}${params.toString()}`;
+        return channel.url;
     }, []);
 
     const handleStreamChange = useCallback((channel: Channel) => {
@@ -557,10 +532,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
         // Force iframe reload with new key
         setIframeKey(`iframe-${Date.now()}`);
-
-        // Notify service worker about stream change
-        notifyStreamChange(channel.url);
-    }, [notifyStreamChange]);
+    }, []);
 
     const handleStreamError = useCallback(() => {
         setStreamError(true);
@@ -715,48 +687,8 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         target.onerror = null;
     };
 
-    // DNS Ad-Block Status Component
-    const DNSAdBlockStatus = () => (
-        <div className="fixed top-4 left-4 z-50">
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg ${
-                adBlockActive
-                    ? 'bg-green-100 text-green-800 border border-green-300'
-                    : adBlockChecking
-                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                        : 'bg-red-100 text-red-800 border border-red-300'
-            }`}>
-                {adBlockActive ? (
-                    <FaShieldAlt className="w-4 h-4" />
-                ) : adBlockChecking ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                ) : (
-                    <FaBan className="w-4 h-4" />
-                )}
-                <span className="text-sm font-semibold">
-                    {adBlockActive
-                        ? `DNS Ad-Block Active (${blockedAds} blocked${adSegmentsRemoved > 0 ? ` • ${adSegmentsRemoved} segments` : ''})`
-                        : adBlockChecking
-                            ? 'Checking Ad-Block...'
-                            : 'DNS Ad-Block Inactive'
-                    }
-                </span>
-                {!adBlockActive && !adBlockChecking && (
-                    <button
-                        onClick={activateAdBlock}
-                        className="ml-2 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                        Activate
-                    </button>
-                )}
-            </div>
-        </div>
-    );
-
     return (
         <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
-            {/* DNS Ad-Block Status */}
-            <DNSAdBlockStatus />
-
             {/* Header */}
             <header className="bg-[#e8e8e8] border-b border-gray-300 py-3 shadow-sm">
                 <div className="max-w-7xl mx-auto px-4">
@@ -771,14 +703,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </Link>
 
                         <div className="flex items-center gap-3">
-                            {/* Ad-Block Status Badge */}
-                            {adBlockActive && (
-                                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-800 rounded-lg border border-green-300">
-                                    <FaShieldAlt className="w-4 h-4" />
-                                    <span className="text-sm font-medium">Ad-Free</span>
-                                </div>
-                            )}
-
                             <button
                                 onClick={handleShare}
                                 className="neumorphic-button p-2 relative"
@@ -918,7 +842,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                             <div className="absolute inset-0 flex items-center justify-center bg-gray-900/10 z-10">
                                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
                                                 <span className="ml-4 text-gray-700">
-                                                    {adBlockActive ? 'Loading ad-free stream...' : 'Loading stream...'}
+                                                    Loading stream...
                                                 </span>
                                             </div>
                                         )}
@@ -936,39 +860,16 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 onLoad={() => {
                                                     fixIframeSize();
                                                     setIsLoading(false);
-                                                    setTimeout(forceSkipAds, 2000);
                                                 }}
                                                 title={`${match.homeTeam} vs ${match.awayTeam} - ${activeStream.channel_name}`}
                                                 sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation-by-user-activation allow-popups"
                                                 referrerPolicy="no-referrer"
                                                 data-stream="true"
                                                 data-player="main"
-                                                data-ad-block="active"
                                                 loading="eager"
                                                 name={`player_${Math.random().toString(36).substr(2, 8)}`}
                                             />
                                         )}
-
-                                        {/* Ad-Block Status Overlay */}
-                                        {adBlockActive && (
-                                            <div className="absolute top-4 left-4 z-20">
-                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-600/90 text-white rounded-lg backdrop-blur-sm">
-                                                    <FaShieldAlt className="w-4 h-4" />
-                                                    <span className="text-sm font-semibold">DNS Ad-Block Active</span>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Manual Ad Skip Button */}
-                                        <div className="absolute top-4 right-4 z-20">
-                                            <button
-                                                onClick={forceSkipAds}
-                                                className="flex items-center gap-2 px-3 py-1.5 bg-red-600/90 text-white rounded-lg backdrop-blur-sm hover:bg-red-700/90 transition"
-                                            >
-                                                <FaCheckCircle className="w-4 h-4" />
-                                                <span className="text-sm font-semibold">Skip Ads</span>
-                                            </button>
-                                        </div>
 
                                         <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
                                             <div className="flex items-center justify-between">
@@ -981,14 +882,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                         <div className="flex items-center gap-2 text-white">
                                                             <FaEye className="w-4 h-4" aria-hidden="true" />
                                                             <span className="text-sm">{formatViewers(activeStream.viewers)} watching</span>
-                                                        </div>
-                                                    )}
-                                                    {adBlockActive && (blockedAds > 0 || adSegmentsRemoved > 0) && (
-                                                        <div className="flex items-center gap-2 text-green-300">
-                                                            <FaShieldAlt className="w-4 h-4" aria-hidden="true" />
-                                                            <span className="text-sm">
-                                                                {blockedAds} blocked{adSegmentsRemoved > 0 ? ` • ${adSegmentsRemoved} segments` : ''}
-                                                            </span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1011,9 +904,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <>
                                                     <h3 className="text-xl font-bold text-gray-900 mb-3">Stream Unavailable</h3>
                                                     <p className="text-gray-600 mb-8 max-w-md">
-                                                        {adBlockActive
-                                                            ? "Try selecting another server from the list below."
-                                                            : "Try activating DNS Ad-Block for better streaming."}
+                                                        Try selecting another server from the list below.
                                                     </p>
                                                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                                                         <button
@@ -1027,15 +918,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                             <FaRedoAlt aria-hidden="true" />
                                                             Try Again
                                                         </button>
-                                                        {!adBlockActive && (
-                                                            <button
-                                                                onClick={activateAdBlock}
-                                                                className="neumorphic-button px-6 py-3 bg-green-600 text-white font-semibold flex items-center gap-3"
-                                                            >
-                                                                <FaShieldAlt aria-hidden="true" />
-                                                                Activate DNS Ad-Block
-                                                            </button>
-                                                        )}
                                                     </div>
                                                 </>
                                             ) : (
@@ -1049,17 +931,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                             : 'Check back later for available streams'
                                                         }
                                                     </p>
-                                                    {adBlockActive && (
-                                                        <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                                                            <div className="flex items-center gap-2 text-green-800">
-                                                                <FaShieldAlt className="w-5 h-5" />
-                                                                <span className="font-medium">DNS Ad-Block is active</span>
-                                                            </div>
-                                                            <p className="text-sm text-green-600 mt-1">
-                                                                Ads will be blocked at the network level
-                                                            </p>
-                                                        </div>
-                                                    )}
                                                 </>
                                             )}
                                         </div>
@@ -1078,11 +949,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         <span className="neumorphic-badge bg-red-100 text-red-700">
                                             {match.channels.length} SERVERS
                                         </span>
-                                        {adBlockActive && (
-                                            <span className="neumorphic-badge bg-green-100 text-green-700">
-                                                DNS AD-BLOCK
-                                            </span>
-                                        )}
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -1094,7 +960,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                     activeStream?.channel_code === channel.channel_code
                                                         ? 'neumorphic-server-active'
                                                         : ''
-                                                } ${adBlockActive ? 'border-2 border-green-400' : ''}`}
+                                                }`}
                                                 aria-label={`Switch to server ${index + 1}: ${channel.channel_name}`}
                                                 aria-pressed={activeStream?.channel_code === channel.channel_code}
                                             >
@@ -1103,9 +969,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                         className={`w-3 h-3 rounded-full ${
                                                             activeStream?.channel_code === channel.channel_code
                                                                 ? 'bg-green-500'
-                                                                : adBlockActive
-                                                                    ? 'bg-green-400'
-                                                                    : 'bg-gray-400'
+                                                                : 'bg-gray-400'
                                                         }`}
                                                         aria-hidden="true"
                                                     ></div>
@@ -1129,9 +993,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                         className={`text-xs px-2 py-1 rounded ${
                                                             activeStream?.channel_code === channel.channel_code
                                                                 ? 'bg-green-100 text-green-700'
-                                                                : adBlockActive
-                                                                    ? 'bg-green-100 text-green-700'
-                                                                    : 'bg-gray-100 text-gray-700'
+                                                                : 'bg-gray-100 text-gray-700'
                                                         }`}
                                                         aria-label={index === 0 ? 'High Definition' : 'Standard Definition'}
                                                     >
@@ -1140,57 +1002,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 </div>
                                             </button>
                                         ))}
-                                    </div>
-
-                                    {/* DNS Ad-Block Info */}
-                                    <div className={`mt-4 p-3 rounded-lg border ${
-                                        adBlockActive
-                                            ? 'bg-green-50 border-green-200'
-                                            : adBlockChecking
-                                                ? 'bg-yellow-50 border-yellow-200'
-                                                : 'bg-red-50 border-red-200'
-                                    }`}>
-                                        <div className="flex items-center gap-2">
-                                            {adBlockActive ? (
-                                                <>
-                                                    <FaShieldAlt className="w-4 h-4 text-green-600" />
-                                                    <span className="text-sm font-medium text-green-800">
-                                                        DNS Ad-Block Active
-                                                    </span>
-                                                    <span className="text-xs text-green-600 ml-auto">
-                                                        {blockedAds} blocked{adSegmentsRemoved > 0 ? ` • ${adSegmentsRemoved} segments` : ''}
-                                                    </span>
-                                                </>
-                                            ) : adBlockChecking ? (
-                                                <>
-                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                                                    <span className="text-sm font-medium text-yellow-800">
-                                                        Checking DNS Ad-Block...
-                                                    </span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <FaBan className="w-4 h-4 text-red-600" />
-                                                    <span className="text-sm font-medium text-red-800">
-                                                        DNS Ad-Block Inactive
-                                                    </span>
-                                                    <button
-                                                        onClick={activateAdBlock}
-                                                        className="ml-auto text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                                    >
-                                                        Activate
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                        <p className="text-xs mt-1">
-                                            {adBlockActive
-                                                ? 'Ads are being blocked at the DNS level before they reach your browser'
-                                                : adBlockChecking
-                                                    ? 'Verifying ad-block status...'
-                                                    : 'Activate for ad-free streaming experience'
-                                            }
-                                        </p>
                                     </div>
                                 </div>
                             )}
@@ -1219,41 +1030,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         <div className="text-sm text-gray-600">Device</div>
                                         <div className="font-semibold text-gray-900">All Devices</div>
                                     </div>
-                                </div>
-
-                                {/* DNS Ad-Block Status */}
-                                <div className="mt-4 pt-4 border-t border-gray-300">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-gray-700">
-                                            {adBlockActive ? (
-                                                <FaShieldAlt className="w-4 h-4 text-green-600" />
-                                            ) : adBlockChecking ? (
-                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                                            ) : (
-                                                <FaBan className="w-4 h-4 text-red-600" />
-                                            )}
-                                            <span className="text-sm">DNS Ad-Block:</span>
-                                        </div>
-                                        <span className={`font-semibold ${
-                                            adBlockActive
-                                                ? 'text-green-600'
-                                                : adBlockChecking
-                                                    ? 'text-yellow-600'
-                                                    : 'text-red-600'
-                                        }`}>
-                                            {adBlockActive
-                                                ? 'ACTIVE'
-                                                : adBlockChecking
-                                                    ? 'CHECKING'
-                                                    : 'INACTIVE'
-                                            }
-                                        </span>
-                                    </div>
-                                    {adBlockActive && (
-                                        <p className="text-xs text-green-600 mt-2">
-                                            ✓ Ads blocked at DNS level • {blockedAds} blocked so far{adSegmentsRemoved > 0 ? ` • ${adSegmentsRemoved} segments removed` : ''}
-                                        </p>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1494,51 +1270,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <span className="font-semibold text-green-600">Live</span>
                                             </div>
                                         </div>
-                                        {/* DNS Ad-Block Status */}
-                                        <div className={`flex items-center justify-between p-3 rounded-lg ${
-                                            adBlockActive
-                                                ? 'bg-green-50 border border-green-200'
-                                                : adBlockChecking
-                                                    ? 'bg-yellow-50 border border-yellow-200'
-                                                    : 'bg-red-50 border border-red-200'
-                                        }`}>
-                                            <span className="text-sm text-gray-600">DNS Ad-Block</span>
-                                            <div className="flex items-center gap-2">
-                                                {adBlockActive ? (
-                                                    <>
-                                                        <FaShieldAlt className="w-4 h-4 text-green-600" aria-hidden="true" />
-                                                        <span className="font-semibold text-green-600">Active</span>
-                                                    </>
-                                                ) : adBlockChecking ? (
-                                                    <>
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                                                        <span className="font-semibold text-yellow-600">Checking</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FaBan className="w-4 h-4 text-red-600" aria-hidden="true" />
-                                                        <span className="font-semibold text-red-600">Inactive</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
                                     </div>
-
-                                    {/* DNS Ad-Block Activation */}
-                                    {!adBlockActive && !adBlockChecking && (
-                                        <div className="mt-4 pt-4 border-t border-gray-300">
-                                            <button
-                                                onClick={activateAdBlock}
-                                                className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all flex items-center justify-center gap-3"
-                                            >
-                                                <FaShieldAlt className="w-5 h-5" />
-                                                Activate DNS Ad-Block
-                                            </button>
-                                            <p className="text-xs text-gray-500 text-center mt-2">
-                                                Block ads at the network level
-                                            </p>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </aside>
@@ -1823,12 +1555,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                     .chat-container {
                         height: 350px;
                     }
-                }
-
-                /* DNS Ad-Block Override Styles */
-                [data-ad-block="active"] {
-                    filter: none !important;
-                    -webkit-filter: none !important;
                 }
             `}</style>
         </div>
