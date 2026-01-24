@@ -19,17 +19,14 @@ const nextConfig = {
         hostname: "**", // Wildcard for all HTTPS domains (use cautiously)
       },
     ],
-    // Increase timeout to 30 seconds (default is 10)
     minimumCacheTTL: 60,
     formats: ['image/webp'],
-    // Disable optimization in development for faster builds
     unoptimized: process.env.NODE_ENV === 'development',
   },
-  // Increase overall timeout
-  experimental: {
-    serverComponentsExternalPackages: ['sharp'],
-  },
-  // Add these headers for better performance
+
+  // ✅ FIXED: Correct option name for Next.js 16+
+  serverExternalPackages: ['sharp'],
+
   async headers() {
     return [
       {

@@ -31,7 +31,6 @@ interface HeaderProps {
 export default function Header({ onSearch, searchValue = '', onFilterChange }: HeaderProps) {
     const pathname = usePathname();
     const router = useRouter();
-    const [scrolled, setScrolled] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState(searchValue);
@@ -41,23 +40,6 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
     useEffect(() => {
         setSearchTerm(searchValue);
     }, [searchValue]);
-
-    // Handle scroll effect
-    useEffect(() => {
-        const handleScroll = () => {
-            const offset = window.scrollY;
-            if (offset > 50) {
-                setScrolled(true);
-            } else {
-                setScrolled(false);
-            }
-        };
-
-        window.addEventListener('scroll', handleScroll);
-        return () => {
-            window.removeEventListener('scroll', handleScroll);
-        };
-    }, []);
 
     // Close menus when clicking outside
     useEffect(() => {
@@ -130,7 +112,7 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
             color: 'text-red-500',
             badge: 'LIVE'
         },
-        
+
         {
             id: 'channels',
             href: '/channels',
@@ -192,24 +174,16 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
     return (
         <>
             {/* Main Header */}
-            <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-                scrolled
-                    ? 'bg-[#e8e8e8] shadow-lg py-2 border-b border-gray-300'
-                    : 'bg-[#e8e8e8] py-4 border-b border-gray-200'
-            }`}>
+            <header className="fixed top-0 left-0 right-0 z-50 bg-[#e8e8e8] py-4 border-b border-gray-200 shadow-lg">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between">
                         {/* Logo */}
                         <Link href="/" className="flex items-center space-x-3 group">
-                            <div className={`neumorphic-logo ${
-                                scrolled ? 'w-10 h-10' : 'w-12 h-12'
-                            }`}>
+                            <div className="neumorphic-logo w-12 h-12">
                                 <GiSoccerBall className="w-full h-full text-red-600 transform group-hover:scale-110 transition-transform duration-300" />
                             </div>
                             <div className="flex flex-col">
-                                <span className={`font-bold transition-all duration-300 ${
-                                    scrolled ? 'text-2xl' : 'text-3xl'
-                                }`}>
+                                <span className="text-3xl font-bold">
                                     <span className="bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
                                         BraveStream
                                     </span>
@@ -325,7 +299,7 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
                 </div>
 
                 {/* Secondary Navigation Bar */}
-                <div className={`secondary-nav-bar ${scrolled ? 'scrolled' : ''}`}>
+                <div className="secondary-nav-bar">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex items-center justify-between">
                             {/* Quick Links - LEFT SIDE */}
@@ -496,9 +470,7 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
             </header>
 
             {/* Spacer to prevent content from going under fixed header */}
-            <div className={`transition-all duration-300 ${
-                scrolled ? 'h-40' : 'h-48'
-            }`} />
+            <div className="h-48" />
 
             {/* Header Styles */}
             <style jsx global>{`
@@ -589,11 +561,6 @@ export default function Header({ onSearch, searchValue = '', onFilterChange }: H
                     border-top: 1px solid #ddd;
                     border-bottom: 1px solid #ddd;
                     padding: 10px 0;
-                    transition: all 0.3s ease;
-                }
-
-                .secondary-nav-bar.scrolled {
-                    padding: 8px 0;
                 }
 
                 /* Secondary Navigation Links */
