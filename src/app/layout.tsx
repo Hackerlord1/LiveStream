@@ -1,35 +1,223 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+// app/layout.tsx
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-    variable: "--font-geist-sans",
+// Using Inter font (better for SEO and readability than Geist)
+const inter = Inter({ 
     subsets: ["latin"],
+    display: 'swap', // Improves performance and CLS
+    variable: '--font-inter',
 });
 
-const geistMono = Geist_Mono({
-    variable: "--font-geist-mono",
-    subsets: ["latin"],
-});
+export const viewport: Viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    themeColor: '#dc2626', // Red theme color matching your brand
+}
 
 export const metadata: Metadata = {
-    title: "Brave Streams",
-    description: "Designed by Herman",
-    icons: {
-        icon: "/favicon.ico",
-        shortcut: "/favicon.ico",
+    metadataBase: new URL('https://bravestream.live'),
+    title: {
+        default: 'BraveStream - Live Sports Streaming in HD | Football, NBA, NFL, NHL',
+        template: '%s | BraveStream Live Sports'
     },
+    description: 'Watch live sports streams in HD quality for free. Live football, NBA, NFL, NHL, boxing, UFC, and more. No blackouts, no restrictions. Join thousands of sports fans watching now!',
+    keywords: [
+        'live sports streaming',
+        'free sports streams',
+        'football live stream',
+        'NBA live stream',
+        'NFL live stream',
+        'NHL live stream',
+        'boxing live stream',
+        'UFC live stream',
+        'soccer streams',
+        'premier league live',
+        'champions league',
+        'la liga',
+        'serie a',
+        'bundesliga',
+        'mlb live',
+        'mls live',
+        'formula 1 live',
+        'tennis live',
+        'rugby live',
+        'cricket live',
+    ],
+    authors: [{ name: 'BraveStream Team' }],
+    creator: 'BraveStream',
+    publisher: 'BraveStream',
+    formatDetection: {
+        email: false,
+        address: false,
+        telephone: false,
+    },
+    robots: {
+        index: true,
+        follow: true,
+        googleBot: {
+            index: true,
+            follow: true,
+            'max-video-preview': -1,
+            'max-image-preview': 'large',
+            'max-snippet': -1,
+        },
+    },
+    openGraph: {
+        type: 'website',
+        locale: 'en_US',
+        url: 'https://bravestream.live',
+        siteName: 'BraveStream',
+        title: 'BraveStream - Live Sports Streaming in HD',
+        description: 'Watch live sports streams in HD quality for free. Live football, NBA, NFL, NHL, boxing, UFC, and more.',
+        images: [
+            {
+                url: '/og-image.png',
+                width: 1200,
+                height: 630,
+                alt: 'BraveStream Live Sports',
+            },
+        ],
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'BraveStream - Live Sports Streaming in HD',
+        description: 'Watch live sports streams in HD quality for free. Live football, NBA, NFL, NHL, boxing, UFC, and more.',
+        images: ['/twitter-image.png'],
+        creator: '@bravestream',
+    },
+    verification: {
+        google: 'your-google-verification-code', // Add your Google Search Console code
+        yandex: 'your-yandex-verification-code', // Optional
+        yahoo: 'your-yahoo-verification-code', // Optional
+    },
+    alternates: {
+        canonical: 'https://bravestream.live',
+        languages: {
+            'en-US': 'https://bravestream.live',
+            // Add other language versions if you have them
+        },
+    },
+    category: 'sports',
+    classification: 'Sports Streaming Service',
+    
+    // Icons
+    icons: {
+        icon: [
+            { url: '/favicon.ico' },
+            { url: '/icon.png', type: 'image/png' },
+            { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+            { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+        ],
+        apple: [
+            { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+        ],
+        other: [
+            {
+                rel: 'mask-icon',
+                url: '/safari-pinned-tab.svg',
+                color: '#dc2626',
+            },
+        ],
+    },
+    manifest: '/site.webmanifest',
+    
+    // Additional meta tags
+    other: {
+        'application-name': 'BraveStream',
+        'apple-mobile-web-app-title': 'BraveStream',
+        'mobile-web-app-capable': 'yes',
+        'apple-mobile-web-app-capable': 'yes',
+        'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    }
 };
 
 export default function RootLayout({
-                                       children,
-                                   }: Readonly<{
+    children,
+}: Readonly<{
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
-        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
+        <html lang="en" className={inter.variable}>
+        <head>
+            {/* Structured Data for Sports Website */}
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                    __html: JSON.stringify({
+                        "@context": "https://schema.org",
+                        "@type": "SportsOrganization",
+                        "name": "BraveStream",
+                        "url": "https://bravestream.live",
+                        "logo": "https://bravestream.live/logo.png",
+                        "description": "Free live sports streaming platform for football, basketball, American football, hockey, and more.",
+                        "founder": {
+                            "@type": "Person",
+                            "name": "BraveStream Team"
+                        },
+                        "foundingDate": "2024",
+                        "sameAs": [
+                            "https://twitter.com/bravestream",
+                            "https://facebook.com/bravestream"
+                        ],
+                        "knowsAbout": [
+                            "Live Sports Streaming",
+                            "Football",
+                            "Basketball",
+                            "American Football",
+                            "Hockey",
+                            "Tennis",
+                            "Boxing",
+                            "MMA"
+                        ]
+                    })
+                }}
+            />
+            
+            {/* Additional structured data for search */}
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                    __html: JSON.stringify({
+                        "@context": "https://schema.org",
+                        "@type": "WebSite",
+                        "url": "https://bravestream.live",
+                        "name": "BraveStream",
+                        "description": "Live sports streaming platform",
+                        "potentialAction": {
+                            "@type": "SearchAction",
+                            "target": "https://bravestream.live/search?q={search_term_string}",
+                            "query-input": "required name=search_term_string"
+                        }
+                    })
+                }}
+            />
+        </head>
+        <body className={`${inter.className} antialiased bg-gray-50`}>
+            {/* Navigation will be added here */}
+            <main className="min-h-screen">
+                {children}
+            </main>
+            
+            {/* Footer will be added here */}
+            
+            {/* Performance monitoring script (optional) */}
+            <script
+                async
+                src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" // Add your GA4 ID
+            />
+            <script
+                dangerouslySetInnerHTML={{
+                    __html: `
+                        window.dataLayer = window.dataLayer || [];
+                        function gtag(){dataLayer.push(arguments);}
+                        gtag('js', new Date());
+                        gtag('config', 'G-XXXXXXXXXX');
+                    `,
+                }}
+            />
         </body>
         </html>
     );
