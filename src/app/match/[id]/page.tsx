@@ -1,133 +1,126 @@
-// src/app/match/[id]/page.tsx - CLEAN STREAMING DESIGN
-import { Suspense } from 'react';
+// src/app/match/[id]/page.tsx - FIXED (No Suspense)
 import { notFound } from 'next/navigation';
-import MatchPlayer from './MatchPlayer';
-import { fetchAllMatches, Match } from '@/lib/api';
+import { Metadata } from 'next';
 
+// Components
+import MatchPlayer from './MatchPlayer';
+
+// API - FIXED IMPORTS
+import type { Match } from '@/lib/api';
+import { getMatchById, getSportsConfig } from '@/lib/api';
+
+// ========== TYPES ==========
 interface PageProps {
-  params: Promise<{ id: string }>;
+    params: Promise<{ id: string }>;
 }
+
+// ========== DATA FETCHING ==========
 
 async function getMatchData(id: string): Promise<Match | null> {
-  try {
-    const allMatches = await fetchAllMatches();
-    const match = allMatches.find(m => m.gameID === id);
-
-    if (!match) {
-      console.error(`Match not found: ${id}`);
-      return null;
+    console.log('🔍 [getMatchData] Looking for match with ID:', id);
+    
+    if (!id || id.trim() === '') {
+        console.error('❌ Invalid match ID provided');
+        return null;
     }
 
-    console.log(`Found match: ${match.homeTeam} vs ${match.awayTeam}`);
-    return match;
-  } catch (error) {
-    console.error('Failed to fetch match:', error);
-    return null;
-  }
+    try {
+        // Use the updated getMatchById function
+        const match = await getMatchById(id);
+        
+        if (!match) {
+            console.warn(`❌ Match not found: ${id}`);
+            
+            // Try to suggest what might be wrong
+            console.log('💡 Debug info:');
+            console.log('   - ID might be a team slug (contains "vs")');
+            console.log('   - API gameIDs change frequently');
+            console.log('   - Try using team names in URLs');
+            
+            return null;
+        }
+
+        console.log(`✅ Found match: ${match.homeTeam} vs ${match.awayTeam} (${match.sport})`);
+        return match;
+    } catch (error) {
+        console.error('❌ Failed to fetch match:', error);
+        return null;
+    }
 }
+
+// ========== METADATA ==========
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+    const { id } = await params;
+    const match = await getMatchById(id);
+    const sportsConfig = getSportsConfig();
+
+    if (!match) {
+        return {
+            title: 'Match Not Found | BraveStream',
+            description: 'The requested match could not be found.',
+        };
+    }
+
+    const sportConfig = sportsConfig[match.sport];
+    const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
+    const statusText = match.status === 'live' ? '🔴 LIVE' : match.status === 'upcoming' ? '⏰ Upcoming' : '✅ Ended';
+
+    return {
+        title: `${statusText} ${matchTitle} | ${match.tournament} | BraveStream`,
+        description: `Watch ${match.homeTeam} vs ${match.awayTeam} ${match.status === 'live' ? 'live' : ''} - ${match.tournament}. Stream ${sportConfig?.name || match.sport} matches free on BraveStream.`,
+        keywords: [
+            match.homeTeam,
+            match.awayTeam,
+            match.tournament,
+            match.sport,
+            'live stream',
+            'watch online',
+            'free sports streaming',
+            sportConfig?.name || match.sport,
+        ].filter(Boolean),
+        openGraph: {
+            title: `${matchTitle} - ${match.tournament}`,
+            description: `Watch ${match.homeTeam} vs ${match.awayTeam} ${match.status === 'live' ? 'live now' : 'on BraveStream'}`,
+            type: 'video.other',
+            images: [
+                { url: match.homeTeamIMG, alt: match.homeTeam },
+                { url: match.awayTeamIMG, alt: match.awayTeam },
+            ].filter(img => img.url),
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: `${statusText} ${matchTitle}`,
+            description: `Watch ${match.tournament} - ${match.homeTeam} vs ${match.awayTeam}`,
+        },
+        robots: {
+            index: match.status !== 'ended',
+            follow: true,
+        },
+    };
+}
+
+// ========== MAIN PAGE COMPONENT ==========
 
 export default async function MatchPage({ params }: PageProps) {
-  const { id } = await params;
-  const match = await getMatchData(id);
+    const { id } = await params;
+    
+    // Validate ID
+    if (!id || id.trim() === '') {
+        notFound();
+    }
 
-  if (!match) {
-    notFound();
-  }
+    // Fetch match data
+    const match = await getMatchData(id);
 
-  return (
-      <Suspense fallback={<MatchLoadingSkeleton />}>
-        <MatchPlayer match={match} />
-      </Suspense>
-  );
+    // Handle not found
+    if (!match) {
+        notFound();
+    }
+
+    // REMOVED: <Suspense fallback={<MatchLoadingSkeleton />}>
+    return <MatchPlayer match={match} />;
 }
 
-// Update the MatchLoadingSkeleton function
-function MatchLoadingSkeleton() {
-  return (
-      <div className="min-h-screen bg-[#e8e8e8]">
-        {/* Header Skeleton */}
-        <header className="bg-[#e8e8e8] border-b border-gray-300 py-3">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="h-10 w-32 bg-gray-300 rounded-lg animate-pulse"></div>
-          </div>
-        </header>
-
-        <div className="relative max-w-7xl mx-auto px-4 py-6">
-          {/* Match Header Skeleton */}
-          <div className="neumorphic-card mb-6 animate-pulse">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center justify-center gap-4 md:gap-8 flex-1">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-300 rounded-full mx-auto mb-3"></div>
-                  <div className="h-4 bg-gray-300 rounded w-20 mx-auto mb-1"></div>
-                  <div className="h-6 bg-gray-300 rounded w-8 mx-auto"></div>
-                </div>
-
-                <div className="text-center">
-                  <div className="h-6 bg-gray-300 rounded w-16 mx-auto mb-2"></div>
-                  <div className="h-4 bg-gray-300 rounded w-8 mx-auto mb-1"></div>
-                  <div className="h-3 bg-gray-300 rounded w-12 mx-auto"></div>
-                </div>
-
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-300 rounded-full mx-auto mb-3"></div>
-                  <div className="h-4 bg-gray-300 rounded w-20 mx-auto mb-1"></div>
-                  <div className="h-6 bg-gray-300 rounded w-8 mx-auto"></div>
-                </div>
-              </div>
-
-              <div className="h-10 w-24 bg-gray-300 rounded-lg"></div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Player Area Skeleton */}
-            <div className="lg:col-span-2 space-y-4">
-              {/* Video Player Placeholder */}
-              <div className="neumorphic-video-container">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-gray-300 rounded-full mx-auto mb-4"></div>
-                    <div className="h-4 bg-gray-300 rounded w-32 mx-auto mb-2"></div>
-                    <div className="h-3 bg-gray-300 rounded w-24 mx-auto"></div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Servers Skeleton */}
-              <div className="neumorphic-card animate-pulse">
-                <div className="h-6 bg-gray-300 rounded w-32 mb-4"></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-12 bg-gray-300 rounded-lg"></div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Sidebar Skeleton */}
-            <aside className="lg:col-span-1 space-y-6">
-              <div className="neumorphic-card animate-pulse">
-                <div className="h-6 bg-gray-300 rounded w-32 mb-4"></div>
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-12 bg-gray-300 rounded-lg"></div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="neumorphic-card animate-pulse">
-                <div className="h-6 bg-gray-300 rounded w-32 mb-4"></div>
-                <div className="space-y-3">
-                  <div className="h-8 bg-gray-300 rounded-lg"></div>
-                  <div className="h-8 bg-gray-300 rounded-lg"></div>
-                  <div className="h-8 bg-gray-300 rounded-lg"></div>
-                </div>
-              </div>
-            </aside>
-          </div>
-        </div>
-      </div>
-  );
-
-}
+// ========== REVALIDATION ==========
+export const revalidate = 60;

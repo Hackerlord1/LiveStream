@@ -1,325 +1,558 @@
 /* app/globals.css */
 @import "tailwindcss";
 
-/* Ensure good contrast for all text */
+/* ========== BASE STYLES ========== */
+
 body {
-  background-color: #e8e8e8;
-  color: #111827;
+    background-color: #e8e8e8;
+    color: #111827;
 }
 
 /* Override any light text colors */
-h1, h2, h3, h4, h5, h6 {
-  color: #111827;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #111827;
 }
 
-p, span, div {
-  color: #374151;
+p,
+span,
+div {
+    color: #374151;
 }
 
 /* Form elements */
-input, select, textarea {
-  color: #111827 !important;
+input,
+select,
+textarea {
+    color: #111827 !important;
 }
 
 input::placeholder {
-  color: #6b7280 !important;
+    color: #6b7280 !important;
 }
 
 /* Card text visibility */
 .card h3,
 .card p,
 .card span {
-  color: #111827 !important;
+    color: #111827 !important;
 }
 
-/* Status badges */
+/* ========== STATUS BADGES ========== */
+
 .status-live {
-  background-color: #fee2e2 !important;
-  color: #dc2626 !important;
+    background-color: #fee2e2 !important;
+    color: #dc2626 !important;
 }
 
 .status-upcoming {
-  background-color: #dbeafe !important;
-  color: #2563eb !important;
+    background-color: #dbeafe !important;
+    color: #2563eb !important;
 }
 
 .status-ended {
-  background-color: #f3f4f6 !important;
-  color: #6b7280 !important;
+    background-color: #f3f4f6 !important;
+    color: #6b7280 !important;
 }
 
-/* ===== AD-BLOCKING STYLES ===== */
-/* Hide common ad elements globally */
-[class*="ad-"], [class*="Ad-"], [class*="_ad_"], [class*="ads"],
-[id*="ad-"], [id*="Ad-"], [id*="_ad_"], [id*="ads"],
-[data-ad], [data-ad-type], [data-ad-slot],
-.ad-container, .ad-wrapper, .ad-banner, .ad-unit,
-.advertisement, .advert, .commercial,
-.video-ads, .preroll, .midroll, .postroll,
-.ad-notice, .ad-overlay, .ad-skip-button,
-iframe[src*="ads"], iframe[src*="doubleclick"],
-div[style*="position: absolute"][style*="z-index: 9999"],
-div[style*="background: black"][style*="opacity: 0.8"],
-.adblock-detector, .adblock-warning,
-[class*="adblock"], [class*="AdBlock"],
-div[aria-label*="advertisement"], div[aria-label*="Advertisement"],
-button[aria-label*="Skip Ad"], button[aria-label*="skip ad"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  width: 0 !important;
-  height: 0 !important;
-  position: absolute !important;
-  left: -9999px !important;
-  top: -9999px !important;
-  pointer-events: none !important;
-}
+/* ========== AD BLOCKING STYLES ========== */
 
 /* Video player ad overlays */
-.vjs-ad-overlay, .ad-interstitial, .ad-modal,
-[class*="vjs-ad-"], [class*="ad-overlay"], [class*="ad-modal"],
-.video-ad-container, .ad-player-overlay,
+.vjs-ad-overlay,
+.ad-interstitial,
+.ad-modal,
+[class*="vjs-ad-"],
+[class*="ad-overlay"],
+[class*="ad-modal"],
+.video-ad-container,
+.ad-player-overlay,
 div[style*="background: rgba(0,0,0,0.8)"][style*="z-index: 99999"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* Ensure video plays through ads */
 video {
-  pointer-events: auto !important;
-  z-index: 1 !important;
+    pointer-events: auto !important;
+    z-index: 1 !important;
 }
 
-/* ===== STREAMING SPECIFIC STYLES ===== */
-/* Video containers */
+/* Hide specific ad patterns */
+div[class*="ad-"]:empty,
+div[id*="ad-"]:empty,
+ins[class*="adsbygoogle"] {
+    display: none !important;
+}
+
+/* ========== VIDEO CONTAINER STYLES ========== */
+
 .video-container {
-  position: relative;
-  width: 100%;
-  padding-bottom: 56.25%; /* 16:9 aspect ratio */
-  background: #000;
-  border-radius: 12px;
-  overflow: hidden;
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
 }
 
 .video-container iframe,
 .video-container video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-/* Stream quality badges */
-.stream-quality-badge {
-  background: linear-gradient(135deg, #dc2626, #1e40af);
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-/* Live indicator animation */
-.stream-status-live {
-  background: #dc2626;
-  color: white;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-/* Loading spinner */
-.loading-spinner {
-  border: 3px solid rgba(0, 0, 0, 0.1);
-  border-top: 3px solid #dc2626;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Neumorphic design elements (for MatchPlayer) */
-.neumorphic-card {
-  background: #e0e0e0;
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
-}
-
-.neumorphic-button {
-  border-radius: 12px;
-  background: #e0e0e0;
-  border: none;
-  cursor: pointer;
-  box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.neumorphic-button:hover:not(:disabled) {
-  box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
-}
-
-.neumorphic-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: #e0e0e0;
-  color: #4b5563;
-  font-weight: 500;
-  box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.neumorphic-nav-item:hover {
-  box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
-}
-
-/* Chat styles */
-.chat-container {
-  background-color: #343541;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-}
-
-.chat-message p,
-.chat-message span {
-  color: white !important;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: #d1d5db;
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #9ca3af;
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
-}
-
-/* Selection color */
-::selection {
-  background-color: rgba(220, 38, 38, 0.3);
-  color: #111827;
-}
-
-/* Focus styles */
-:focus-visible {
-  outline: 2px solid #dc2626;
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Smooth transitions for interactive elements */
-button, a, input, select {
-  transition: all 0.2s ease;
-}
-
-/* Utility for streaming page */
-.fullscreen-fallback {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  z-index: 9999 !important;
-  background: #000;
-}
-
-/* Hide specific ad patterns that might appear in streaming */
-div[class*="ad-"]:empty,
-div[id*="ad-"]:empty,
-ins[class*="adsbygoogle"] {
-  display: none !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
 }
 
 /* Video player controls visibility */
 .video-container:hover .player-controls {
-  opacity: 1;
+    opacity: 1;
 }
 
 .player-controls {
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .video-container {
-    border-radius: 8px;
-  }
+/* ========== STREAM QUALITY & STATUS ========== */
 
-  .stream-status-live {
+.stream-quality-badge {
+    background: linear-gradient(135deg, #dc2626, #1e40af);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
     font-size: 0.75rem;
-    padding: 3px 8px;
-  }
+    font-weight: 600;
 }
 
-/* Print styles */
-@media print {
-  .video-container,
-  .chat-container,
-  .neumorphic-button {
-    display: none !important;
-  }
+.stream-status-live {
+    background: #dc2626;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    animation: pulse 2s infinite;
 }
+
+/* ========== NEUMORPHIC DESIGN SYSTEM ========== */
+
+.neumorphic-card {
+    background: #e0e0e0;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
+}
+
+.neumorphic-video-container {
+    background: #1a1a1a;
+    border-radius: 20px;
+    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
+    position: relative;
+    overflow: hidden;
+    height: 60vh;
+    min-height: 400px;
+    max-height: 600px;
+}
+
+.neumorphic-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: #e0e0e0;
+    color: #4b5563;
+    font-weight: 500;
+    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.neumorphic-nav-item:hover {
+    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
+}
+
+.neumorphic-button {
+    border-radius: 12px;
+    background: #e0e0e0;
+    border: none;
+    cursor: pointer;
+    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.neumorphic-button:hover:not(:disabled) {
+    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
+}
+
+.neumorphic-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.neumorphic-server-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #e0e0e0;
+    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.neumorphic-server-item:hover {
+    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
+}
+
+.neumorphic-server-active {
+    background: linear-gradient(145deg, #cacaca, #f0f0f0);
+    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
+}
+
+.neumorphic-info-item {
+    text-align: center;
+    padding: 16px 12px;
+    border-radius: 12px;
+    background: #e0e0e0;
+    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
+}
+
+.neumorphic-dropdown {
+    background: #e8e8e8;
+    border-radius: 12px;
+    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff,
+        0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.neumorphic-logo {
+    background: #e0e0e0;
+    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
+}
+
+.neumorphic-badge {
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Dropdown items */
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    color: #4b5563;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.dropdown-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* ========== CHAT STYLES ========== */
+
+.chat-container {
+    width: 100%;
+    height: calc(100vh - 200px);
+    background-color: #343541;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.chat-nav-bar {
+    height: 60px;
+    background-color: #343541;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    border-bottom: 1px solid #444654;
+    flex-shrink: 0;
+}
+
+.chat-messages-area {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.chat-messages-area::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-messages-area::-webkit-scrollbar-thumb {
+    background: #444654;
+    border-radius: 4px;
+}
+
+.chat-messages-area::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.chat-sender-area {
+    padding: 16px;
+    background-color: #343541;
+    flex-shrink: 0;
+    border-top: 1px solid #444654;
+}
+
+.chat-input-place {
+    display: flex;
+    align-items: center;
+    background-color: #40414f;
+    border-radius: 12px;
+    padding: 0 16px;
+    height: 52px;
+    border: 1px solid #2e2f3a;
+}
+
+.chat-send-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: white;
+    font-size: 15px;
+}
+
+.chat-send-input::placeholder {
+    color: #6b6c7b !important;
+}
+
+.chat-send-button {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    transition: background 0.2s;
+}
+
+.chat-send-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-send-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.send-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.chat-message {
+    padding: 8px 0;
+}
+
+.chat-message p,
+.chat-message span {
+    color: white !important;
+}
+
+/* ========== ANIMATIONS ========== */
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-spinner {
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-top: 3px solid #dc2626;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* ========== FULLSCREEN STYLES ========== */
+
+.fullscreen-fallback {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 9999 !important;
+    background: #000;
+}
+
+/* ========== CUSTOM SCROLLBAR ========== */
+
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #d1d5db;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* ========== SELECTION & FOCUS STYLES ========== */
+
+::selection {
+    background-color: rgba(220, 38, 38, 0.3);
+    color: #111827;
+}
+
+:focus-visible {
+    outline: 2px solid #dc2626;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Smooth transitions for interactive elements */
+button,
+a,
+input,
+select {
+    transition: all 0.2s ease;
+}
+
+/* ========== RESPONSIVE STYLES ========== */
+
+@media (max-width: 1024px) {
+    .chat-container {
+        height: 500px;
+    }
+}
+
+@media (max-width: 768px) {
+    .neumorphic-video-container {
+        height: 50vh;
+        min-height: 300px;
+    }
+
+    .video-container {
+        border-radius: 8px;
+    }
+
+    .stream-status-live {
+        font-size: 0.75rem;
+        padding: 3px 8px;
+    }
+
+    .chat-container {
+        height: 400px;
+    }
+}
+
+@media (max-width: 640px) {
+    .neumorphic-video-container {
+        height: 40vh;
+        min-height: 250px;
+    }
+
+    .neumorphic-card {
+        padding: 16px;
+        border-radius: 16px;
+    }
+
+    .chat-container {
+        height: 350px;
+    }
+}
+
+/* ========== PRINT STYLES ========== */
+
+@media print {
+    .video-container,
+    .chat-container,
+    .neumorphic-button,
+    .neumorphic-video-container {
+        display: none !important;
+    }
+}
+
+/* ========== ACCESSIBILITY ========== */
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
-  body {
-    background-color: #ffffff;
-    color: #000000;
-  }
+    body {
+        background-color: #ffffff;
+        color: #000000;
+    }
 
-  .neumorphic-card {
-    background: #f0f0f0;
-    box-shadow: 4px 4px 8px #cccccc, -4px -4px 8px #ffffff;
-  }
+    .neumorphic-card {
+        background: #f0f0f0;
+        box-shadow: 4px 4px 8px #cccccc, -4px -4px 8px #ffffff;
+        border: 1px solid #000000;
+    }
+
+    .chat-container {
+        border: 1px solid #ffffff;
+    }
 }
 
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 
-  .stream-status-live {
-    animation: none;
-  }
+    .stream-status-live {
+        animation: none;
+    }
+
+    .loading-spinner {
+        animation: none;
+    }
 }
