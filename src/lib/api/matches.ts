@@ -101,7 +101,7 @@ function extractAllMatches(data: ApiResponse): Match[] {
     ];
 
     for (const [key, sportType] of sportMappings) {
-        const matches = (sportsData as Record<string, unknown>)[key];
+        const matches = (sportsData as unknown as Record<string, unknown>)[key];
         if (Array.isArray(matches)) {
             try {
                 // Log first match structure for debugging
