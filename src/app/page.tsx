@@ -672,49 +672,6 @@ export default function Home() {
                 </section>
 
 
-                // Add to your Home component, before the footer:
-                <div className="mb-8 p-4 bg-purple-50 border border-purple-200 rounded-xl">
-                    <h3 className="font-bold text-lg mb-3 text-purple-800">🧪 Debug Problematic Match</h3>
-                    
-                    {matches.length > 0 && (
-                        <div className="space-y-3">
-                            <p className="text-sm text-purple-700">
-                                Testing problematic match: "Nottingham Forest vs Ferencváros"
-                            </p>
-                            
-                            {/* Find matches with similar names */}
-                            {matches.filter(m => 
-                                m.homeTeam.toLowerCase().includes('nottingham') || 
-                                m.awayTeam.toLowerCase().includes('nottingham') ||
-                                m.homeTeam.toLowerCase().includes('ferenc') || 
-                                m.awayTeam.toLowerCase().includes('ferenc')
-                            ).map((debugMatch, index) => (
-                                <div key={debugMatch.gameID} className="bg-white p-3 rounded border">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <p className="font-medium">{debugMatch.homeTeam} vs {debugMatch.awayTeam}</p>
-                                            <p className="text-sm text-gray-500">{debugMatch.tournament}</p>
-                                            <p className="text-xs text-gray-400">
-                                                Slug: <code className="bg-gray-100 px-1 rounded">
-                                                    {`${debugMatch.homeTeam.toLowerCase().replace(/[^a-z0-9]/g, '-')}-vs-${debugMatch.awayTeam.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${debugMatch.tournament.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
-                                                </code>
-                                            </p>
-                                        </div>
-                                        <Link
-                                            href={`/match/${encodeURIComponent(
-                                                `${debugMatch.homeTeam.toLowerCase().replace(/[^a-z0-9]/g, '-')}-vs-${debugMatch.awayTeam.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${debugMatch.tournament.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
-                                            )}`}
-                                            className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
-                                        >
-                                            Test Link
-                                        </Link>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
                 {/* Footer */}
                 <footer className="bg-white rounded-xl border border-gray-300 mt-8 p-6">
                     <div className="text-center">

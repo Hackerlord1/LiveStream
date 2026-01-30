@@ -1,4 +1,4 @@
-// src/lib/api/config.ts
+// src/lib/api/config.ts - UPDATED VERSION
 
 // ========== API CONFIGURATION ==========
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.cdn-live.tv/api/v1';
@@ -39,6 +39,25 @@ export const RETRY_CONFIG = {
     MAX_RETRIES: 3,
     BASE_DELAY: 1000,
     RATE_LIMIT_DELAY: 2000,
+} as const;
+
+// ========== CHAT CONFIGURATION ==========
+export const CHAT_CONFIG = {
+    MAX_USERNAME_LENGTH: 20,
+    MIN_USERNAME_LENGTH: 3,
+    MAX_MESSAGE_LENGTH: 200,
+    MAX_RECONNECT_ATTEMPTS: 5,
+    RECONNECT_DELAY: 3000,
+    TYPING_TIMEOUT: 2000
+} as const;
+
+// ========== STREAM CONFIGURATION ==========
+export const STREAM_CONFIG = {
+    MAX_QUALITY_LEVELS: 5,
+    DEFAULT_VOLUME: 80,
+    BUFFER_SIZE: 10,
+    MAX_RETRIES: 3,
+    RETRY_DELAY: 2000
 } as const;
 
 // ========== DEFAULT VALUES ==========

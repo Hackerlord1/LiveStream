@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AdBlockProvider } from "./providers/AdBlockProvider";
 
 // Using Inter font (better for SEO and readability than Geist)
 const inter = Inter({ 
@@ -89,21 +90,19 @@ export const metadata: Metadata = {
         creator: '@bravestream',
     },
     verification: {
-        google: 'your-google-verification-code', // Add your Google Search Console code
-        yandex: 'your-yandex-verification-code', // Optional
-        yahoo: 'your-yahoo-verification-code', // Optional
+        google: 'your-google-verification-code',
+        yandex: 'your-yandex-verification-code',
+        yahoo: 'your-yahoo-verification-code',
     },
     alternates: {
         canonical: 'https://bravestream.live',
         languages: {
             'en-US': 'https://bravestream.live',
-            // Add other language versions if you have them
         },
     },
     category: 'sports',
     classification: 'Sports Streaming Service',
     
-    // Icons
     icons: {
         icon: [
             { url: '/favicon.ico' },
@@ -124,7 +123,6 @@ export const metadata: Metadata = {
     },
     manifest: '/site.webmanifest',
     
-    // Additional meta tags
     other: {
         'application-name': 'BraveStream',
         'apple-mobile-web-app-title': 'BraveStream',
@@ -141,84 +139,89 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en" className={inter.variable}>
-        <head>
-            {/* Structured Data for Sports Website */}
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{
-                    __html: JSON.stringify({
-                        "@context": "https://schema.org",
-                        "@type": "SportsOrganization",
-                        "name": "BraveStream",
-                        "url": "https://bravestream.live",
-                        "logo": "https://bravestream.live/logo.png",
-                        "description": "Free live sports streaming platform for football, basketball, American football, hockey, and more.",
-                        "founder": {
-                            "@type": "Person",
-                            "name": "BraveStream Team"
-                        },
-                        "foundingDate": "2024",
-                        "sameAs": [
-                            "https://twitter.com/bravestream",
-                            "https://facebook.com/bravestream"
-                        ],
-                        "knowsAbout": [
-                            "Live Sports Streaming",
-                            "Football",
-                            "Basketball",
-                            "American Football",
-                            "Hockey",
-                            "Tennis",
-                            "Boxing",
-                            "MMA"
-                        ]
-                    })
-                }}
-            />
-            
-            {/* Additional structured data for search */}
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{
-                    __html: JSON.stringify({
-                        "@context": "https://schema.org",
-                        "@type": "WebSite",
-                        "url": "https://bravestream.live",
-                        "name": "BraveStream",
-                        "description": "Live sports streaming platform",
-                        "potentialAction": {
-                            "@type": "SearchAction",
-                            "target": "https://bravestream.live/search?q={search_term_string}",
-                            "query-input": "required name=search_term_string"
-                        }
-                    })
-                }}
-            />
-        </head>
-        <body className={`${inter.className} antialiased bg-gray-50`}>
-            {/* Navigation will be added here */}
-            <main className="min-h-screen">
-                {children}
-            </main>
-            
-            {/* Footer will be added here */}
-            
-            {/* Performance monitoring script (optional) */}
-            <script
-                async
-                src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" // Add your GA4 ID
-            />
-            <script
-                dangerouslySetInnerHTML={{
-                    __html: `
-                        window.dataLayer = window.dataLayer || [];
-                        function gtag(){dataLayer.push(arguments);}
-                        gtag('js', new Date());
-                        gtag('config', 'G-XXXXXXXXXX');
-                    `,
-                }}
-            />
-        </body>
+            <head>
+                {/* Structured Data for Sports Website */}
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: JSON.stringify({
+                            "@context": "https://schema.org",
+                            "@type": "SportsOrganization",
+                            "name": "BraveStream",
+                            "url": "https://bravestream.live",
+                            "logo": "https://bravestream.live/logo.png",
+                            "description": "Free live sports streaming platform for football, basketball, American football, hockey, and more.",
+                            "founder": {
+                                "@type": "Person",
+                                "name": "BraveStream Team"
+                            },
+                            "foundingDate": "2024",
+                            "sameAs": [
+                                "https://twitter.com/bravestream",
+                                "https://facebook.com/bravestream"
+                            ],
+                            "knowsAbout": [
+                                "Live Sports Streaming",
+                                "Football",
+                                "Basketball",
+                                "American Football",
+                                "Hockey",
+                                "Tennis",
+                                "Boxing",
+                                "MMA"
+                            ]
+                        })
+                    }}
+                />
+                
+                {/* Additional structured data for search */}
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: JSON.stringify({
+                            "@context": "https://schema.org",
+                            "@type": "WebSite",
+                            "url": "https://bravestream.live",
+                            "name": "BraveStream",
+                            "description": "Live sports streaming platform",
+                            "potentialAction": {
+                                "@type": "SearchAction",
+                                "target": "https://bravestream.live/search?q={search_term_string}",
+                                "query-input": "required name=search_term_string"
+                            }
+                        })
+                    }}
+                />
+
+                {/* Preconnect to critical domains for performance */}
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+                
+                {/* DNS Prefetch for API domains */}
+                <link rel="dns-prefetch" href="https://api.bravestream.live" />
+            </head>
+            <body className={`${inter.className} antialiased bg-gray-900 text-white`}>
+                {/* Ad Block Provider wraps the entire app */}
+                <AdBlockProvider enabled={true}>
+                    {/* Navigation will be added here */}
+                    <main className="min-h-screen">
+                        {children}
+                    </main>
+                    
+                    {/* Footer will be added here */}
+                </AdBlockProvider>
+                
+                {/* 
+                    NOTE: Removed Google Analytics scripts since our ad blocker 
+                    would block them anyway. If you need analytics, consider 
+                    privacy-focused alternatives like:
+                    - Plausible Analytics
+                    - Fathom Analytics  
+                    - Umami (self-hosted)
+                    
+                    Or whitelist your own analytics domain in the AdBlockProvider
+                */}
+            </body>
         </html>
     );
 }
