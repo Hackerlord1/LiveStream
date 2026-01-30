@@ -38,7 +38,7 @@ type FilterStatus = 'all' | 'live' | 'upcoming';
 
 // ========== HELPER FUNCTIONS ==========
 const getSportIconSmall = (sport: string) => {
-    const iconMap: Record<string, JSX.Element> = {
+    const iconMap: Record<string, React.ReactNode> = {
         'SOCCER': <FaFutbol className="text-emerald-500 w-4 h-4" />,
         'NBA': <FaBasketballBall className="text-orange-500 w-4 h-4" />,
         'NFL': <FaFootballBall className="text-red-500 w-4 h-4" />,
