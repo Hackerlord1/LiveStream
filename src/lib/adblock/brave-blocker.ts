@@ -415,13 +415,14 @@ export class BraveStyleBlocker {
    */
   private cacheResult(key: string, result: BlockResult): BlockResult {
     if (this.cache.size >= this.cacheMaxSize) {
-      // Simple LRU: delete first entry
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+        const firstKey = this.cache.keys().next().value;
+        if (firstKey !== undefined) {
+            this.cache.delete(firstKey);
+        }
     }
     this.cache.set(key, result);
     return result;
-  }
+}
 
   /**
    * Clear cache
