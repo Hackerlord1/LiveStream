@@ -406,6 +406,7 @@ export async function getMatchById(id: string): Promise<Match | null> {
                     console.log(`🔧 Attempt ${i}: Home="${homePart}", Away="${awayPart}"`);
                     
                     // Try to find using normalization
+                    let match: Match | null | undefined;
                     match = findMatchByTeams(homePart, awayPart, matches);
                     
                     if (match) {
