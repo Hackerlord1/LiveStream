@@ -1,8 +1,8 @@
 // src/lib/adblock/brave-blocker.ts
 
-import { FilterEngine } from './filter-engine';
-import { CosmeticFilter } from './cosmetic-filter';
-import { NetworkFilter } from './network-filter';
+//import { FilterEngine } from './filter-engine';
+//import { CosmeticFilter } from './cosmetic-filter';
+//import { NetworkFilter } from './network-filter';
 
 /**
  * Brave-style ad blocking engine
