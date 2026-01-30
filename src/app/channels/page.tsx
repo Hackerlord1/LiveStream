@@ -119,7 +119,7 @@ interface EmptyStateProps {
 
 const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProps) => {
     const getIcon = () => {
-        const icons: Record<string, JSX.Element> = {
+        const icons: Record<string, React.ReactNode> = {
             favorites: <FaHeart className="text-4xl text-gray-400" />,
             recent: <FaHistory className="text-4xl text-gray-400" />,
             trending: <FaFire className="text-4xl text-gray-400" />,
