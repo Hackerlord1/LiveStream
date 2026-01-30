@@ -5,6 +5,9 @@
  * Maps special characters and foreign names to clean, searchable names
  */
 
+// Import Match type at the top
+import type { Match } from './types';
+
 export const TEAM_NORMALIZATION: Record<string, string[]> = {
     // ========== TURKISH TEAMS ==========
     'fenerbahce': ['fenerbahçe', 'fenerbahçe s.k.', 'fenerbahçe sk', 'fenerbahce sk'],
@@ -48,7 +51,7 @@ export const TEAM_NORMALIZATION: Record<string, string[]> = {
     'racing-club': ['racing club', 'racing avellaneda'],
     'independiente': ['club atlético independiente', 'independiente avellaneda'],
     'san-lorenzo': ['san lorenzo de almagro', 'san lorenzo'],
-    'newells-old-boys': ['newell\'s old boys', 'newells'],
+    'newells-old-boys': ["newell's old boys", 'newells'],
     'rosario-central': ['rosario central'],
     'estudiantes': ['estudiantes de la plata', 'estudiantes lp'],
     'gimnasia': ['gimnasia y esgrima la plata', 'gimnasia lp'],
@@ -79,7 +82,7 @@ export const TEAM_NORMALIZATION: Record<string, string[]> = {
     'brann': ['sk brann', 'brann bergen'],
     'valerenga': ['vålerenga fotball', 'valerenga', 'vålerenga'],
     'molde': ['molde fk', 'molde'],
-    'bodø-glimt': ['fk bodø/glimt', 'bodø glimt', 'bodo glimt'],
+    'bodo-glimt': ['fk bodø/glimt', 'bodø glimt', 'bodo glimt'],
     'vikings': ['vikings fk', 'vikings stavanger'],
     
     // DENMARK
@@ -167,7 +170,7 @@ export const TEAM_NORMALIZATION: Record<string, string[]> = {
     'olympiacos': ['olympiacos cfp', 'olympiacos piraeus'],
     'paok': ['paok fc', 'paok thessaloniki'],
     'panathinaikos': ['panathinaikos fc', 'panathinaikos'],
-    'aeK': ['aek athens fc', 'aek athens'],
+    'aek-athens': ['aek athens fc', 'aek athens'],
     
     // UKRAINE
     'shakhtar-donetsk': ['fc shakhtar donetsk', 'shakhtar'],
@@ -183,7 +186,7 @@ export const TEAM_NORMALIZATION: Record<string, string[]> = {
     'colocolo': ['colocolo', 'csd colo-colo'],
     'universidad-chile': ['universidad de chile', 'u. de chile'],
     'catolica': ['universidad católica', 'u. catolica'],
-    'o-higgins': ['o\'higgins', 'ohiggins'],
+    'o-higgins': ["o'higgins", 'ohiggins'],
     'nublense': ['cd ñublense', 'nublense'],
     
     // ========== BRAZILIAN TEAMS ==========
@@ -205,40 +208,28 @@ export const TEAM_NORMALIZATION: Record<string, string[]> = {
     'newcastle-united': ['newcastle', 'newcastle utd'],
     'west-ham-united': ['west ham', 'west ham utd'],
     'leeds-united': ['leeds', 'leeds utd'],
-    'nottingham-forest': ['nottingham forest', 'nott\'m forest', 'forest'],
+    'nottingham-forest': ['nottingham forest', "nott'm forest", 'forest'],
     'wolverhampton-wanderers': ['wolves', 'wolverhampton'],
     'leicester-city': ['leicester', 'leicester city'],
 };
 
 /**
  * Special character mapping for direct replacements
+ * NOTE: Each character appears only ONCE - no duplicates allowed
  */
 export const SPECIAL_CHARACTERS: Record<string, string> = {
-    // Turkish
-    'ç': 'c',
+    // ========== TURKISH SPECIFIC ==========
     'ğ': 'g',
-    'ı': 'i',
-    'ö': 'o',
-    'ş': 's',
-    'ü': 'u',
-    'Ç': 'C',
     'Ğ': 'G',
-    'İ': 'I',
-    'Ö': 'O',
+    'ı': 'i',   // Turkish dotless i (lowercase)
+    'İ': 'I',   // Turkish dotted I (uppercase)
+    'ş': 's',
     'Ş': 'S',
-    'Ü': 'U',
     
-    // German/Scandinavian
-    'ä': 'a',
-    'ë': 'e',
-    'ï': 'i',
-    'ö': 'o',
-    'ü': 'u',
-    'Ä': 'A',
-    'Ë': 'E',
-    'Ö': 'O',
-    'Ü': 'U',
+    // ========== GERMAN SPECIFIC ==========
     'ß': 'ss',
+    
+    // ========== SCANDINAVIAN SPECIFIC ==========
     'ø': 'o',
     'Ø': 'O',
     'å': 'a',
@@ -246,107 +237,181 @@ export const SPECIAL_CHARACTERS: Record<string, string> = {
     'æ': 'ae',
     'Æ': 'AE',
     
-    // Spanish/Portuguese
+    // ========== SHARED UMLAUTS (German/Turkish/Scandinavian) ==========
+    'ä': 'a',
+    'Ä': 'A',
+    'ë': 'e',
+    'Ë': 'E',
+    'ï': 'i',
+    'ö': 'o',
+    'Ö': 'O',
+    'ü': 'u',
+    'Ü': 'U',
+    'ÿ': 'y',
+    
+    // ========== SPANISH/PORTUGUESE ACCENTS ==========
     'á': 'a',
-    'é': 'e',
-    'í': 'i',
-    'ó': 'o',
-    'ú': 'u',
-    'ñ': 'n',
     'Á': 'A',
+    'é': 'e',
     'É': 'E',
+    'í': 'i',
     'Í': 'I',
+    'ó': 'o',
     'Ó': 'O',
+    'ú': 'u',
     'Ú': 'U',
+    'ñ': 'n',
     'Ñ': 'N',
-    'â': 'a',
-    'ê': 'e',
-    'î': 'i',
-    'ô': 'o',
-    'û': 'u',
-    'Â': 'A',
-    'Ê': 'E',
-    'Î': 'I',
-    'Ô': 'O',
-    'Û': 'U',
     'ã': 'a',
-    'õ': 'o',
     'Ã': 'A',
+    'õ': 'o',
     'Õ': 'O',
+    
+    // ========== FRENCH ACCENTS (Grave) ==========
+    'à': 'a',
+    'À': 'A',
+    'è': 'e',
+    'È': 'E',
+    'ì': 'i',
+    'Ì': 'I',
+    'ò': 'o',
+    'Ò': 'O',
+    'ù': 'u',
+    'Ù': 'U',
+    
+    // ========== FRENCH ACCENTS (Circumflex) ==========
+    'â': 'a',
+    'Â': 'A',
+    'ê': 'e',
+    'Ê': 'E',
+    'î': 'i',
+    'Î': 'I',
+    'ô': 'o',
+    'Ô': 'O',
+    'û': 'u',
+    'Û': 'U',
+    
+    // ========== CEDILLA (Shared Turkish/Portuguese/French) ==========
     'ç': 'c',
     'Ç': 'C',
     
-    // French/Swiss
-    'à': 'a',
-    'è': 'e',
-    'ì': 'i',
-    'ò': 'o',
-    'ù': 'u',
-    'â': 'a',
-    'ê': 'e',
-    'î': 'i',
-    'ô': 'o',
-    'û': 'u',
-    'ë': 'e',
-    'ï': 'i',
-    'ü': 'u',
-    'ÿ': 'y',
-    
-    // Polish/Czech
+    // ========== POLISH ==========
     'ą': 'a',
-    'ć': 'c',
-    'ę': 'e',
-    'ł': 'l',
-    'ń': 'n',
-    'ó': 'o',
-    'ś': 's',
-    'ź': 'z',
-    'ż': 'z',
     'Ą': 'A',
+    'ć': 'c',
     'Ć': 'C',
+    'ę': 'e',
     'Ę': 'E',
+    'ł': 'l',
     'Ł': 'L',
+    'ń': 'n',
     'Ń': 'N',
-    'Ó': 'O',
+    'ś': 's',
     'Ś': 'S',
+    'ź': 'z',
     'Ź': 'Z',
+    'ż': 'z',
     'Ż': 'Z',
+    
+    // ========== CZECH ==========
     'č': 'c',
-    'ď': 'd',
-    'ě': 'e',
-    'ň': 'n',
-    'ř': 'r',
-    'š': 's',
-    'ť': 't',
-    'ů': 'u',
-    'ž': 'z',
     'Č': 'C',
+    'ď': 'd',
     'Ď': 'D',
+    'ě': 'e',
     'Ě': 'E',
+    'ň': 'n',
     'Ň': 'N',
+    'ř': 'r',
     'Ř': 'R',
+    'š': 's',
     'Š': 'S',
+    'ť': 't',
     'Ť': 'T',
+    'ů': 'u',
     'Ů': 'U',
+    'ž': 'z',
     'Ž': 'Z',
     
-    // Greek (transliteration)
-    'α': 'a', 'β': 'v', 'γ': 'g', 'δ': 'd', 'ε': 'e',
-    'ζ': 'z', 'η': 'i', 'θ': 'th', 'ι': 'i', 'κ': 'k',
-    'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'x', 'ο': 'o',
-    'π': 'p', 'ρ': 'r', 'σ': 's', 'τ': 't', 'υ': 'y',
-    'φ': 'f', 'χ': 'ch', 'ψ': 'ps', 'ω': 'o',
-    'Α': 'A', 'Β': 'B', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E',
-    'Ζ': 'Z', 'Η': 'I', 'Θ': 'TH', 'Ι': 'I', 'Κ': 'K',
-    'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'X', 'Ο': 'O',
-    'Π': 'P', 'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'Y',
-    'Φ': 'F', 'Χ': 'CH', 'Ψ': 'PS', 'Ω': 'O',
+    // ========== GREEK (Transliteration) ==========
+    'α': 'a',
+    'Α': 'A',
+    'β': 'v',
+    'Β': 'B',
+    'γ': 'g',
+    'Γ': 'G',
+    'δ': 'd',
+    'Δ': 'D',
+    'ε': 'e',
+    'Ε': 'E',
+    'ζ': 'z',
+    'Ζ': 'Z',
+    'η': 'i',
+    'Η': 'I',
+    'θ': 'th',
+    'Θ': 'TH',
+    'ι': 'i',
+    'Ι': 'I',
+    'κ': 'k',
+    'Κ': 'K',
+    'λ': 'l',
+    'Λ': 'L',
+    'μ': 'm',
+    'Μ': 'M',
+    'ν': 'n',
+    'Ν': 'N',
+    'ξ': 'x',
+    'Ξ': 'X',
+    'ο': 'o',
+    'Ο': 'O',
+    'π': 'p',
+    'Π': 'P',
+    'ρ': 'r',
+    'Ρ': 'R',
+    'σ': 's',
+    'ς': 's',  // Final sigma
+    'Σ': 'S',
+    'τ': 't',
+    'Τ': 'T',
+    'υ': 'y',
+    'Υ': 'Y',
+    'φ': 'f',
+    'Φ': 'F',
+    'χ': 'ch',
+    'Χ': 'CH',
+    'ψ': 'ps',
+    'Ψ': 'PS',
+    'ω': 'o',
+    'Ω': 'O',
+    
+    // ========== CROATIAN/SERBIAN ==========
+    'đ': 'dj',
+    'Đ': 'DJ',
+    
+    // ========== ROMANIAN ==========
+    'ă': 'a',
+    'Ă': 'A',
+    'ș': 's',
+    'Ș': 'S',
+    'ț': 't',
+    'Ț': 'T',
+    
+    // ========== ICELANDIC ==========
+    'ð': 'd',
+    'Ð': 'D',
+    'þ': 'th',
+    'Þ': 'TH',
+    
+    // ========== MISC ==========
+    'œ': 'oe',
+    'Œ': 'OE',
+    
 };
 
 /**
  * Common team suffixes to remove
  */
-export const TEAM_SUFFIXES = [
+export const TEAM_SUFFIXES: string[] = [
     'fc', 'cf', 'sk', 'jk', 'fk', 'ff', 'if', 'bk', 'kv', 'cfp',
     'football club', 'club de futbol', 'sport klub', 'idrottsförening',
     'fotbollsförening', 'fotbalový klub', 'fußball-club',
@@ -365,14 +430,14 @@ export function normalizeTeamName(teamName: string): string {
     
     // Step 1: Replace special characters
     for (const [special, replacement] of Object.entries(SPECIAL_CHARACTERS)) {
-        normalized = normalized.replace(new RegExp(special, 'g'), replacement);
+        normalized = normalized.split(special).join(replacement);
     }
     
     // Step 2: Remove common suffixes
-    TEAM_SUFFIXES.forEach(suffix => {
-        const regex = new RegExp(`\\s+${suffix}(?:\\s|$|\\.)`, 'gi');
+    for (const suffix of TEAM_SUFFIXES) {
+        const regex = new RegExp(`\\s+${suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$|\\.)`, 'gi');
         normalized = normalized.replace(regex, ' ');
-    });
+    }
     
     // Step 3: Remove extra punctuation
     normalized = normalized
@@ -383,8 +448,8 @@ export function normalizeTeamName(teamName: string): string {
     // Step 4: Check against normalization dictionary
     for (const [cleanName, variations] of Object.entries(TEAM_NORMALIZATION)) {
         if (variations.includes(normalized) || 
-            normalized.includes(cleanName) ||
-            cleanName.includes(normalized)) {
+            normalized.includes(cleanName.replace(/-/g, ' ')) ||
+            cleanName.replace(/-/g, ' ').includes(normalized)) {
             return cleanName;
         }
     }
@@ -435,7 +500,11 @@ export function findMatchByTeams(
     homeTeam: string, 
     awayTeam: string, 
     matches: Match[]
-): Match | null {
+): Match | undefined {
+    if (!homeTeam || !awayTeam || !matches.length) {
+        return undefined;
+    }
+
     const normalizedHome = normalizeTeamName(homeTeam);
     const normalizedAway = normalizeTeamName(awayTeam);
     
@@ -445,23 +514,39 @@ export function findMatchByTeams(
     });
     
     // Try exact normalized match
-    let match = matches.find(m => 
-        normalizeTeamName(m.homeTeam) === normalizedHome &&
-        normalizeTeamName(m.awayTeam) === normalizedAway
-    );
+    let match = matches.find(m => {
+        if (!m.homeTeam || !m.awayTeam) return false;
+        return normalizeTeamName(m.homeTeam) === normalizedHome &&
+               normalizeTeamName(m.awayTeam) === normalizedAway;
+    });
     
     if (match) {
         console.log('✅ Found exact normalized match');
         return match;
     }
     
+    // Try reversed (home/away swapped)
+    match = matches.find(m => {
+        if (!m.homeTeam || !m.awayTeam) return false;
+        return normalizeTeamName(m.homeTeam) === normalizedAway &&
+               normalizeTeamName(m.awayTeam) === normalizedHome;
+    });
+    
+    if (match) {
+        console.log('✅ Found reversed normalized match');
+        return match;
+    }
+    
     // Try partial matches
     match = matches.find(m => {
+        if (!m.homeTeam || !m.awayTeam) return false;
         const matchHome = normalizeTeamName(m.homeTeam);
         const matchAway = normalizeTeamName(m.awayTeam);
         
-        return (matchHome.includes(normalizedHome) || normalizedHome.includes(matchHome)) &&
-               (matchAway.includes(normalizedAway) || normalizedAway.includes(matchAway));
+        const homeMatches = matchHome.includes(normalizedHome) || normalizedHome.includes(matchHome);
+        const awayMatches = matchAway.includes(normalizedAway) || normalizedAway.includes(matchAway);
+        
+        return homeMatches && awayMatches;
     });
     
     if (match) {
@@ -476,11 +561,14 @@ export function findMatchByTeams(
     for (const homeVar of homeVariations) {
         for (const awayVar of awayVariations) {
             match = matches.find(m => {
+                if (!m.homeTeam || !m.awayTeam) return false;
                 const matchHome = m.homeTeam.toLowerCase();
                 const matchAway = m.awayTeam.toLowerCase();
                 
-                return (matchHome.includes(homeVar) || homeVar.includes(matchHome)) &&
-                       (matchAway.includes(awayVar) || awayVar.includes(matchAway));
+                const homeMatches = matchHome.includes(homeVar) || homeVar.includes(matchHome);
+                const awayMatches = matchAway.includes(awayVar) || awayVar.includes(matchAway);
+                
+                return homeMatches && awayMatches;
             });
             
             if (match) {
@@ -490,8 +578,60 @@ export function findMatchByTeams(
         }
     }
     
-    return null;
+    console.log('❌ No match found');
+    return undefined;
 }
 
-// Helper type
-import type { Match } from './types';
+/**
+ * Compare two team names for similarity
+ */
+export function teamsMatch(team1: string, team2: string): boolean {
+    if (!team1 || !team2) return false;
+    
+    const normalized1 = normalizeTeamName(team1);
+    const normalized2 = normalizeTeamName(team2);
+    
+    // Exact match
+    if (normalized1 === normalized2) return true;
+    
+    // One contains the other
+    if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) return true;
+    
+    // Check variations
+    const variations1 = getTeamSearchVariations(team1);
+    const variations2 = getTeamSearchVariations(team2);
+    
+    for (const v1 of variations1) {
+        for (const v2 of variations2) {
+            if (v1 === v2 || v1.includes(v2) || v2.includes(v1)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Get the canonical name for a team
+ */
+export function getCanonicalTeamName(teamName: string): string {
+    const normalized = normalizeTeamName(teamName);
+    
+    // Check if it's in our dictionary
+    for (const [canonical, variations] of Object.entries(TEAM_NORMALIZATION)) {
+        if (canonical === normalized || variations.some(v => normalizeTeamName(v) === normalized)) {
+            // Return a nicely formatted version
+            return canonical
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+    }
+    
+    // Return the original with basic formatting
+    return teamName
+        .split(/[\s-]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+}
