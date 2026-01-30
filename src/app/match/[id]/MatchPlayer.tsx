@@ -92,7 +92,7 @@ const RANDOM_NAMES = {
     animals: ['Lion', 'Tiger', 'Eagle', 'Wolf', 'Fox', 'Hawk', 'Panther', 'Falcon', 'Shark', 'Dragon'],
 } as const;
 
-const SPORT_ICONS: Record<string, JSX.Element> = {
+const SPORT_ICONS: Record<string, React.ReactNode> = {
     SOCCER: <FaFutbol className="text-emerald-500" />,
     NBA: <FaBasketballBall className="text-orange-500" />,
     NFL: <FaFootballBall className="text-red-500" />,
@@ -153,7 +153,7 @@ const formatMessageTime = (timestamp: Date | string): string => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const getSportIcon = (sport: string): JSX.Element => {
+const getSportIcon = (sport: string): React.ReactNode => {
     return SPORT_ICONS[sport] || <FaTv className="text-purple-500" />;
 };
 
