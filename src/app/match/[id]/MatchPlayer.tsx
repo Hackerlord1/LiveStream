@@ -5,8 +5,12 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
-// API - separate type imports
+// API types
 import type { Match, Channel } from '@/lib/api';
+
+// Player Protection Components
+import { ProtectedPlayer } from '@/components/player';
+import { usePlayerAdBlock } from '@/hooks/usePlayerAdBlock';
 
 // Icons
 import {
@@ -33,6 +37,7 @@ import {
     FaCopy,
     FaTwitter,
     FaWhatsapp,
+    FaShieldAlt,
 } from 'react-icons/fa';
 
 // ========== TYPES ==========
@@ -139,18 +144,26 @@ const formatViewers = (viewers: number): string => {
 };
 
 const formatDateTime = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
+    try {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    } catch {
+        return dateString;
+    }
 };
 
 const formatMessageTime = (timestamp: Date | string): string => {
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+        const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return '';
+    }
 };
 
 const getSportIcon = (sport: string): React.ReactNode => {
@@ -163,12 +176,31 @@ const getMatchStatusConfig = (status: string) => {
 
 // ========== SUB-COMPONENTS ==========
 
-// Loading Overlay
-const LoadingOverlay = () => (
-    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
-        <div className="text-center">
-            <div className="loading-spinner h-12 w-12 mx-auto"></div>
-            <span className="mt-4 block text-white">Loading stream...</span>
+// Chat Loading Skeleton - Prevents hydration mismatch
+const ChatSkeleton = () => (
+    <div className="chat-container">
+        <div className="chat-nav-bar">
+            <div className="flex items-center gap-3">
+                <div className="w-5 h-5 bg-gray-600 rounded animate-pulse"></div>
+                <span className="text-white font-semibold">Live Chat</span>
+                <span className="text-sm text-gray-400">Loading...</span>
+            </div>
+        </div>
+        <div className="chat-messages-area">
+            <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="loading-spinner h-10 w-10 mb-4"></div>
+                <p className="text-gray-400">Loading chat...</p>
+            </div>
+        </div>
+        <div className="chat-sender-area">
+            <div className="chat-input-place opacity-50">
+                <input
+                    type="text"
+                    placeholder="Loading..."
+                    disabled
+                    className="chat-send-input"
+                />
+            </div>
         </div>
     </div>
 );
@@ -229,9 +261,17 @@ interface ShareDropdownProps {
 }
 
 const ShareDropdown = ({ isOpen, matchTitle, onCopy }: ShareDropdownProps) => {
-    if (!isOpen || typeof window === 'undefined') return null;
+    const [shareUrl, setShareUrl] = useState('');
 
-    const url = encodeURIComponent(window.location.href);
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setShareUrl(window.location.href);
+        }
+    }, []);
+
+    if (!isOpen || !shareUrl) return null;
+
+    const url = encodeURIComponent(shareUrl);
     const text = encodeURIComponent(matchTitle);
 
     return (
@@ -264,47 +304,27 @@ const ShareDropdown = ({ isOpen, matchTitle, onCopy }: ShareDropdownProps) => {
     );
 };
 
-// Username Setup Overlay
-interface UsernameSetupProps {
-    username: string;
-    onUsernameChange: (value: string) => void;
-    onSave: () => void;
-    onRandomize: () => void;
+// Ad Block Stats Display
+interface AdBlockStatsProps {
+    stats: {
+        popupsBlocked: number;
+        redirectsBlocked: number;
+        overlaysRemoved: number;
+        clicksAbsorbed: number;
+    };
 }
 
-const UsernameSetup = ({ username, onUsernameChange, onSave, onRandomize }: UsernameSetupProps) => {
-    const isValid = username.trim().length >= 3 && username.trim().length <= CHAT_CONFIG.MAX_USERNAME_LENGTH;
+const AdBlockStats = ({ stats }: AdBlockStatsProps) => {
+    const total = stats.popupsBlocked + stats.redirectsBlocked + stats.overlaysRemoved + stats.clicksAbsorbed;
+
+    if (total === 0) return null;
 
     return (
-        <div className="absolute inset-0 z-10 bg-[#343541] rounded-xl flex flex-col p-6 shadow-2xl">
-            <h3 className="text-white text-lg font-semibold mb-6">Join Live Chat</h3>
-            <div className="flex gap-3 mb-4">
-                <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => onUsernameChange(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && isValid && onSave()}
-                    placeholder="Choose a username"
-                    maxLength={CHAT_CONFIG.MAX_USERNAME_LENGTH}
-                    className="flex-1 bg-[#40414F] text-white px-4 py-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                    onClick={onSave}
-                    disabled={!isValid}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                    Join
-                </button>
-            </div>
-            <div className="flex justify-between text-sm text-gray-400">
-                <button onClick={onRandomize} className="hover:text-white transition">
-                    Randomize
-                </button>
-                <span>{username.length}/{CHAT_CONFIG.MAX_USERNAME_LENGTH}</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-4 text-center">
-                {!isValid ? 'Minimum 3 characters required' : 'Press Enter or click Join'}
-            </p>
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg border border-green-300">
+            <FaShieldAlt className="w-4 h-4 text-green-600" />
+            <span className="text-sm text-green-700 font-medium">
+                {total} ads blocked
+            </span>
         </div>
     );
 };
@@ -363,22 +383,34 @@ const StreamInfoCard = ({ icon, label, value, iconColor = 'text-gray-500' }: Str
 
 // ========== CUSTOM HOOKS ==========
 
-// useLocalStorage hook
+// Fixed useLocalStorage hook that prevents hydration mismatch
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
-    const [storedValue, setStoredValue] = useState<T>(() => {
-        if (typeof window === 'undefined') return initialValue;
+    // Always initialize with initialValue to match server render
+    const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+    // Only read from localStorage after component mounts (client-side only)
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
         try {
             const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : initialValue;
-        } catch {
-            return initialValue;
+            if (item !== null) {
+                const parsed = JSON.parse(item);
+                setStoredValue(parsed);
+            }
+        } catch (error) {
+            console.error(`Error reading localStorage key "${key}":`, error);
         }
-    });
+    }, [key]);
 
     const setValue = useCallback((value: T) => {
         setStoredValue(value);
         if (typeof window !== 'undefined') {
-            localStorage.setItem(key, JSON.stringify(value));
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+            } catch (error) {
+                console.error(`Error setting localStorage key "${key}":`, error);
+            }
         }
     }, [key]);
 
@@ -387,18 +419,29 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => voi
 
 // ========== MAIN COMPONENT ==========
 export default function MatchPlayer({ match }: MatchPlayerProps) {
+    // Track if component is mounted on client
+    const [isMounted, setIsMounted] = useState(false);
+
+    // Ad Block Protection Hook
+    const { stats: adBlockStats } = usePlayerAdBlock({
+        enabled: true,
+        onBlock: (type, url) => {
+            console.log(`[MatchPlayer] 🛡️ Blocked ${type}:`, url);
+        },
+    });
+
     // Stream State
     const [activeStream, setActiveStream] = useState<Channel | null>(match.channels?.[0] || null);
     const [streamError, setStreamError] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [showShareOptions, setShowShareOptions] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [iframeKey, setIframeKey] = useState<string>(`iframe-${Date.now()}`);
+    const [iframeKey, setIframeKey] = useState<string>('iframe-initial');
 
     // Chat State
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [newMessage, setNewMessage] = useState('');
-    const [username, setUsername] = useState(() => generateRandomUsername());
+    const [username, setUsername] = useState('Guest');
     const [isUsernameSet, setIsUsernameSet] = useLocalStorage(`chat-username-set-${match.gameID}`, false);
     const [savedUsername, setSavedUsername] = useLocalStorage(`chat-username-${match.gameID}`, '');
     const [onlineUsers, setOnlineUsers] = useState(0);
@@ -409,7 +452,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const [connectionError, setConnectionError] = useState<string | null>(null);
 
     // Refs
-    const iframeRef = useRef<HTMLIFrameElement>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -422,12 +464,21 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
     const statusConfig = getMatchStatusConfig(match.status);
 
+    // Set mounted state on client
+    useEffect(() => {
+        setIsMounted(true);
+        // Generate random username only on client
+        setUsername(generateRandomUsername());
+        // Set iframe key with timestamp on client
+        setIframeKey(`iframe-${Date.now()}`);
+    }, []);
+
     // Load saved username
     useEffect(() => {
-        if (savedUsername) {
+        if (savedUsername && isMounted) {
             setUsername(savedUsername);
         }
-    }, [savedUsername]);
+    }, [savedUsername, isMounted]);
 
     // Add message handler
     const addMessage = useCallback((message: ChatMessage) => {
@@ -443,7 +494,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
     // WebSocket Connection
     useEffect(() => {
-        if (!isUsernameSet || !match?.gameID) return;
+        if (!isMounted || !isUsernameSet || !match?.gameID) return;
 
         let ws: WebSocket | null = null;
         let connectionAttempts = 0;
@@ -464,11 +515,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                 url.searchParams.append('matchId', match.gameID);
                 url.searchParams.append('username', username);
 
-                console.log('🔗 Connecting to WebSocket:', url.toString());
                 ws = new WebSocket(url.toString());
 
                 ws.onopen = () => {
-                    console.log('✅ WebSocket connected');
                     setIsConnected(true);
                     setConnectionError(null);
                     setReconnectAttempts(0);
@@ -486,12 +535,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         const data: WebSocketMessage = JSON.parse(event.data);
                         handleWebSocketMessage(data);
                     } catch (error) {
-                        console.error('❌ Error parsing WebSocket message:', error);
+                        console.error('Error parsing WebSocket message:', error);
                     }
                 };
 
                 ws.onclose = (event) => {
-                    console.log('🔌 WebSocket disconnected:', event.code);
                     setIsConnected(false);
                     setIsTyping(false);
 
@@ -520,7 +568,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
                 setWsConnection(ws);
             } catch (error) {
-                console.error('❌ Error creating WebSocket:', error);
                 setConnectionError('Failed to connect to chat server');
             }
         };
@@ -577,16 +624,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         color: '#F59E0B',
                         isAdmin: true,
                     });
-
-                    if (data.retryAfter && inputRef.current) {
-                        inputRef.current.disabled = true;
-                        setTimeout(() => {
-                            if (inputRef.current) {
-                                inputRef.current.disabled = false;
-                                inputRef.current.focus();
-                            }
-                        }, data.retryAfter * 1000);
-                    }
                     break;
 
                 case 'error':
@@ -617,7 +654,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                 ws.close(1000, 'Component unmounting');
             }
         };
-    }, [isUsernameSet, match.gameID, username, addMessage]);
+    }, [isMounted, isUsernameSet, match.gameID, username, addMessage]);
 
     // Auto-scroll to bottom
     useEffect(() => {
@@ -678,7 +715,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                 handleTyping(false);
             }
         } catch (error) {
-            console.error('❌ Error sending message:', error);
             addMessage({
                 id: generateMessageId(),
                 username: 'System',
@@ -716,6 +752,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         setStreamError(false);
         setIsLoading(true);
         setIframeKey(`iframe-${Date.now()}`);
+    }, []);
+
+    const handleStreamLoad = useCallback(() => {
+        setIsLoading(false);
     }, []);
 
     // Fullscreen
@@ -757,45 +797,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     }, [matchTitle, showShareOptions]);
 
     const copyToClipboard = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    
-    // Simple prompt for manual copy
-    window.prompt('Copy this match link:', window.location.href);
-    setShowShareOptions(false);
-}, []);
-
-    // Fix iframe size
-    const fixIframeSize = useCallback(() => {
-        if (!iframeRef.current || !videoContainerRef.current) return;
-
-        const container = videoContainerRef.current;
-        const iframe = iframeRef.current;
-
-        requestAnimationFrame(() => {
-            iframe.style.width = `${container.clientWidth}px`;
-            iframe.style.height = `${container.clientHeight}px`;
-        });
+        if (typeof window === 'undefined') return;
+        window.prompt('Copy this match link:', window.location.href);
+        setShowShareOptions(false);
     }, []);
-
-    // Resize observer
-    useEffect(() => {
-        if (!activeStream || streamError) return;
-
-        setTimeout(fixIframeSize, 100);
-
-        const handleResize = () => requestAnimationFrame(fixIframeSize);
-        window.addEventListener('resize', handleResize);
-
-        const observer = new ResizeObserver(handleResize);
-        if (videoContainerRef.current) {
-            observer.observe(videoContainerRef.current);
-        }
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            observer.disconnect();
-        };
-    }, [activeStream, streamError, fixIframeSize]);
 
     // Fullscreen change listener
     useEffect(() => {
@@ -829,6 +834,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </Link>
 
                         <div className="flex items-center gap-3">
+                            {/* Ad Block Stats */}
+                            <AdBlockStats stats={adBlockStats} />
+
                             <div className="relative">
                                 <button
                                     onClick={handleShare}
@@ -884,7 +892,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         {statusConfig.text}
                                     </div>
                                     <div className="text-lg font-bold text-gray-900 mb-1">VS</div>
-                                    <div className="text-sm text-gray-600">{formatDateTime(match.start)}</div>
+                                    <div className="text-sm text-gray-600">
+                                        {isMounted ? formatDateTime(match.start) : '--'}
+                                    </div>
                                     <div className="flex items-center justify-center gap-2 mt-2">
                                         {getSportIcon(match.sport)}
                                         <span className="text-xs text-gray-600">{match.sport}</span>
@@ -939,27 +949,19 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                             <div ref={videoContainerRef} className="neumorphic-video-container relative">
                                 {activeStream && !streamError ? (
                                     <div className="absolute inset-0 w-full h-full">
-                                        {isLoading && <LoadingOverlay />}
-
-                                        <iframe
-                                            ref={iframeRef}
+                                        <ProtectedPlayer
                                             key={iframeKey}
                                             src={activeStream.url}
-                                            className="absolute inset-0 w-full h-full border-0 rounded-xl"
-                                            allowFullScreen
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                            onError={handleStreamError}
-                                            onLoad={() => {
-                                                fixIframeSize();
-                                                setIsLoading(false);
-                                            }}
                                             title={`${matchTitle} - ${activeStream.channel_name}`}
-                                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                                            loading="eager"
+                                            onLoad={handleStreamLoad}
+                                            onError={handleStreamError}
+                                            isLoading={isLoading}
+                                            showLoadingOverlay={true}
+                                            className="rounded-xl"
                                         />
 
                                         {/* Bottom Controls */}
-                                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
+                                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300 z-30">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3 text-white text-sm">
                                                     <div className="flex items-center gap-2">
@@ -976,6 +978,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                             <span>{formatViewers(activeStream.viewers)}</span>
                                                         </div>
                                                     )}
+                                                    <div className="flex items-center gap-2 text-green-400">
+                                                        <FaShieldAlt className="w-4 h-4" />
+                                                        <span>Protected</span>
+                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={handleFullScreen}
@@ -1011,6 +1017,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         <span className="neumorphic-badge bg-red-100 text-red-700">
                                             {match.channels.length} SERVERS
                                         </span>
+                                        <span className="neumorphic-badge bg-green-100 text-green-700 flex items-center gap-1">
+                                            <FaShieldAlt className="w-3 h-3" />
+                                            AD-FREE
+                                        </span>
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -1018,18 +1028,16 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                             <button
                                                 key={`${channel.channel_code}-${index}`}
                                                 onClick={() => handleStreamChange(channel)}
-                                                className={`neumorphic-server-item ${
-                                                    activeStream?.channel_code === channel.channel_code
+                                                className={`neumorphic-server-item ${activeStream?.channel_code === channel.channel_code
                                                         ? 'neumorphic-server-active'
                                                         : ''
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-3 h-3 rounded-full ${
-                                                        activeStream?.channel_code === channel.channel_code
+                                                    <div className={`w-3 h-3 rounded-full ${activeStream?.channel_code === channel.channel_code
                                                             ? 'bg-green-500'
                                                             : 'bg-gray-400'
-                                                    }`}></div>
+                                                        }`}></div>
                                                     <div className="text-left flex-1">
                                                         <div className="font-medium text-gray-900">Server {index + 1}</div>
                                                         <div className="text-xs text-gray-600 truncate">{channel.channel_name}</div>
@@ -1042,11 +1050,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                             {formatViewers(channel.viewers)}
                                                         </div>
                                                     )}
-                                                    <div className={`text-xs px-2 py-1 rounded ${
-                                                        activeStream?.channel_code === channel.channel_code
+                                                    <div className={`text-xs px-2 py-1 rounded ${activeStream?.channel_code === channel.channel_code
                                                             ? 'bg-green-100 text-green-700'
                                                             : 'bg-gray-100 text-gray-700'
-                                                    }`}>
+                                                        }`}>
                                                         {index === 0 ? 'HD' : 'SD'}
                                                     </div>
                                                 </div>
@@ -1063,7 +1070,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                     <StreamInfoCard icon={<FaSignal className="w-5 h-5" />} label="Quality" value="1080p HD" iconColor="text-blue-500" />
                                     <StreamInfoCard icon={<FaWifi className="w-5 h-5" />} label="Bitrate" value="Adaptive" iconColor="text-green-500" />
                                     <StreamInfoCard icon={<FaDesktop className="w-5 h-5" />} label="Platform" value="Web" iconColor="text-purple-500" />
-                                    <StreamInfoCard icon={<FaMobileAlt className="w-5 h-5" />} label="Device" value="All Devices" iconColor="text-orange-500" />
+                                    <StreamInfoCard icon={<FaShieldAlt className="w-5 h-5" />} label="Protection" value="Active" iconColor="text-green-500" />
                                 </div>
                             </div>
                         </div>
@@ -1071,35 +1078,87 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         {/* Sidebar - Chat */}
                         <aside className="lg:col-span-1 space-y-6">
                             <div className="relative">
-                                {/* Username Setup */}
-                                {!isUsernameSet && (
-                                    <UsernameSetup
-                                        username={username}
-                                        onUsernameChange={setUsername}
-                                        onSave={saveUsername}
-                                        onRandomize={() => setUsername(generateRandomUsername())}
-                                    />
-                                )}
-
-                                {/* Chat Container */}
-                                <div className="chat-container">
-                                    {/* Chat Header */}
-                                    <div className="chat-nav-bar">
-                                        <div className="flex items-center gap-3">
-                                            <div className="relative">
-                                                <FaUsers className="text-gray-300 w-5 h-5" />
-                                                <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#343541] ${
-                                                    isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'
-                                                }`}></div>
+                                {/* Show skeleton until client-side is mounted */}
+                                {!isMounted ? (
+                                    <ChatSkeleton />
+                                ) : !isUsernameSet ? (
+                                    /* Username Setup */
+                                    <div className="relative">
+                                        <div className="chat-container opacity-50 pointer-events-none">
+                                            <div className="chat-nav-bar">
+                                                <div className="flex items-center gap-3">
+                                                    <FaUsers className="text-gray-300 w-5 h-5" />
+                                                    <span className="text-white font-semibold">Live Chat</span>
+                                                </div>
                                             </div>
-                                            <span className="text-white font-semibold">Live Chat</span>
-                                            <span className="text-sm text-gray-400">
-                                                {isConnected ? `${onlineUsers} online` : 'Connecting...'}
-                                            </span>
+                                            <div className="chat-messages-area">
+                                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                                    <FaRobot className="w-20 h-20 mb-6 opacity-40 text-gray-400" />
+                                                    <p className="text-lg text-gray-300">Join the chat!</p>
+                                                </div>
+                                            </div>
                                         </div>
-                                        {isUsernameSet && (
+
+                                        <div className="absolute inset-0 z-10 bg-[#343541]/95 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-6">
+                                            <h3 className="text-white text-lg font-semibold mb-6">Join Live Chat</h3>
+                                            <div className="w-full max-w-sm">
+                                                <div className="flex gap-3 mb-4">
+                                                    <input
+                                                        type="text"
+                                                        value={username}
+                                                        onChange={(e) => setUsername(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && username.trim().length >= 3) {
+                                                                saveUsername();
+                                                            }
+                                                        }}
+                                                        placeholder="Choose a username"
+                                                        maxLength={CHAT_CONFIG.MAX_USERNAME_LENGTH}
+                                                        className="flex-1 bg-[#40414F] text-white px-4 py-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <button
+                                                        onClick={saveUsername}
+                                                        disabled={username.trim().length < 3}
+                                                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                                                    >
+                                                        Join
+                                                    </button>
+                                                </div>
+                                                <div className="flex justify-between text-sm text-gray-400">
+                                                    <button
+                                                        onClick={() => setUsername(generateRandomUsername())}
+                                                        className="hover:text-white transition"
+                                                    >
+                                                        🎲 Randomize
+                                                    </button>
+                                                    <span>{username.length}/{CHAT_CONFIG.MAX_USERNAME_LENGTH}</span>
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-4 text-center">
+                                                    {username.trim().length < 3 ? 'Minimum 3 characters required' : 'Press Enter or click Join'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* Full Chat */
+                                    <div className="chat-container">
+                                        <div className="chat-nav-bar">
+                                            <div className="flex items-center gap-3">
+                                                <div className="relative">
+                                                    <FaUsers className="text-gray-300 w-5 h-5" />
+                                                    <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#343541] ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'
+                                                        }`}></div>
+                                                </div>
+                                                <span className="text-white font-semibold">Live Chat</span>
+                                                <span className="text-sm text-gray-400">
+                                                    {isConnected ? `${onlineUsers} online` : 'Connecting...'}
+                                                </span>
+                                            </div>
                                             <div className="flex items-center gap-3 text-sm">
-                                                <span className="font-medium truncate max-w-[100px]" style={{ color: getUserColor(username) }}>
+                                                <span
+                                                    className="font-medium truncate max-w-[100px]"
+                                                    style={{ color: getUserColor(username) }}
+                                                >
                                                     {username}
                                                 </span>
                                                 <button
@@ -1114,37 +1173,33 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                     <FaUser className="w-4 h-4" />
                                                 </button>
                                             </div>
-                                        )}
-                                    </div>
+                                        </div>
 
-                                    {/* Messages */}
-                                    <div ref={chatContainerRef} className="chat-messages-area">
-                                        {messages.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center h-full text-center">
-                                                <FaRobot className="w-20 h-20 mb-6 opacity-40 text-gray-400" />
-                                                <p className="text-lg text-gray-300">No messages yet</p>
-                                                <p className="text-sm mt-2 text-gray-400">Be the first to say something!</p>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                {messages.map((msg) => (
-                                                    <ChatMessageItem key={msg.id} message={msg} />
-                                                ))}
-                                                {isTyping && (
-                                                    <div className="chat-message">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-9 h-9 rounded-full bg-gray-700 animate-pulse"></div>
-                                                            <span className="text-sm italic text-gray-400">Someone is typing...</span>
+                                        <div ref={chatContainerRef} className="chat-messages-area">
+                                            {messages.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-full text-center">
+                                                    <FaRobot className="w-20 h-20 mb-6 opacity-40 text-gray-400" />
+                                                    <p className="text-lg text-gray-300">No messages yet</p>
+                                                    <p className="text-sm mt-2 text-gray-400">Be the first to say something!</p>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {messages.map((msg) => (
+                                                        <ChatMessageItem key={msg.id} message={msg} />
+                                                    ))}
+                                                    {isTyping && (
+                                                        <div className="chat-message">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-9 h-9 rounded-full bg-gray-700 animate-pulse"></div>
+                                                                <span className="text-sm italic text-gray-400">Someone is typing...</span>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
-                                                <div ref={messagesEndRef} />
-                                            </>
-                                        )}
-                                    </div>
+                                                    )}
+                                                    <div ref={messagesEndRef} />
+                                                </>
+                                            )}
+                                        </div>
 
-                                    {/* Input */}
-                                    {isUsernameSet && (
                                         <div className="chat-sender-area">
                                             {connectionError && (
                                                 <div className="text-xs text-yellow-400 mb-2 px-3">⚠️ {connectionError}</div>
@@ -1171,7 +1226,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                     className="chat-send-button"
                                                 >
                                                     <svg className="send-icon" viewBox="0 0 512 512">
-                                                        <path fill="#6B6C7B" d="M481.508,210.336L68.414,38.926c-17.403-7.222-37.064-4.045-51.309,8.287C2.86,59.547-3.098,78.551,1.558,96.808L38.327,241h180.026c8.284,0,15.001,6.716,15.001,15.001c0,8.284-6.716,15.001-15.001,15.001H38.327L1.558,415.193c-4.656,18.258,1.301,37.262,15.547,49.595c14.274,12.357,33.937,15.495,51.31,8.287l413.094-171.409C500.317,293.862,512,276.364,512,256.001C512,235.638,500.317,218.139,481.508,210.336z"/>
+                                                        <path fill="#6B6C7B" d="M481.508,210.336L68.414,38.926c-17.403-7.222-37.064-4.045-51.309,8.287C2.86,59.547-3.098,78.551,1.558,96.808L38.327,241h180.026c8.284,0,15.001,6.716,15.001,15.001c0,8.284-6.716,15.001-15.001,15.001H38.327L1.558,415.193c-4.656,18.258,1.301,37.262,15.547,49.595c14.274,12.357,33.937,15.495,51.31,8.287l413.094-171.409C500.317,293.862,512,276.364,512,256.001C512,235.638,500.317,218.139,481.508,210.336z" />
                                                     </svg>
                                                 </button>
                                             </div>
@@ -1187,8 +1242,8 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <span>{newMessage.length}/{CHAT_CONFIG.MAX_MESSAGE_LENGTH}</span>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Active Stream Info */}
@@ -1218,6 +1273,13 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <span className="font-semibold text-green-600">Live</span>
                                             </div>
                                         </div>
+                                        <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                                            <span className="text-sm text-green-700">Protection</span>
+                                            <div className="flex items-center gap-2">
+                                                <FaShieldAlt className="w-4 h-4 text-green-600" />
+                                                <span className="font-semibold text-green-600">Active</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -1235,6 +1297,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </div>
                         <p className="text-gray-600">© {new Date().getFullYear()} BraveStream. All rights reserved.</p>
                         <p className="text-sm text-gray-500 mt-4">Watch live sports in crystal clear HD. No blackouts, no restrictions.</p>
+                        <p className="text-xs text-green-600 mt-2 flex items-center justify-center gap-1">
+                            <FaShieldAlt className="w-3 h-3" />
+                            Protected by BraveStream Shield
+                        </p>
                     </div>
                 </footer>
             </main>
