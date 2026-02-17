@@ -8,10 +8,6 @@ import Image from 'next/image';
 // API types
 import type { Match, Channel } from '@/lib/api';
 
-// Player Protection Components
-import { ProtectedPlayer } from '@/components/player';
-import { usePlayerAdBlock } from '@/hooks/usePlayerAdBlock';
-
 // Icons
 import {
     FaExpand,
@@ -37,7 +33,6 @@ import {
     FaCopy,
     FaTwitter,
     FaWhatsapp,
-    FaShieldAlt,
 } from 'react-icons/fa';
 
 // ========== TYPES ==========
@@ -176,7 +171,7 @@ const getMatchStatusConfig = (status: string) => {
 
 // ========== SUB-COMPONENTS ==========
 
-// Chat Loading Skeleton - Prevents hydration mismatch
+// Chat Loading Skeleton
 const ChatSkeleton = () => (
     <div className="chat-container">
         <div className="chat-nav-bar">
@@ -304,31 +299,6 @@ const ShareDropdown = ({ isOpen, matchTitle, onCopy }: ShareDropdownProps) => {
     );
 };
 
-// Ad Block Stats Display
-interface AdBlockStatsProps {
-    stats: {
-        popupsBlocked: number;
-        redirectsBlocked: number;
-        overlaysRemoved: number;
-        clicksAbsorbed: number;
-    };
-}
-
-const AdBlockStats = ({ stats }: AdBlockStatsProps) => {
-    const total = stats.popupsBlocked + stats.redirectsBlocked + stats.overlaysRemoved + stats.clicksAbsorbed;
-
-    if (total === 0) return null;
-
-    return (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg border border-green-300">
-            <FaShieldAlt className="w-4 h-4 text-green-600" />
-            <span className="text-sm text-green-700 font-medium">
-                {total} ads blocked
-            </span>
-        </div>
-    );
-};
-
 // Chat Message Component
 interface ChatMessageItemProps {
     message: ChatMessage;
@@ -383,12 +353,9 @@ const StreamInfoCard = ({ icon, label, value, iconColor = 'text-gray-500' }: Str
 
 // ========== CUSTOM HOOKS ==========
 
-// Fixed useLocalStorage hook that prevents hydration mismatch
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
-    // Always initialize with initialValue to match server render
     const [storedValue, setStoredValue] = useState<T>(initialValue);
 
-    // Only read from localStorage after component mounts (client-side only)
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
@@ -419,16 +386,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => voi
 
 // ========== MAIN COMPONENT ==========
 export default function MatchPlayer({ match }: MatchPlayerProps) {
-    // Track if component is mounted on client
     const [isMounted, setIsMounted] = useState(false);
-
-    // Ad Block Protection Hook
-    const { stats: adBlockStats } = usePlayerAdBlock({
-        enabled: true,
-        onBlock: (type, url) => {
-            console.log(`[MatchPlayer] 🛡️ Blocked ${type}:`, url);
-        },
-    });
 
     // Stream State
     const [activeStream, setActiveStream] = useState<Channel | null>(match.channels?.[0] || null);
@@ -464,23 +422,18 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
     const statusConfig = getMatchStatusConfig(match.status);
 
-    // Set mounted state on client
     useEffect(() => {
         setIsMounted(true);
-        // Generate random username only on client
         setUsername(generateRandomUsername());
-        // Set iframe key with timestamp on client
         setIframeKey(`iframe-${Date.now()}`);
     }, []);
 
-    // Load saved username
     useEffect(() => {
         if (savedUsername && isMounted) {
             setUsername(savedUsername);
         }
     }, [savedUsername, isMounted]);
 
-    // Add message handler
     const addMessage = useCallback((message: ChatMessage) => {
         setMessages(prev => {
             const newMessages = [...prev, {
@@ -656,7 +609,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         };
     }, [isMounted, isUsernameSet, match.gameID, username, addMessage]);
 
-    // Auto-scroll to bottom
     useEffect(() => {
         if (messages.length === 0) return;
         const lastMessage = messages[messages.length - 1];
@@ -665,7 +617,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [messages, username]);
 
-    // Handle typing indicator
     const handleTyping = useCallback((typing: boolean) => {
         if (!wsConnection || !isConnected) return;
 
@@ -693,7 +644,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [wsConnection, isConnected, username]);
 
-    // Send message
     const sendMessage = useCallback(() => {
         if (!newMessage.trim() || !wsConnection || !isConnected) return;
 
@@ -726,7 +676,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [newMessage, wsConnection, isConnected, username, handleTyping, addMessage]);
 
-    // Save username
     const saveUsername = useCallback(() => {
         const trimmed = username.trim();
         if (trimmed.length >= 3 && trimmed.length <= CHAT_CONFIG.MAX_USERNAME_LENGTH) {
@@ -735,7 +684,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [username, setSavedUsername, setIsUsernameSet]);
 
-    // Stream handlers
     const handleStreamChange = useCallback((channel: Channel) => {
         setActiveStream(channel);
         setStreamError(false);
@@ -758,7 +706,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         setIsLoading(false);
     }, []);
 
-    // Fullscreen
     const handleFullScreen = useCallback(async () => {
         const container = videoContainerRef.current;
         if (!container) return;
@@ -777,7 +724,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         }
     }, [isFullScreen]);
 
-    // Share
     const handleShare = useCallback(async () => {
         if (typeof window === 'undefined') return;
 
@@ -802,7 +748,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         setShowShareOptions(false);
     }, []);
 
-    // Fullscreen change listener
     useEffect(() => {
         const handler = () => setIsFullScreen(!!document.fullscreenElement);
 
@@ -815,7 +760,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         };
     }, []);
 
-    // Image error handler
     const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
         const target = e.target as HTMLImageElement;
         target.src = '/team-placeholder.svg';
@@ -834,9 +778,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </Link>
 
                         <div className="flex items-center gap-3">
-                            {/* Ad Block Stats */}
-                            <AdBlockStats stats={adBlockStats} />
-
                             <div className="relative">
                                 <button
                                     onClick={handleShare}
@@ -949,15 +890,29 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                             <div ref={videoContainerRef} className="neumorphic-video-container relative">
                                 {activeStream && !streamError ? (
                                     <div className="absolute inset-0 w-full h-full">
-                                        <ProtectedPlayer
+                                        {/* Loading Overlay */}
+                                        {isLoading && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-20 rounded-xl">
+                                                <div className="text-center">
+                                                    <div className="loading-spinner h-12 w-12 mb-4 mx-auto"></div>
+                                                    <p className="text-white text-sm">Loading stream...</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Regular iframe player */}
+                                        <iframe
                                             key={iframeKey}
                                             src={activeStream.url}
                                             title={`${matchTitle} - ${activeStream.channel_name}`}
+                                            className="w-full h-full rounded-xl"
+                                            allowFullScreen
+                                            allow="autoplay; encrypted-media; picture-in-picture"
+                                            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
+                                            referrerPolicy="no-referrer"
                                             onLoad={handleStreamLoad}
                                             onError={handleStreamError}
-                                            isLoading={isLoading}
-                                            showLoadingOverlay={true}
-                                            className="rounded-xl"
+                                            style={{ border: 'none' }}
                                         />
 
                                         {/* Bottom Controls */}
@@ -978,10 +933,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                             <span>{formatViewers(activeStream.viewers)}</span>
                                                         </div>
                                                     )}
-                                                    <div className="flex items-center gap-2 text-green-400">
-                                                        <FaShieldAlt className="w-4 h-4" />
-                                                        <span>Protected</span>
-                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={handleFullScreen}
@@ -1016,10 +967,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         <h2 className="text-lg font-bold text-gray-900">Available Streams</h2>
                                         <span className="neumorphic-badge bg-red-100 text-red-700">
                                             {match.channels.length} SERVERS
-                                        </span>
-                                        <span className="neumorphic-badge bg-green-100 text-green-700 flex items-center gap-1">
-                                            <FaShieldAlt className="w-3 h-3" />
-                                            AD-FREE
                                         </span>
                                     </div>
 
@@ -1066,11 +1013,10 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                             {/* Stream Quality Info */}
                             <div className="neumorphic-card">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4">Stream Quality</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                     <StreamInfoCard icon={<FaSignal className="w-5 h-5" />} label="Quality" value="1080p HD" iconColor="text-blue-500" />
                                     <StreamInfoCard icon={<FaWifi className="w-5 h-5" />} label="Bitrate" value="Adaptive" iconColor="text-green-500" />
                                     <StreamInfoCard icon={<FaDesktop className="w-5 h-5" />} label="Platform" value="Web" iconColor="text-purple-500" />
-                                    <StreamInfoCard icon={<FaShieldAlt className="w-5 h-5" />} label="Protection" value="Active" iconColor="text-green-500" />
                                 </div>
                             </div>
                         </div>
@@ -1078,11 +1024,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         {/* Sidebar - Chat */}
                         <aside className="lg:col-span-1 space-y-6">
                             <div className="relative">
-                                {/* Show skeleton until client-side is mounted */}
                                 {!isMounted ? (
                                     <ChatSkeleton />
                                 ) : !isUsernameSet ? (
-                                    /* Username Setup */
                                     <div className="relative">
                                         <div className="chat-container opacity-50 pointer-events-none">
                                             <div className="chat-nav-bar">
@@ -1140,7 +1084,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         </div>
                                     </div>
                                 ) : (
-                                    /* Full Chat */
                                     <div className="chat-container">
                                         <div className="chat-nav-bar">
                                             <div className="flex items-center gap-3">
@@ -1273,13 +1216,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <span className="font-semibold text-green-600">Live</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-                                            <span className="text-sm text-green-700">Protection</span>
-                                            <div className="flex items-center gap-2">
-                                                <FaShieldAlt className="w-4 h-4 text-green-600" />
-                                                <span className="font-semibold text-green-600">Active</span>
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -1297,10 +1233,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                         </div>
                         <p className="text-gray-600">© {new Date().getFullYear()} BraveStream. All rights reserved.</p>
                         <p className="text-sm text-gray-500 mt-4">Watch live sports in crystal clear HD. No blackouts, no restrictions.</p>
-                        <p className="text-xs text-green-600 mt-2 flex items-center justify-center gap-1">
-                            <FaShieldAlt className="w-3 h-3" />
-                            Protected by BraveStream Shield
-                        </p>
                     </div>
                 </footer>
             </main>

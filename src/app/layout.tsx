@@ -2,10 +2,9 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AdBlockProvider } from "./providers/AdBlockProvider";
 
 // Using Inter font (better for SEO and readability than Geist)
-const inter = Inter({ 
+const inter = Inter({
     subsets: ["latin"],
     display: 'swap', // Improves performance and CLS
     variable: '--font-inter',
@@ -102,7 +101,7 @@ export const metadata: Metadata = {
     },
     category: 'sports',
     classification: 'Sports Streaming Service',
-    
+
     icons: {
         icon: [
             { url: '/favicon.ico' },
@@ -122,7 +121,7 @@ export const metadata: Metadata = {
         ],
     },
     manifest: '/site.webmanifest',
-    
+
     other: {
         'application-name': 'BraveStream',
         'apple-mobile-web-app-title': 'BraveStream',
@@ -173,7 +172,7 @@ export default function RootLayout({
                         })
                     }}
                 />
-                
+
                 {/* Additional structured data for search */}
                 <script
                     type="application/ld+json"
@@ -196,31 +195,16 @@ export default function RootLayout({
                 {/* Preconnect to critical domains for performance */}
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-                
+
                 {/* DNS Prefetch for API domains */}
                 <link rel="dns-prefetch" href="https://api.bravestream.live" />
             </head>
             <body className={`${inter.className} antialiased bg-gray-900 text-white`}>
-                {/* Ad Block Provider wraps the entire app */}
-                <AdBlockProvider enabled={true}>
-                    {/* Navigation will be added here */}
-                    <main className="min-h-screen">
-                        {children}
-                    </main>
-                    
-                    {/* Footer will be added here */}
-                </AdBlockProvider>
-                
-                {/* 
-                    NOTE: Removed Google Analytics scripts since our ad blocker 
-                    would block them anyway. If you need analytics, consider 
-                    privacy-focused alternatives like:
-                    - Plausible Analytics
-                    - Fathom Analytics  
-                    - Umami (self-hosted)
-                    
-                    Or whitelist your own analytics domain in the AdBlockProvider
-                */}
+                {/* Navigation will be added here */}
+                <main className="min-h-screen">
+                    {children}
+                </main>
+                {/* Footer will be added here */}
             </body>
         </html>
     );
