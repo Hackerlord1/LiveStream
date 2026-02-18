@@ -84,7 +84,7 @@ export default function ContactPage() {
                                     <FaEnvelope className="text-red-600 mt-1" />
                                     <div>
                                         <p className="font-medium text-gray-900">Email</p>
-                                        <p className="text-gray-700">support@BraveStream.com</p>
+                                        <p className="text-gray-700">support@bravestream.live</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
@@ -199,7 +199,7 @@ export default function ContactPage() {
                                     },
                                     {
                                         q: "How can I become a content partner?",
-                                        a: "Email partnerships@BraveStream.com with details about your content."
+                                        a: "Email partnership@bravestream.live with details about your content."
                                     },
                                     {
                                         q: "Do you offer mobile apps?",

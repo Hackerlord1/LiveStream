@@ -95,7 +95,7 @@ export default function DMCAPage() {
                                 <div className="bg-white p-4 rounded-lg border border-gray-300">
                                     <p className="font-semibold text-gray-900">DMCA Agent</p>
                                     <p className="text-gray-700">BraveStream Legal Department</p>
-                                    <p className="text-gray-700">Email: dmca@BraveStream.com</p>
+                                    <p className="text-gray-700">Email: dmca@bravestream.live</p>
                                     <p className="text-gray-700 text-sm mt-2">Response Time: 24-48 hours</p>
                                 </div>
                             </div>
