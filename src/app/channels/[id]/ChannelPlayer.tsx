@@ -535,9 +535,7 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                             className="absolute inset-0 w-full h-full border-0 rounded-xl"
                                             allowFullScreen
                                             allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                                            title={`${channel.name} - Live Stream`}
-                                            sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
-                                            loading="eager"
+                                            title={`${channel.name} - Live Stream`}                                            loading="eager"
                                             onLoad={handleIframeLoad}
                                             onError={handleIframeError}
                                         />

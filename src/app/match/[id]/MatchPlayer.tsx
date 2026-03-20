@@ -907,9 +907,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                             title={`${matchTitle} - ${activeStream.channel_name}`}
                                             className="w-full h-full rounded-xl"
                                             allowFullScreen
-                                            allow="autoplay; encrypted-media; picture-in-picture"
-                                            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
-                                            referrerPolicy="no-referrer"
+                                            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                                             onLoad={handleStreamLoad}
                                             onError={handleStreamError}
                                             style={{ border: 'none' }}
