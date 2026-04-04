@@ -111,25 +111,19 @@ const EmptyState = ({
 
 // ========== MATCH CARD COMPONENT ==========
 const MatchCard = ({ match }: { match: Match }) => {
-    // CREATE A STABLE SLUG USING TEAM NAMES AND TOURNAMENT
     const createMatchSlug = (match: Match): string => {
         try {
-            // Use the team normalization function
             const homeSlug = createTeamSlug(match.homeTeam);
             const awaySlug = createTeamSlug(match.awayTeam);
             
-            // Clean tournament name
             const cleanTournament = match.tournament
                 .toLowerCase()
-                .replace(/[^a-z0-9\s]/g, '')  // Remove special characters
-                .replace(/\s+/g, '-')         // Replace spaces with hyphens
-                .replace(/-+/g, '-')          // Remove multiple hyphens
-                .replace(/^-|-$/g, '');      // Remove leading/trailing hyphens
+                .replace(/[^a-z0-9\s]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
             
-            // Create slug
             const slug = `${homeSlug}-vs-${awaySlug}-${cleanTournament}`;
-            
-            // URL encode
             const encodedSlug = encodeURIComponent(slug);
             
             console.log('🔗 MatchCard Normalized Slug:', {
@@ -145,7 +139,6 @@ const MatchCard = ({ match }: { match: Match }) => {
             return encodedSlug;
         } catch (error) {
             console.error('Error creating match slug with normalization:', error);
-            // Fallback: use gameID + tournament
             return encodeURIComponent(`${match.gameID}-${match.tournament.toLowerCase().replace(/\s+/g, '-')}`);
         }
     };
@@ -279,7 +272,6 @@ const MatchCard = ({ match }: { match: Match }) => {
 
 // ========== MAIN COMPONENT ==========
 export default function Home() {
-    // ✅ Initialize matches as an empty array
     const [matches, setMatches] = useState<Match[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -290,12 +282,10 @@ export default function Home() {
     const [showFilters, setShowFilters] = useState(false);
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
 
-    // Load matches on mount
     useEffect(() => {
         loadMatches();
     }, []);
 
-    // ✅ Fixed loadMatches with proper array validation
     const loadMatches = async () => {
         try {
             setLoading(true);
@@ -307,7 +297,6 @@ export default function Home() {
             console.log('📦 Data type:', typeof data);
             console.log('📦 Is array:', Array.isArray(data));
             
-            // ✅ Ensure we always set an array
             if (Array.isArray(data)) {
                 console.log(`✅ Setting ${data.length} matches`);
                 setMatches(data);
@@ -319,13 +308,12 @@ export default function Home() {
         } catch (err) {
             console.error('💥 Error loading matches:', err);
             setError('Failed to load matches. Please try again.');
-            setMatches([]); // ✅ Always set empty array on error
+            setMatches([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // ✅ Get unique tournaments - with array safety check
     const tournaments = useMemo(() => {
         if (!Array.isArray(matches)) {
             console.warn('tournaments useMemo: matches is not an array');
@@ -339,7 +327,6 @@ export default function Home() {
         return Array.from(uniqueTournaments).sort();
     }, [matches]);
 
-    // ✅ Get unique dates - with array safety check
     const dates = useMemo(() => {
         if (!Array.isArray(matches)) {
             console.warn('dates useMemo: matches is not an array');
@@ -357,7 +344,6 @@ export default function Home() {
         });
     }, [matches]);
 
-    // ✅ Filter matches - with array safety check
     const filteredMatches = useMemo(() => {
         if (!Array.isArray(matches)) {
             console.warn('filteredMatches useMemo: matches is not an array');
@@ -367,7 +353,6 @@ export default function Home() {
         return matches.filter(match => {
             if (!match) return false;
             
-            // Search filter
             const searchLower = searchTerm.toLowerCase();
             const searchMatch = searchTerm === '' ||
                 match.homeTeam?.toLowerCase().includes(searchLower) ||
@@ -375,17 +360,10 @@ export default function Home() {
                 match.tournament?.toLowerCase().includes(searchLower) ||
                 match.country?.toLowerCase().includes(searchLower);
 
-            // Sport filter
             const sportMatch = selectedSport === 'all' || match.sport === selectedSport;
-
-            // Tournament filter
             const tournamentMatch = selectedTournament === 'all' || match.tournament === selectedTournament;
-
-            // Date filter
             const dateMatch = selectedDate === 'all' || 
                 (match.start && formatDateString(match.start) === selectedDate);
-
-            // Status filter
             const statusMatch = activeFilter === 'all' ||
                 (activeFilter === 'live' && match.status === 'live') ||
                 (activeFilter === 'upcoming' && match.status === 'upcoming');
@@ -394,19 +372,16 @@ export default function Home() {
         });
     }, [matches, searchTerm, selectedSport, selectedTournament, selectedDate, activeFilter]);
 
-    // ✅ Live matches count - with array safety check
     const liveMatches = useMemo(() => {
         if (!Array.isArray(matches)) return [];
         return getLiveMatches(matches);
     }, [matches]);
 
-    // ✅ Sports counts - with array safety check
     const sportsCounts = useMemo(() => {
         if (!Array.isArray(matches)) return {} as Record<SportType, number>;
         return getSportsCounts(matches);
     }, [matches]);
 
-    // Reset filters
     const resetFilters = useCallback(() => {
         setSearchTerm('');
         setSelectedSport('all');
@@ -415,7 +390,6 @@ export default function Home() {
         setActiveFilter('all');
     }, []);
 
-    // Check if any filters are active
     const hasActiveFilters = selectedSport !== 'all' || 
         selectedTournament !== 'all' || 
         selectedDate !== 'all' || 
@@ -648,6 +622,46 @@ export default function Home() {
                     ))}
                 </div>
 
+                {/* ====== FEATURED LIVE STREAM SECTION ====== */}
+                <section className="mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                        <FaPlay className="text-red-600" />
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                            Featured Stream
+                        </h2>
+                        <span className="px-2 py-1 text-xs bg-red-500/20 text-red-700 rounded-full font-bold animate-pulse">
+                            LIVE
+                        </span>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-2">
+                        <div
+                            style={{
+                                position: 'relative',
+                                paddingBottom: '56.25%',
+                                height: 0,
+                                overflow: 'hidden',
+                            }}
+                        >
+                            <iframe
+                                src="https://www.youtube.com/embed/KzW4k0T3Y1A"
+                                title="Featured Live Stream"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: '0.5rem',
+                                }}
+                                frameBorder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                            />
+                        </div>
+                    </div>
+                </section>
+                {/* ====== END FEATURED LIVE STREAM SECTION ====== */}
+
                 {/* Matches Section */}
                 <section className="mb-12">
                     <div className="flex items-center justify-between mb-4">
@@ -670,7 +684,6 @@ export default function Home() {
                         </div>
                     )}
                 </section>
-
 
                 {/* Footer */}
                 <footer className="bg-white rounded-xl border border-gray-300 mt-8 p-6">
