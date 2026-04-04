@@ -643,7 +643,7 @@ export default function Home() {
                             }}
                         >
                             <iframe
-                                src="https://www.youtube.com/embed/KzW4k0T3Y1A"
+                                src="https://www.youtube.com/embed/Axzuask0azA"
                                 title="Featured Live Stream"
                                 style={{
                                     position: 'absolute',
