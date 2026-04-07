@@ -622,45 +622,7 @@ export default function Home() {
                     ))}
                 </div>
 
-                {/* ====== FEATURED LIVE STREAM SECTION ====== */}
-                <section className="mb-8">
-                    <div className="flex items-center gap-2 mb-4">
-                        <FaPlay className="text-red-600" />
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-                            Featured Stream
-                        </h2>
-                        <span className="px-2 py-1 text-xs bg-red-500/20 text-red-700 rounded-full font-bold animate-pulse">
-                            LIVE
-                        </span>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-2">
-                        <div
-                            style={{
-                                position: 'relative',
-                                paddingBottom: '56.25%',
-                                height: 0,
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <iframe
-                                src="https://www.youtube.com/embed/RQ-rXYZnhzU"
-                                title="Featured Live Stream"
-                                style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: '100%',
-                                    borderRadius: '0.5rem',
-                                }}
-                                frameBorder="0"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowFullScreen
-                            />
-                        </div>
-                    </div>
-                </section>
-                {/* ====== END FEATURED LIVE STREAM SECTION ====== */}
+                
 
                 {/* Matches Section */}
                 <section className="mb-12">
