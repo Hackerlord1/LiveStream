@@ -1,238 +1,259 @@
 // src/app/contact/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Header from "@/components/Header";
 import {
     FaEnvelope,
     FaPhone,
-    FaMapMarkerAlt,
     FaClock,
     FaPaperPlane,
-    FaHeadset,
-    FaTwitter,
-    FaFacebook,
-    FaInstagram,
-    FaReddit
+    FaChevronDown,
+    FaChevronUp,
 } from "react-icons/fa";
+
+const FAQS = [
+    {
+        q: "How do I report a broken stream?",
+        a: "Use the 'Report Stream' button on the player page or contact support immediately.",
+    },
+    {
+        q: "Is BraveStream available in my country?",
+        a: "We're available worldwide. Some content may have regional restrictions based on broadcasting rights.",
+    },
+    {
+        q: "How can I become a content partner?",
+        a: "Email partnership@bravestream.live with details about your content.",
+    },
+    {
+        q: "Do you offer mobile apps?",
+        a: "Yes! Our platform is fully responsive and works on all devices.",
+    },
+] as const;
+
+const SUBJECTS = [
+    { value: "", label: "Select a topic" },
+    { value: "technical", label: "Technical Support" },
+    { value: "account", label: "Account Issues" },
+    { value: "streaming", label: "Streaming Problems" },
+    { value: "partnership", label: "Partnership Inquiry" },
+    { value: "feedback", label: "Feedback & Suggestions" },
+    { value: "other", label: "Other" },
+] as const;
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="border-b border-gray-200 last:border-0">
+            <button
+                onClick={() => setOpen(!open)}
+                className="w-full flex items-center justify-between py-4 text-left"
+            >
+                <span className="font-medium text-gray-900 text-sm pr-4">{q}</span>
+                {open
+                    ? <FaChevronUp className="w-3 h-3 text-gray-400 shrink-0" />
+                    : <FaChevronDown className="w-3 h-3 text-gray-400 shrink-0" />
+                }
+            </button>
+            {open && (
+                <p className="pb-4 text-gray-500 text-sm leading-relaxed">{a}</p>
+            )}
+        </div>
+    );
+}
 
 export default function ContactPage() {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
         subject: '',
-        message: ''
+        message: '',
     });
+    const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        // Handle form submission
-        console.log('Form submitted:', formData);
-        alert('Thank you for your message! We will get back to you soon.');
-        setFormData({ name: '', email: '', subject: '', message: '' });
-    };
+    // ✅ NEW (replace with this)
+const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus('sending');
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value
+    try {
+        const res = await fetch('/api/contact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
         });
+
+        if (!res.ok) throw new Error('Failed to send');
+
+        setStatus('success');
+        setFormData({ name: '', email: '', subject: '', message: '' });
+        setTimeout(() => setStatus('idle'), 5000);
+    } catch {
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 5000);
+    }
+};
+
+    const handleChange = (
+        e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    ) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
     };
+
+    const inputClass =
+        "w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 transition-colors";
 
     return (
         <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
             <Header />
 
-            <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-8">
-                {/* Hero Section */}
-                <div className="neumorphic-card mb-8 text-center">
-                    <div className="max-w-4xl mx-auto">
-                        <h1 className="text-3xl sm:text-4xl font-bold mb-4 bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                            Contact Us
-                        </h1>
-                        <p className="text-lg text-gray-700">
-                            We're here to help! Reach out to us for support, partnerships, or just to say hello.
-                        </p>
+            <main className="max-w-3xl mx-auto px-4 py-12">
+
+                {/* Hero */}
+                <section className="text-center mb-12">
+                    <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
+                        Contact Us
+                    </h1>
+                    <p className="text-gray-600 text-lg">
+                        We&apos;re here to help. Reach out anytime.
+                    </p>
+                </section>
+
+                {/* Quick Contact Info */}
+                <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/40 border border-gray-200">
+                        <FaEnvelope className="text-red-600 shrink-0" />
+                        <div>
+                            <p className="text-xs text-gray-500">Email</p>
+                            <p className="text-sm font-medium text-gray-900">support@bravestream.live</p>
+                        </div>
                     </div>
-                </div>
-
-                <div className="grid lg:grid-cols-3 gap-6 mb-8">
-                    {/* Contact Info */}
-                    <div className="lg:col-span-1 space-y-4">
-                        <div className="neumorphic-card">
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 bg-red-100 rounded-xl">
-                                    <FaHeadset className="text-red-600 text-2xl" />
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-gray-900">Support Hours</h3>
-                                    <p className="text-gray-700">24/7 Live Support</p>
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                    <FaClock className="text-gray-500" />
-                                    <span className="text-gray-700">Average Response Time: <strong>15 minutes</strong></span>
-                                </div>
-                            </div>
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/40 border border-gray-200">
+                        <FaPhone className="text-red-600 shrink-0" />
+                        <div>
+                            <p className="text-xs text-gray-500">Phone</p>
+                            <p className="text-sm font-medium text-gray-900">+254 791 220 335</p>
                         </div>
-
-                        <div className="neumorphic-card">
-                            <h3 className="text-xl font-bold mb-4 text-gray-900">Get in Touch</h3>
-                            <div className="space-y-4">
-                                <div className="flex items-start gap-3">
-                                    <FaEnvelope className="text-red-600 mt-1" />
-                                    <div>
-                                        <p className="font-medium text-gray-900">Email</p>
-                                        <p className="text-gray-700">support@bravestream.live</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <FaPhone className="text-red-600 mt-1" />
-                                    <div>
-                                        <p className="font-medium text-gray-900">Phone</p>
-                                        <p className="text-gray-700">+254 791 220 335</p>
-                                    </div>
-                                </div>
-
-                            </div>
-                        </div>
-
-
-
                     </div>
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-white/40 border border-gray-200">
+                        <FaClock className="text-red-600 shrink-0" />
+                        <div>
+                            <p className="text-xs text-gray-500">Response Time</p>
+                            <p className="text-sm font-medium text-gray-900">~15 minutes</p>
+                        </div>
+                    </div>
+                </section>
 
-                    {/* Contact Form */}
-                    <div className="lg:col-span-2">
-                        <div className="neumorphic-card">
-                            <h2 className="text-2xl font-bold mb-6 text-gray-900">Send us a Message</h2>
-                            <form onSubmit={handleSubmit} className="space-y-4">
-                                <div className="grid sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Your Name *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            name="name"
-                                            value={formData.name}
-                                            onChange={handleChange}
-                                            required
-                                            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                            placeholder="John Doe"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Email Address *
-                                        </label>
-                                        <input
-                                            type="email"
-                                            name="email"
-                                            value={formData.email}
-                                            onChange={handleChange}
-                                            required
-                                            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                            placeholder="john@example.com"
-                                        />
-                                    </div>
-                                </div>
+                {/* Contact Form */}
+                <section className="mb-12">
+                    <h2 className="text-2xl font-bold mb-6 text-gray-900">
+                        Send us a Message
+                    </h2>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Subject *
-                                    </label>
-                                    <select
-                                        name="subject"
-                                        value={formData.subject}
-                                        onChange={handleChange}
-                                        required
-                                        className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                    >
-                                        <option value="">Select a topic</option>
-                                        <option value="technical">Technical Support</option>
-                                        <option value="account">Account Issues</option>
-                                        <option value="streaming">Streaming Problems</option>
-                                        <option value="partnership">Partnership Inquiry</option>
-                                        <option value="feedback">Feedback & Suggestions</option>
-                                        <option value="other">Other</option>
-                                    </select>
-                                </div>
+                    {status === 'success' && (
+                        <div className="mb-6 p-4 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+                            Thank you! We&apos;ll get back to you soon.
+                        </div>
+                    )}
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Message *
-                                    </label>
-                                    <textarea
-                                        name="message"
-                                        value={formData.message}
-                                        onChange={handleChange}
-                                        required
-                                        rows={5}
-                                        className="w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                                        placeholder="How can we help you?"
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors duration-300 flex items-center justify-center gap-2"
-                                >
-                                    <FaPaperPlane />
-                                    Send Message
-                                </button>
-                            </form>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Name
+                                </label>
+                                <input
+                                    type="text"
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    required
+                                    className={inputClass}
+                                    placeholder="John Doe"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Email
+                                </label>
+                                <input
+                                    type="email"
+                                    name="email"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    required
+                                    className={inputClass}
+                                    placeholder="john@example.com"
+                                />
+                            </div>
                         </div>
 
-                        {/* FAQ Section */}
-                        <div className="neumorphic-card mt-6">
-                            <h3 className="text-xl font-bold mb-4 text-gray-900">Frequently Asked Questions</h3>
-                            <div className="space-y-4">
-                                {[
-                                    {
-                                        q: "How do I report a broken stream?",
-                                        a: "Use the 'Report Stream' button on the player page or contact support immediately."
-                                    },
-                                    {
-                                        q: "Is BraveStream available in my country?",
-                                        a: "We're available worldwide. Some content may have regional restrictions based on broadcasting rights."
-                                    },
-                                    {
-                                        q: "How can I become a content partner?",
-                                        a: "Email partnership@bravestream.live with details about your content."
-                                    },
-                                    {
-                                        q: "Do you offer mobile apps?",
-                                        a: "Yes! Our platform is fully responsive and works on all devices."
-                                    }
-                                ].map((faq, index) => (
-                                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                                        <h4 className="font-bold text-gray-900 mb-2">{faq.q}</h4>
-                                        <p className="text-gray-700">{faq.a}</p>
-                                    </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Subject
+                            </label>
+                            <select
+                                name="subject"
+                                value={formData.subject}
+                                onChange={handleChange}
+                                required
+                                className={inputClass}
+                            >
+                                {SUBJECTS.map((s) => (
+                                    <option key={s.value} value={s.value}>
+                                        {s.label}
+                                    </option>
                                 ))}
-                            </div>
+                            </select>
                         </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Global Styles */}
-            <style jsx global>{`
-                .neumorphic-card {
-                    background: #e0e0e0;
-                    border-radius: 20px;
-                    padding: 24px;
-                    box-shadow: 8px 8px 16px #bebebe,
-                                -8px -8px 16px #ffffff;
-                    transition: all 0.3s ease;
-                }
-                
-                .neumorphic-card:hover {
-                    box-shadow: 12px 12px 24px #bebebe,
-                                -12px -12px 24px #ffffff;
-                }
-            `}</style>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Message
+                            </label>
+                            <textarea
+                                name="message"
+                                value={formData.message}
+                                onChange={handleChange}
+                                required
+                                rows={5}
+                                className={`${inputClass} resize-none`}
+                                placeholder="How can we help you?"
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                            <FaPaperPlane className="w-3.5 h-3.5" />
+                            Send Message
+                        </button>
+                    </form>
+                </section>
+
+                {/* Divider */}
+                <hr className="border-gray-300 mb-12" />
+
+                {/* FAQ */}
+                <section className="mb-12">
+                    <h2 className="text-2xl font-bold mb-6 text-gray-900">
+                        Frequently Asked Questions
+                    </h2>
+                    <div>
+                        {FAQS.map((faq) => (
+                            <FaqItem key={faq.q} q={faq.q} a={faq.a} />
+                        ))}
+                    </div>
+                </section>
+
+                {/* Footer */}
+                <section className="text-center">
+                    <p className="text-gray-500 text-sm">
+                        &copy; {new Date().getFullYear()} BraveStream. All rights reserved.
+                    </p>
+                </section>
+            </main>
         </div>
     );
 }
