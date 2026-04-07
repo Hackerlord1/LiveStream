@@ -28,7 +28,9 @@ import {
     FaBasketballBall, 
     FaFootballBall, 
     FaHockeyPuck, 
-    FaEye 
+    FaEye,
+    FaHeart,
+    FaPaypal
 } from "react-icons/fa";
 
 import Header from "@/components/Header";
@@ -286,6 +288,9 @@ export default function Home() {
     const [selectedDate, setSelectedDate] = useState<string>('all');
     const [showFilters, setShowFilters] = useState(false);
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
+    const [showDonateBanner, setShowDonateBanner] = useState(true);
+
+    const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm0%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
 
     useEffect(() => {
         loadMatches();
@@ -407,6 +412,36 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
             <Header />
+
+            {/* ===== DONATION BANNER - Below Header ===== */}
+            {showDonateBanner && (
+                <div className="w-full bg-gradient-to-r from-[#0070ba] via-[#003087] to-[#0070ba] relative" style={{ zIndex: 50 }}>
+                    <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6">
+                        <div className="flex items-center justify-center py-3 gap-3 sm:gap-4">
+                            <FaHeart className="w-4 h-4 text-red-400 animate-pulse flex-shrink-0 hidden sm:block" />
+                            <p className="text-white text-sm sm:text-base font-medium text-center">
+                                Enjoy free streams? Help us keep going!
+                            </p>
+                            <a
+                                href={paypalDonateUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 bg-[#ffc439] hover:bg-[#f0b72d] text-[#003087] font-bold text-sm sm:text-base px-5 py-2 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 flex-shrink-0"
+                            >
+                                <FaPaypal className="w-5 h-5" />
+                                <span>Donate with PayPal</span>
+                            </a>
+                            <button
+                                onClick={() => setShowDonateBanner(false)}
+                                className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors p-1"
+                                aria-label="Close donation banner"
+                            >
+                                <FaTimes className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Main Container */}
             <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4">
