@@ -1,4 +1,6 @@
 // src/lib/api.ts - Updated with better error handling and increased timeouts
+// FIXED: Removed all hardcoded scores — scores only come from API
+
 export interface Channel {
     channel_name: string;
     channel_code: string;
@@ -110,8 +112,7 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 
         try {
             controller = new AbortController();
-            // Increase timeout significantly for channel data
-            const timeoutDuration = url.includes('/channels') ? 45000 : 30000; // 45s for channels, 30s for sports
+            const timeoutDuration = url.includes('/channels') ? 45000 : 30000;
             timeoutId = setTimeout(() => {
                 if (controller) {
                     controller.abort();
@@ -127,7 +128,7 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
                     'Accept': 'application/json',
                     'User-Agent': 'BraveStream/1.0',
                 },
-                cache: 'no-cache', // Changed from 'default' to avoid stale cache
+                cache: 'no-cache',
                 mode: 'cors',
                 credentials: 'omit',
             });
@@ -135,7 +136,7 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
             if (timeoutId) clearTimeout(timeoutId);
 
             if (!response.ok) {
-                if (response.status === 429) { // Rate limit
+                if (response.status === 429) {
                     console.warn('Rate limited, waiting before retry...');
                     await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
                     continue;
@@ -155,7 +156,6 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
         } catch (error: any) {
             if (timeoutId) clearTimeout(timeoutId);
 
-            // Handle abort errors specially
             if (isAbortError(error)) {
                 console.warn(`Attempt ${i + 1} aborted:`, error.message);
 
@@ -170,7 +170,6 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
                 }
             }
 
-            // Wait before retry with exponential backoff
             const delay = 1000 * Math.pow(2, i);
             console.log(`Waiting ${delay}ms before retry ${i + 2}...`);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -214,7 +213,6 @@ const setCachedData = (key: string, data: any): void => {
 function transformChannelData(channel: any): ApiChannel {
     const defaultImage = "https://api.cdn-live.tv/api/v1/channels/images6318/default.png";
 
-    // Ensure image URL is valid
     let imageUrl = channel.image || defaultImage;
     if (imageUrl && !imageUrl.startsWith('http')) {
         imageUrl = defaultImage;
@@ -239,7 +237,6 @@ function extractCountryFromImage(imageUrl: string): string {
             return "International";
         }
 
-        // Try to extract country from URL pattern
         const patterns = [
             /images6318\/([^\/]+)/i,
             /\/([a-z]{2}(?:-[a-z]+)?)\/[^\/]+\.(?:png|jpg|jpeg|webp|svg)/i
@@ -257,7 +254,6 @@ function extractCountryFromImage(imageUrl: string): string {
         if (countryMatch) {
             const countryCode = countryMatch.toLowerCase();
 
-            // Country code to name mapping
             const countryMap: Record<string, string> = {
                 'us': 'United States',
                 'united-states': 'United States',
@@ -297,13 +293,11 @@ function extractCountryFromImage(imageUrl: string): string {
                 return countryMap[countryCode];
             }
 
-            // Convert hyphenated to proper case
             return countryCode.split('-')
                 .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
         }
 
-        // Try to guess from common patterns
         if (imageUrl.includes('/us/')) return "United States";
         if (imageUrl.includes('/uk/')) return "United Kingdom";
         if (imageUrl.includes('/ca/')) return "Canada";
@@ -321,7 +315,6 @@ function extractCategoryFromName(name: string): string {
 
     const lowerName = name.toLowerCase();
 
-    // Sports
     const sportsKeywords = [
         'sports', 'sport', 'espn', 'bein', 'sky sports', 'fox sports',
         'nbc sports', 'cbs sports', 'acc network', 'bt sport', 'tnt sports',
@@ -331,7 +324,6 @@ function extractCategoryFromName(name: string): string {
         return "Sports";
     }
 
-    // News
     const newsKeywords = [
         'news', 'cnn', 'bbc', 'fox news', 'msnbc', 'al jazeera',
         'reuters', 'bloomberg', 'cnbc', 'sky news'
@@ -340,7 +332,6 @@ function extractCategoryFromName(name: string): string {
         return "News";
     }
 
-    // Movies
     const movieKeywords = [
         'movie', 'cinema', 'film', 'hbo', 'showtime', 'starz',
         'cinemax', 'amc', 'netflix'
@@ -349,7 +340,6 @@ function extractCategoryFromName(name: string): string {
         return "Movies";
     }
 
-    // Music
     const musicKeywords = [
         'music', 'mtv', 'vibe', 'vmusic', 'cmt', 'bet', 'vh1'
     ];
@@ -357,7 +347,6 @@ function extractCategoryFromName(name: string): string {
         return "Music";
     }
 
-    // Kids
     const kidsKeywords = [
         'kids', 'cartoon', 'disney', 'nickelodeon', 'cartoon network',
         'pbs kids', 'boomerang'
@@ -366,7 +355,6 @@ function extractCategoryFromName(name: string): string {
         return "Kids";
     }
 
-    // Documentary
     const docKeywords = [
         'documentary', 'natgeo', 'national geographic', 'discovery',
         'history', 'science', 'animal planet'
@@ -375,7 +363,6 @@ function extractCategoryFromName(name: string): string {
         return "Documentary";
     }
 
-    // Entertainment
     const entKeywords = [
         'comedy', 'reality', 'tlc', 'bravo', 'e!', 'entertainment',
         'variety', 'abc', 'cbs', 'nbc', 'fox'
@@ -388,6 +375,7 @@ function extractCategoryFromName(name: string): string {
 }
 
 // ========== MATCH DATA TRANSFORMERS ==========
+// FIXED: Only use score from API, never generate fake defaults
 function transformMatchData(match: any, sport: SportType): Match {
     return {
         gameID: match.gameID,
@@ -395,7 +383,7 @@ function transformMatchData(match: any, sport: SportType): Match {
         awayTeam: match.awayTeam || "TBD",
         homeTeamIMG: match.homeTeamIMG || "https://api.cdn-live.tv/api/v1/team/logo.png",
         awayTeamIMG: match.awayTeamIMG || "https://api.cdn-live.tv/api/v1/team/logo.png",
-        time: match.time || "00:00",
+        time: match.time || "TBD",
         tournament: match.tournament || "Unknown Tournament",
         country: match.country,
         countryIMG: match.countryIMG,
@@ -404,15 +392,13 @@ function transformMatchData(match: any, sport: SportType): Match {
         end: match.end,
         channels: match.channels || [],
         sport: sport,
-        score: match.score || (match.status === 'live' ? { home: 0, away: 0 } : undefined)
+        score: match.score || undefined
     };
 }
-
 // ========== MAIN API FUNCTIONS ==========
 export async function fetchAllMatches(): Promise<Match[]> {
     console.log('Fetching all sports from single endpoint...');
 
-    // Check cache first
     const cachedMatches = getCachedData<Match[]>('matches-cache');
     if (cachedMatches) {
         console.log('Using cached matches data');
@@ -425,17 +411,15 @@ export async function fetchAllMatches(): Promise<Match[]> {
         if (!response.ok) {
             console.error(`API responded with ${response.status}: ${response.statusText}`);
             const mockData = getMockMatches();
-            setCachedData('matches-cache', mockData); // Cache mock data as fallback
+            setCachedData('matches-cache', mockData);
             return mockData;
         }
 
         const data: ApiResponse = await response.json();
         console.log('API response received');
 
-        // Extract all matches from all sports
         const allMatches: Match[] = [];
 
-        // Process Soccer matches
         if (data["cdn-live-tv"]?.Soccer) {
             const soccerMatches = data["cdn-live-tv"].Soccer.map(match =>
                 transformMatchData(match, 'SOCCER')
@@ -444,7 +428,6 @@ export async function fetchAllMatches(): Promise<Match[]> {
             console.log(`Added ${soccerMatches.length} Soccer matches`);
         }
 
-        // Process NBA matches
         if (data["cdn-live-tv"]?.NBA) {
             const nbaMatches = data["cdn-live-tv"].NBA.map(match =>
                 transformMatchData(match, 'NBA')
@@ -453,7 +436,6 @@ export async function fetchAllMatches(): Promise<Match[]> {
             console.log(`Added ${nbaMatches.length} NBA matches`);
         }
 
-        // Process NFL matches
         if (data["cdn-live-tv"]?.NFL) {
             const nflMatches = data["cdn-live-tv"].NFL.map(match =>
                 transformMatchData(match, 'NFL')
@@ -462,7 +444,6 @@ export async function fetchAllMatches(): Promise<Match[]> {
             console.log(`Added ${nflMatches.length} NFL matches`);
         }
 
-        // Process NHL matches
         if (data["cdn-live-tv"]?.NHL) {
             const nhlMatches = data["cdn-live-tv"].NHL.map(match =>
                 transformMatchData(match, 'NHL')
@@ -473,29 +454,24 @@ export async function fetchAllMatches(): Promise<Match[]> {
 
         console.log(`Total matches fetched: ${allMatches.length}`);
 
-        // Enhanced sorting
         const sortedMatches = allMatches.sort((a, b) => {
-            // Live matches first
             if (a.status === 'live' && b.status !== 'live') return -1;
             if (b.status === 'live' && a.status !== 'live') return 1;
 
-            // Upcoming matches by start time (closest first)
             if (a.status !== 'ended' && b.status !== 'ended') {
                 return new Date(a.start).getTime() - new Date(b.start).getTime();
             }
 
-            // Ended matches last
             return a.status === 'ended' ? 1 : -1;
         });
 
-        // Cache the results
         setCachedData('matches-cache', sortedMatches);
 
         return sortedMatches;
     } catch (error) {
         console.error("Error fetching matches:", error);
         const mockData = getMockMatches();
-        setCachedData('matches-cache', mockData); // Cache mock data as fallback
+        setCachedData('matches-cache', mockData);
         return mockData;
     }
 }
@@ -503,7 +479,6 @@ export async function fetchAllMatches(): Promise<Match[]> {
 export async function fetchAllChannels(): Promise<ChannelsResponse> {
     console.log('Fetching all channels...');
 
-    // Check cache first
     const cachedChannels = getCachedData<ChannelsResponse>('channels-cache');
     if (cachedChannels) {
         console.log('Using cached channels data');
@@ -516,23 +491,20 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
         if (!response.ok) {
             console.error(`Channels API responded with ${response.status}: ${response.statusText}`);
             const mockData = getMockChannels();
-            setCachedData('channels-cache', mockData); // Cache mock data as fallback
+            setCachedData('channels-cache', mockData);
             return mockData;
         }
 
         const data: ChannelsResponse = await response.json();
         console.log('Channels API response received');
 
-        // Enhance channels with additional data
         const enhancedChannels = data.channels.map(channel => {
             const enhanced = transformChannelData(channel);
 
-            // Add extracted information with better error handling
             try {
                 enhanced.country = extractCountryFromImage(channel.image);
                 enhanced.category = extractCategoryFromName(channel.name);
 
-                // Determine language from country code or name
                 if (channel.language) {
                     enhanced.language = channel.language;
                 } else {
@@ -550,7 +522,6 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
                 }
             } catch (error) {
                 console.error('Error enhancing channel data:', channel.name, error);
-                // Set default values
                 enhanced.country = enhanced.country || "International";
                 enhanced.category = enhanced.category || "Entertainment";
                 enhanced.language = enhanced.language || "Various";
@@ -564,14 +535,12 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
             channels: enhancedChannels
         };
 
-        // Cache the results
         setCachedData('channels-cache', result);
 
         return result;
     } catch (error: any) {
         console.error("Error fetching channels:", error);
 
-        // Provide more specific error messages
         if (isAbortError(error)) {
             console.warn('Channel fetch aborted due to timeout');
         } else if (error.message.includes('timed out')) {
@@ -581,7 +550,7 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
         }
 
         const mockData = getMockChannels();
-        setCachedData('channels-cache', mockData); // Cache mock data as fallback
+        setCachedData('channels-cache', mockData);
         return mockData;
     }
 }
@@ -652,7 +621,6 @@ export function getOnlineChannels(channels: ApiChannel[]): ApiChannel[] {
     return channels.filter(channel => channel.status === 'online');
 }
 
-
 // ========== STREAMING FUNCTIONS ==========
 
 export function getEmbedUrl(channel: ApiChannel): string {
@@ -660,13 +628,9 @@ export function getEmbedUrl(channel: ApiChannel): string {
 
     console.log('Original channel URL:', url);
 
-    // Check if this is a direct player URL
     if (url.includes('/api/v1/channels/player/')) {
-        // This is already a player URL with required parameters
-        // Just add embed parameters if not present
         let embedUrl = url;
 
-        // Ensure required parameters are present
         if (!embedUrl.includes('user=')) {
             embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'user=cdnlivetv';
         }
@@ -674,7 +638,6 @@ export function getEmbedUrl(channel: ApiChannel): string {
             embedUrl += '&plan=free';
         }
 
-        // Add embed/iframe parameters
         if (!embedUrl.includes('embed=')) {
             embedUrl += '&embed=true';
         }
@@ -689,7 +652,6 @@ export function getEmbedUrl(channel: ApiChannel): string {
         return embedUrl;
     }
 
-    // For other URL formats, construct the proper player URL
     const baseUrl = 'https://cdn-live.tv/api/v1/channels/player/';
     const params = new URLSearchParams({
         name: encodeURIComponent(channel.name),
@@ -708,7 +670,6 @@ export function getEmbedUrl(channel: ApiChannel): string {
     return embedUrl;
 }
 
-// Alternative: Get direct iframe embed URL
 export function getIframeEmbedUrl(channel: ApiChannel): string {
     const baseUrl = 'https://cdn-live.tv/api/v1/channels/embed/';
     const params = new URLSearchParams({
@@ -722,42 +683,32 @@ export function getIframeEmbedUrl(channel: ApiChannel): string {
     return `${baseUrl}?${params.toString()}`;
 }
 
-// Check if URL is already properly formatted
 export function isProperlyFormatted(url: string): boolean {
     return url.includes('user=') && url.includes('plan=');
 }
 
-// Create a safe URL for iframe embedding
 export function getSafeEmbedUrl(channel: ApiChannel): string {
     const url = channel.url;
 
-    // If URL is already from cdn-live.tv and has required params, use as-is
     if (url.includes('cdn-live.tv') && isProperlyFormatted(url)) {
-        // Convert player URL to iframe-friendly URL
         let safeUrl = url;
 
-        // Add iframe-specific parameters
         const params = new URLSearchParams(safeUrl.split('?')[1] || '');
 
-        // Ensure required params
         if (!params.has('user')) params.set('user', 'cdnlivetv');
         if (!params.has('plan')) params.set('plan', 'free');
 
-        // Add embed parameters
         params.set('embed', 'true');
         params.set('autoplay', '1');
         params.set('mute', '0');
 
-        // Reconstruct URL
         const baseUrl = safeUrl.split('?')[0];
         return `${baseUrl}?${params.toString()}`;
     }
 
-    // Fallback to constructing URL
     return getEmbedUrl(channel);
 }
 
-// Test the URL before using it
 export async function testStreamUrl(url: string): Promise<boolean> {
     try {
         const controller = new AbortController();
@@ -832,6 +783,7 @@ export function getSportsConfig() {
 }
 
 // ========== MOCK DATA ==========
+// FIXED: No hardcoded scores — scores only come from API
 function getMockChannels(): ChannelsResponse {
     console.log('Using mock channels data');
 
@@ -924,6 +876,17 @@ function getMockChannels(): ChannelsResponse {
 function getMockMatches(): Match[] {
     console.log('Using mock matches data');
 
+    const now = new Date();
+    const formatDate = (date: Date): string => {
+        return date.toISOString().slice(0, 16).replace('T', ' ');
+    };
+
+    const liveMatchStart = new Date(now.getTime() - 45 * 60 * 1000);
+    const liveMatchEnd = new Date(now.getTime() + 60 * 60 * 1000);
+
+    const upcomingMatch1Start = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const upcomingMatch1End = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+
     const mockMatches: Match[] = [
         {
             gameID: '0YcqUK97',
@@ -931,13 +894,13 @@ function getMockMatches(): Match[] {
             awayTeam: 'Benin',
             homeTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
             awayTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
-            time: '16:00',
+            time: '45\'',
             tournament: 'Africa Cup of Nations',
             country: 'Africa',
             countryIMG: 'https://i.ibb.co/V0wcngL7/world-b7d16db.png',
             status: 'live',
-            start: '2026-01-05 16:00',
-            end: '2026-01-05 18:39',
+            start: formatDate(liveMatchStart),
+            end: formatDate(liveMatchEnd),
             channels: [
                 {
                     channel_name: 'beIN SPORTS',
@@ -955,13 +918,13 @@ function getMockMatches(): Match[] {
             awayTeam: 'New York Knicks',
             homeTeamIMG: 'https://api.cdn-live.tv/api/v1/team/images/3424.png',
             awayTeamIMG: 'https://api.cdn-live.tv/api/v1/team/images/3421.png',
-            time: '00:00',
+            time: 'TBD',
             tournament: 'NBA',
             country: 'United States',
             countryIMG: 'https://flagcdn.com/w40/us.png',
             status: 'upcoming',
-            start: '2026-01-06 00:00',
-            end: '2026-01-06 02:40',
+            start: formatDate(upcomingMatch1Start),
+            end: formatDate(upcomingMatch1End),
             channels: [
                 {
                     channel_name: 'SuperSport Variety 1',
@@ -979,7 +942,6 @@ function getMockMatches(): Match[] {
 }
 
 // ========== NEW FEATURES ==========
-// Get matches that are live and have the most viewers
 export function getPopularLiveMatches(matches: Match[]): Match[] {
     return matches
         .filter(match => match.status === 'live')
@@ -990,7 +952,6 @@ export function getPopularLiveMatches(matches: Match[]): Match[] {
         });
 }
 
-// Get matches starting soon (within next hour)
 export function getMatchesStartingSoon(matches: Match[]): Match[] {
     const now = new Date();
     const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
@@ -1003,7 +964,6 @@ export function getMatchesStartingSoon(matches: Match[]): Match[] {
     });
 }
 
-// Group channels by country for easier filtering
 export function groupChannelsByCountry(channels: ApiChannel[]): Record<string, ApiChannel[]> {
     const grouped: Record<string, ApiChannel[]> = {};
 
@@ -1018,7 +978,6 @@ export function groupChannelsByCountry(channels: ApiChannel[]): Record<string, A
     return grouped;
 }
 
-// Filter matches by multiple criteria
 export function filterMatches(
     matches: Match[],
     filters: {
@@ -1050,7 +1009,6 @@ export function filterMatches(
     });
 }
 
-// Clear all cache
 export function clearApiCache(): void {
     if (typeof window === 'undefined') return;
 

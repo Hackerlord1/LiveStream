@@ -1,4 +1,4 @@
-// src/app/page.tsx - Fixed with array safety checks
+// src/app/page.tsx - Fixed: removed hardcoded scores, improved score display
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -115,67 +115,55 @@ const MatchCard = ({ match }: { match: Match }) => {
         try {
             const homeSlug = createTeamSlug(match.homeTeam);
             const awaySlug = createTeamSlug(match.awayTeam);
-            
             const cleanTournament = match.tournament
                 .toLowerCase()
                 .replace(/[^a-z0-9\s]/g, '')
                 .replace(/\s+/g, '-')
                 .replace(/-+/g, '-')
                 .replace(/^-|-$/g, '');
-            
-            const slug = `${homeSlug}-vs-${awaySlug}-${cleanTournament}`;
-            const encodedSlug = encodeURIComponent(slug);
-            
-            console.log('🔗 MatchCard Normalized Slug:', {
-                originalHome: match.homeTeam,
-                originalAway: match.awayTeam,
-                normalizedHome: homeSlug,
-                normalizedAway: awaySlug,
-                originalTournament: match.tournament,
-                cleanSlug: slug,
-                encoded: encodedSlug
-            });
-            
-            return encodedSlug;
+            return encodeURIComponent(`${homeSlug}-vs-${awaySlug}-${cleanTournament}`);
         } catch (error) {
-            console.error('Error creating match slug with normalization:', error);
-            return encodeURIComponent(`${match.gameID}-${match.tournament.toLowerCase().replace(/\s+/g, '-')}`);
+            console.error('Error creating match slug:', error);
+            return encodeURIComponent(
+                `${match.gameID}-${match.tournament.toLowerCase().replace(/\s+/g, '-')}`
+            );
         }
     };
-    
+
     const matchSlug = createMatchSlug(match);
-    
+
     return (
-        <Link href={`/match/${matchSlug}`} className="block">
-            <div className="neumorphic-card group">
+        <Link href={`/match/${matchSlug}`} className="block h-full">
+            <div className="neumorphic-card group w-full overflow-hidden">
+
                 {/* Card Header */}
-                <div className="flex justify-between items-start mb-3">
-                    <div className={`px-2 py-1 rounded text-xs font-bold ${
-                        match.status === 'live' 
-                            ? 'bg-red-500/20 text-red-700' 
-                            : match.status === 'upcoming' 
-                                ? 'bg-blue-500/20 text-blue-700' 
-                                : 'bg-gray-500/20 text-gray-700'
+                <div className="flex justify-between items-center mb-2.5 flex-shrink-0 w-full">
+                    <div className={`px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide flex-shrink-0 ${
+                        match.status === 'live'
+                            ? 'bg-red-500/15 text-red-600'
+                            : match.status === 'upcoming'
+                                ? 'bg-blue-500/15 text-blue-600'
+                                : 'bg-gray-500/15 text-gray-500'
                     }`}>
-                        {match.status === 'live' ? 'LIVE' :
+                        {match.status === 'live' ? '● LIVE' :
                             match.status === 'upcoming' ? 'UPCOMING' : 'ENDED'}
                     </div>
-                    <div className="flex items-center gap-1 text-gray-600">
+                    <div className="flex items-center gap-1 text-gray-500 flex-shrink-0">
                         <FaEye className="w-3 h-3" />
-                        <span className="text-xs">{match.channels?.length || 0}</span>
+                        <span className="text-[11px]">{match.channels?.length || 0}</span>
                     </div>
                 </div>
 
                 {/* Teams Section */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center w-full mb-3 flex-shrink-0 overflow-hidden">
                     {/* Home Team */}
-                    <div className="flex flex-col items-center flex-1">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 mb-1 sm:mb-2 relative">
+                    <div className="flex flex-col items-center overflow-hidden min-w-0" style={{ width: '35%', maxWidth: '35%' }}>
+                        <div className="w-9 h-9 sm:w-11 sm:h-11 mb-1 flex-shrink-0">
                             <Image
                                 src={match.homeTeamIMG || '/team-placeholder.svg'}
                                 alt={match.homeTeam}
-                                width={48}
-                                height={48}
+                                width={44}
+                                height={44}
                                 className="object-contain w-full h-full"
                                 onError={(e) => {
                                     const target = e.target as HTMLImageElement;
@@ -183,33 +171,49 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 }}
                             />
                         </div>
-                        <span className="text-xs font-bold text-gray-900 text-center truncate w-full px-1">
+                        <span
+                        className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                wordBreak: 'break-all',
+                                hyphens: 'auto',
+                            }}
+                            title={match.homeTeam}
+                        >
                             {match.homeTeam}
                         </span>
                     </div>
 
-                    {/* Score/Time */}
-                    <div className="flex flex-col items-center mx-2">
-                        <div className="text-xs text-gray-500 mb-1">
+                    {/* Score / Time — fixed center, never shrinks */}
+                    <div className="flex flex-col items-center flex-shrink-0 px-1" style={{ width: '30%', minWidth: '55px' }}>
+                        <div className="text-[10px] text-gray-400 mb-0.5 whitespace-nowrap">
                             {formatTime(match.start)}
                         </div>
-                        {match.score ? (
-                            <div className="text-base sm:text-lg font-bold text-gray-900">
+                        {match.score && match.score.home !== undefined && match.score.away !== undefined ? (
+                            <div className="text-sm sm:text-base font-extrabold text-gray-900 whitespace-nowrap">
                                 {match.score.home} - {match.score.away}
                             </div>
+                        ) : match.status === 'live' ? (
+                            <div className="text-sm sm:text-base font-extrabold text-red-600 whitespace-nowrap animate-pulse">
+                                LIVE
+                            </div>
                         ) : (
-                            <div className="text-base sm:text-lg font-bold text-gray-900">VS</div>
+                            <div className="text-sm sm:text-base font-extrabold text-gray-400">VS</div>
                         )}
                     </div>
 
                     {/* Away Team */}
-                    <div className="flex flex-col items-center flex-1">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 mb-1 sm:mb-2 relative">
+                    <div className="flex flex-col items-center overflow-hidden min-w-0" style={{ width: '35%', maxWidth: '35%' }}>
+                        <div className="w-9 h-9 sm:w-11 sm:h-11 mb-1 flex-shrink-0">
                             <Image
                                 src={match.awayTeamIMG || '/team-placeholder.svg'}
                                 alt={match.awayTeam}
-                                width={48}
-                                height={48}
+                                width={44}
+                                height={44}
                                 className="object-contain w-full h-full"
                                 onError={(e) => {
                                     const target = e.target as HTMLImageElement;
@@ -217,53 +221,54 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 }}
                             />
                         </div>
-                        <span className="text-xs font-bold text-gray-900 text-center truncate w-full px-1">
+                        <span
+                        className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                wordBreak: 'break-all',
+                                hyphens: 'auto',
+                            }}
+                            title={match.awayTeam}
+                        >
                             {match.awayTeam}
                         </span>
                     </div>
                 </div>
 
                 {/* Tournament Info */}
-                <div className="mb-3">
-                    <div className="flex items-center justify-center gap-2">
+                <div className="mb-2.5 flex-shrink-0 w-full overflow-hidden">
+                    <div className="flex items-center justify-center gap-1.5 w-full overflow-hidden">
                         {match.countryIMG && (
-                            <div className="w-4 h-3 sm:w-5 sm:h-4 relative">
+                            <div className="w-4 h-3 relative flex-shrink-0">
                                 <Image
                                     src={match.countryIMG}
                                     alt=""
-                                    width={20}
-                                    height={16}
-                                    className="object-cover rounded w-full h-full"
+                                    width={16}
+                                    height={12}
+                                    className="object-cover rounded-sm w-full h-full"
                                 />
                             </div>
                         )}
-                        <span className="text-xs text-gray-700 truncate max-w-[120px] sm:max-w-[140px]">
+                        <span className="text-[11px] text-gray-500 truncate min-w-0">
                             {match.tournament}
                         </span>
                     </div>
                 </div>
 
-                {/* Sport and Action Section */}
-                <div className="flex items-center justify-between pt-3 border-t border-gray-300">
-                    <div className="flex items-center gap-1">
-                        {getSportIconSmall(match.sport)}
-                        <span className="text-xs text-gray-600 ml-1">{match.sport}</span>
+                {/* Bottom Bar */}
+                <div className="flex items-center justify-between pt-2.5 border-t border-gray-300/60 mt-auto flex-shrink-0 w-full overflow-hidden">
+                    <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                        <span className="flex-shrink-0">{getSportIconSmall(match.sport)}</span>
+                        <span className="text-[11px] text-gray-500 truncate">{match.sport}</span>
                     </div>
-                    <button className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-xs font-semibold text-white transition-all duration-300 shadow-sm hover:shadow-md group-hover:scale-105">
-                        <FaPlay className="inline mr-1" /> Watch
+                    <button className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-[11px] font-semibold text-white transition-all duration-200 shadow-sm flex-shrink-0 whitespace-nowrap flex items-center gap-1">
+                        <FaPlay className="w-2 h-2" />
+                        Watch
                     </button>
-                </div>
-                
-                {/* Debug info (optional - remove in production) */}
-                <div className="mt-2 pt-2 border-t border-gray-200 border-dashed">
-                    <div className="flex justify-between text-xs text-gray-500">
-                        <span title="Dynamic gameID (changes frequently)">
-                            ID: {match.gameID.substring(0, 4)}...
-                        </span>
-                        <span title="Normalized slug (handles special characters)">
-                            Slug: {matchSlug.substring(0, 20)}...
-                        </span>
-                    </div>
                 </div>
             </div>
         </Link>
@@ -622,8 +627,6 @@ export default function Home() {
                     ))}
                 </div>
 
-                
-
                 {/* Matches Section */}
                 <section className="mb-12">
                     <div className="flex items-center justify-between mb-4">
@@ -646,23 +649,6 @@ export default function Home() {
                         </div>
                     )}
                 </section>
-
-                {/* Footer */}
-                <footer className="bg-white rounded-xl border border-gray-300 mt-8 p-6">
-                    <div className="text-center">
-                        <div className="mb-4">
-                            <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                BraveStream
-                            </span>
-                        </div>
-                        <p className="text-gray-600 text-sm">
-                            © {new Date().getFullYear()} BraveStream. All rights reserved.
-                        </p>
-                        <p className="text-xs text-gray-500 mt-3">
-                            Just click &amp; play. Watch HD sports events from around the world.
-                        </p>
-                    </div>
-                </footer>
             </div>
         </div>
     );

@@ -130,6 +130,7 @@ export function getMockChannels(): ChannelsResponse {
 
 /**
  * Get mock matches data for fallback
+ * No hardcoded scores — scores should only come from API
  */
 export function getMockMatches(): Match[] {
     logger.info('Using mock matches data');
@@ -139,14 +140,13 @@ export function getMockMatches(): Match[] {
         return date.toISOString().slice(0, 16).replace('T', ' ');
     };
 
-    // Create dynamic mock data based on current time
-    const liveMatchStart = new Date(now.getTime() - 45 * 60 * 1000); // Started 45 min ago
-    const liveMatchEnd = new Date(now.getTime() + 60 * 60 * 1000); // Ends in 1 hour
+    const liveMatchStart = new Date(now.getTime() - 45 * 60 * 1000);
+    const liveMatchEnd = new Date(now.getTime() + 60 * 60 * 1000);
     
-    const upcomingMatch1Start = new Date(now.getTime() + 2 * 60 * 60 * 1000); // In 2 hours
+    const upcomingMatch1Start = new Date(now.getTime() + 2 * 60 * 60 * 1000);
     const upcomingMatch1End = new Date(now.getTime() + 4 * 60 * 60 * 1000);
     
-    const upcomingMatch2Start = new Date(now.getTime() + 5 * 60 * 60 * 1000); // In 5 hours
+    const upcomingMatch2Start = new Date(now.getTime() + 5 * 60 * 60 * 1000);
     const upcomingMatch2End = new Date(now.getTime() + 7 * 60 * 60 * 1000);
 
     const mockMatches: Match[] = [
@@ -179,8 +179,7 @@ export function getMockMatches(): Match[] {
                     viewers: 856
                 }
             ],
-            sport: 'SOCCER',
-            score: { home: 2, away: 1 }
+            sport: 'SOCCER'
         },
         {
             gameID: 'mock-nba-1',
@@ -188,7 +187,7 @@ export function getMockMatches(): Match[] {
             awayTeam: 'Golden State Warriors',
             homeTeamIMG: 'https://api.cdn-live.tv/api/v1/team/images/3424.png',
             awayTeamIMG: 'https://api.cdn-live.tv/api/v1/team/images/3421.png',
-            time: '20:00',
+            time: 'TBD',
             tournament: 'NBA',
             country: 'United States',
             countryIMG: 'https://flagcdn.com/w40/us.png',
@@ -212,7 +211,7 @@ export function getMockMatches(): Match[] {
             awayTeam: 'Barcelona',
             homeTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
             awayTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
-            time: '21:00',
+            time: 'TBD',
             tournament: 'La Liga',
             country: 'Spain',
             countryIMG: 'https://flagcdn.com/w40/es.png',
@@ -236,7 +235,7 @@ export function getMockMatches(): Match[] {
             awayTeam: 'San Francisco 49ers',
             homeTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
             awayTeamIMG: 'https://api.cdn-live.tv/api/v1/team/logo.png',
-            time: '18:30',
+            time: 'TBD',
             tournament: 'NFL',
             country: 'United States',
             countryIMG: 'https://flagcdn.com/w40/us.png',

@@ -23,7 +23,6 @@ import type {
  * Transform raw channel data to ApiChannel
  */
 export function transformChannelData(channel: RawChannel): ApiChannel {
-    // Validate and fix image URL
     let imageUrl = channel.image || DEFAULTS.IMAGES.CHANNEL;
     if (imageUrl && !imageUrl.startsWith('http')) {
         imageUrl = DEFAULTS.IMAGES.CHANNEL;
@@ -75,7 +74,6 @@ export function extractCountryFromImage(imageUrl: string): string {
     }
 
     try {
-        // Try to extract country from URL patterns
         const patterns = [
             /images6318\/([^/]+)/i,
             /\/([a-z]{2}(?:-[a-z]+)?)\/[^/]+\.(?:png|jpg|jpeg|webp|svg)/i,
@@ -86,12 +84,10 @@ export function extractCountryFromImage(imageUrl: string): string {
             if (match?.[1]) {
                 const countryCode = match[1].toLowerCase();
                 
-                // Check mapping
                 if (COUNTRY_CODE_MAP[countryCode]) {
                     return COUNTRY_CODE_MAP[countryCode];
                 }
 
-                // Convert hyphenated to proper case (e.g., "south-africa" -> "South Africa")
                 return countryCode
                     .split('-')
                     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -99,7 +95,6 @@ export function extractCountryFromImage(imageUrl: string): string {
             }
         }
 
-        // Try common path patterns
         const pathPatterns: [string, string][] = [
             ['/us/', 'United States'],
             ['/uk/', 'United Kingdom'],
@@ -139,6 +134,7 @@ export function extractCategoryFromName(name: string): string {
 
 /**
  * Transform raw match data to Match type
+ * Only use score if API actually provides it — never fake defaults
  */
 export function transformMatchData(match: RawMatch, sport: SportType): Match {
     const status = parseMatchStatus(match.status);
@@ -158,7 +154,7 @@ export function transformMatchData(match: RawMatch, sport: SportType): Match {
         end: match.end,
         channels: match.channels || [],
         sport,
-        score: match.score || (status === 'live' ? { home: 0, away: 0 } : undefined),
+        score: match.score || undefined,
     };
 }
 
@@ -178,16 +174,13 @@ function parseMatchStatus(status?: string): MatchStatus {
  */
 export function sortMatchesByRelevance(matches: Match[]): Match[] {
     return [...matches].sort((a, b) => {
-        // Live matches first
         if (a.status === 'live' && b.status !== 'live') return -1;
         if (b.status === 'live' && a.status !== 'live') return 1;
 
-        // Upcoming matches by start time (closest first)
         if (a.status !== 'ended' && b.status !== 'ended') {
             return new Date(a.start).getTime() - new Date(b.start).getTime();
         }
 
-        // Ended matches last
         return a.status === 'ended' ? 1 : -1;
     });
 }
