@@ -109,6 +109,31 @@ const LoadingSpinner = () => (
     </div>
 );
 
+// ========== NO DATA / SERVICE UNAVAILABLE STATE ==========
+const NoChannelsDataState = ({ onRetry }: { onRetry: () => void }) => (
+    <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+        <div className="w-20 h-20 mx-auto mb-6 bg-yellow-50 rounded-full flex items-center justify-center">
+            <span className="text-4xl">🛠️</span>
+        </div>
+        <h3 className="text-2xl font-bold mb-3 text-gray-900">
+            We&apos;re Working on the Channels
+        </h3>
+        <p className="text-gray-600 max-w-lg mx-auto mb-2 text-base">
+            Our team is currently updating the channel list. Live TV channels will appear here shortly.
+        </p>
+        <p className="text-gray-400 max-w-md mx-auto mb-8 text-sm">
+            This usually takes just a few minutes. Thanks for your patience!
+        </p>
+        <button
+            onClick={onRetry}
+            className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-xl text-white font-medium transition-colors shadow-md flex items-center gap-2 mx-auto"
+        >
+            <FaTv className="w-4 h-4" />
+            Try Again
+        </button>
+    </div>
+);
+
 // ========== EMPTY STATE COMPONENT ==========
 interface EmptyStateProps {
     sortBy: SortOption;
@@ -179,12 +204,12 @@ interface ChannelCardProps {
     onWatch: (channel: ApiChannel) => void;
 }
 
-const ChannelCard = ({ 
-    channel, 
-    featured = false, 
-    isFavorite, 
+const ChannelCard = ({
+    channel,
+    featured = false,
+    isFavorite,
     onToggleFavorite,
-    onWatch 
+    onWatch
 }: ChannelCardProps) => (
     <Link
         href={`/channels/${encodeURIComponent(getChannelKey(channel))}`}
@@ -358,11 +383,10 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
         </div>
     </div>
 );
-
 // ========== MAIN COMPONENT ==========
 export default function ChannelsPage() {
     const router = useRouter();
-    
+
     // State
     const [channels, setChannels] = useState<ApiChannel[]>([]);
     const [loading, setLoading] = useState(true);
@@ -402,7 +426,7 @@ export default function ChannelsPage() {
 
     const loadUserData = () => {
         if (typeof window === 'undefined') return;
-        
+
         try {
             const savedFavorites = localStorage.getItem(STORAGE_KEYS.FAVORITES);
             if (savedFavorites) {
@@ -503,7 +527,7 @@ export default function ChannelsPage() {
     // Handle watch channel
     const handleWatchChannel = useCallback((channel: ApiChannel) => {
         const channelKey = getChannelKey(channel);
-        
+
         // Update recently viewed
         const updatedRecent = [
             channelKey,
@@ -511,7 +535,7 @@ export default function ChannelsPage() {
         ].slice(0, MAX_RECENT_CHANNELS);
 
         setRecentlyViewed(updatedRecent);
-        
+
         if (typeof window !== 'undefined') {
             localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updatedRecent));
         }
@@ -530,7 +554,7 @@ export default function ChannelsPage() {
             : [...favoriteChannels, channelKey];
 
         setFavoriteChannels(newFavorites);
-        
+
         if (typeof window !== 'undefined') {
             localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(newFavorites));
         }
@@ -542,12 +566,12 @@ export default function ChannelsPage() {
     }, [favoriteChannels]);
 
     // Check if any filters are active
-    const hasActiveFilters = selectedCategory !== 'all' || 
-        selectedCountry !== 'all' || 
-        selectedLanguage !== 'all' || 
+    const hasActiveFilters = selectedCategory !== 'all' ||
+        selectedCountry !== 'all' ||
+        selectedLanguage !== 'all' ||
         searchTerm !== '' ||
-        sortBy === 'favorites' || 
-        sortBy === 'recent' || 
+        sortBy === 'favorites' ||
+        sortBy === 'recent' ||
         sortBy === 'trending';
 
     // Get section title
@@ -569,12 +593,12 @@ export default function ChannelsPage() {
 
             <main className="relative z-10">
                 <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4">
-                    
+
                     {/* Error Message */}
                     {error && (
                         <div className="mb-6 p-4 bg-red-100 border border-red-300 rounded-xl text-red-700">
                             <p>{error}</p>
-                            <button 
+                            <button
                                 onClick={loadChannels}
                                 className="mt-2 text-sm underline hover:no-underline"
                             >
@@ -583,360 +607,347 @@ export default function ChannelsPage() {
                         </div>
                     )}
 
-                    {/* Search and Filter Section */}
-                    <div className="sticky top-16 z-30 bg-[#e8e8e8] py-4 mb-6">
-                        <div className="flex flex-col md:flex-row gap-4">
-                            {/* Search Bar */}
-                            <div className="w-full md:w-auto md:flex-1">
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        placeholder="Search channels by name, category, or country..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full px-4 py-3 bg-white rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm text-sm"
-                                    />
-                                    <FaSearch className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                    {isSearching && (
-                                        <div className="absolute right-10 top-1/2 transform -translate-y-1/2">
-                                            <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-red-600"></div>
+                    {/* NO DATA STATE — shown when channels array is empty and no error */}
+                    {channels.length === 0 && !error ? (
+                        <NoChannelsDataState onRetry={loadChannels} />
+                    ) : channels.length > 0 && (
+                        <>
+                            {/* Search and Filter Section */}
+                            <div className="sticky top-16 z-30 bg-[#e8e8e8] py-4 mb-6">
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    {/* Search Bar */}
+                                    <div className="w-full md:w-auto md:flex-1">
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                placeholder="Search channels by name, category, or country..."
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full px-4 py-3 bg-white rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm text-sm"
+                                            />
+                                            <FaSearch className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                            {isSearching && (
+                                                <div className="absolute right-10 top-1/2 transform -translate-y-1/2">
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-red-600"></div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* View Toggle */}
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setViewMode('grid')}
-                                    className={`px-3 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'grid' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
-                                    }`}
-                                >
-                                    Grid
-                                </button>
-                                <button
-                                    onClick={() => setViewMode('list')}
-                                    className={`px-3 py-2 rounded-lg transition-colors ${
-                                        viewMode === 'list' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
-                                    }`}
-                                >
-                                    List
-                                </button>
-                            </div>
-
-                            {/* Sort and Filter */}
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <select
-                                        value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value as SortOption)}
-                                        className="px-4 py-3 bg-white rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm appearance-none pr-10 text-sm"
-                                    >
-                                        <option value="viewers">Most Viewed</option>
-                                        <option value="trending">Trending Now</option>
-                                        <option value="recent">Recently Viewed</option>
-                                        <option value="favorites">Favorites</option>
-                                        <option value="name">Name A-Z</option>
-                                        <option value="country">By Country</option>
-                                    </select>
-                                    <FaChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                </div>
-
-                                <button
-                                    onClick={() => setShowFilters(!showFilters)}
-                                    className="flex items-center gap-2 px-4 py-3 bg-white hover:bg-gray-100 rounded-xl transition-colors text-gray-700 border border-gray-300 shadow-sm text-sm"
-                                >
-                                    <FaFilter className="w-4 h-4" />
-                                    {showFilters ? 'Hide Filters' : 'Filters'}
-                                    <FaChevronDown className={`w-3 h-3 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Advanced Filters */}
-                        {showFilters && (
-                            <div className="mt-4 bg-white rounded-xl p-4 shadow-sm border border-gray-300">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            <FaTv className="inline mr-2" />
-                                            Category
-                                        </label>
-                                        <select
-                                            value={selectedCategory}
-                                            onChange={(e) => setSelectedCategory(e.target.value)}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                        >
-                                            <option value="all">All Categories</option>
-                                            {categories.map((category) => (
-                                                <option key={category} value={category}>
-                                                    {CATEGORY_ICONS[category] || '📺'} {category}
-                                                </option>
-                                            ))}
-                                        </select>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            <FaGlobe className="inline mr-2" />
-                                            Country
-                                        </label>
-                                        <select
-                                            value={selectedCountry}
-                                            onChange={(e) => setSelectedCountry(e.target.value)}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                    {/* View Toggle */}
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setViewMode('grid')}
+                                            className={`px-3 py-2 rounded-lg transition-colors ${
+                                                viewMode === 'grid' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
+                                            }`}
                                         >
-                                            <option value="all">All Countries</option>
-                                            {countries.map((country) => (
-                                                <option key={country} value={country}>{country}</option>
-                                            ))}
-                                        </select>
+                                            Grid
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('list')}
+                                            className={`px-3 py-2 rounded-lg transition-colors ${
+                                                viewMode === 'list' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
+                                            }`}
+                                        >
+                                            List
+                                        </button>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            <FaLanguage className="inline mr-2" />
-                                            Language
-                                        </label>
-                                        <select
-                                            value={selectedLanguage}
-                                            onChange={(e) => setSelectedLanguage(e.target.value)}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                        >
-                                            <option value="all">All Languages</option>
-                                            {languages.map((language) => (
-                                                <option key={language} value={language}>{language}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                    {/* Sort and Filter */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative">
+                                            <select
+                                                value={sortBy}
+                                                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                                                className="px-4 py-3 bg-white rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm appearance-none pr-10 text-sm"
+                                            >
+                                                <option value="viewers">Most Viewed</option>
+                                                <option value="trending">Trending Now</option>
+                                                <option value="recent">Recently Viewed</option>
+                                                <option value="favorites">Favorites</option>
+                                                <option value="name">Name A-Z</option>
+                                                <option value="country">By Country</option>
+                                            </select>
+                                            <FaChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        </div>
 
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            <FaSignal className="inline mr-2" />
-                                            Status
-                                        </label>
-                                        <select
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                        <button
+                                            onClick={() => setShowFilters(!showFilters)}
+                                            className="flex items-center gap-2 px-4 py-3 bg-white hover:bg-gray-100 rounded-xl transition-colors text-gray-700 border border-gray-300 shadow-sm text-sm"
                                         >
-                                            <option value="all">All Status</option>
-                                            <option value="online">Online Only</option>
-                                            <option value="offline">Offline</option>
-                                        </select>
+                                            <FaFilter className="w-4 h-4" />
+                                            {showFilters ? 'Hide Filters' : 'Filters'}
+                                            <FaChevronDown className={`w-3 h-3 transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div className="flex justify-between items-center">
+                                {/* Advanced Filters */}
+                                {showFilters && (
+                                    <div className="mt-4 bg-white rounded-xl p-4 shadow-sm border border-gray-300">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    <FaTv className="inline mr-2" />
+                                                    Category
+                                                </label>
+                                                <select
+                                                    value={selectedCategory}
+                                                    onChange={(e) => setSelectedCategory(e.target.value)}
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                >
+                                                    <option value="all">All Categories</option>
+                                                    {categories.map((category) => (
+                                                        <option key={category} value={category}>
+                                                            {CATEGORY_ICONS[category] || '📺'} {category}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    <FaGlobe className="inline mr-2" />
+                                                    Country
+                                                </label>
+                                                <select
+                                                    value={selectedCountry}
+                                                    onChange={(e) => setSelectedCountry(e.target.value)}
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                >
+                                                    <option value="all">All Countries</option>
+                                                    {countries.map((country) => (
+                                                        <option key={country} value={country}>{country}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    <FaLanguage className="inline mr-2" />
+                                                    Language
+                                                </label>
+                                                <select
+                                                    value={selectedLanguage}
+                                                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                >
+                                                    <option value="all">All Languages</option>
+                                                    {languages.map((language) => (
+                                                        <option key={language} value={language}>{language}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    <FaSignal className="inline mr-2" />
+                                                    Status
+                                                </label>
+                                                <select
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                >
+                                                    <option value="all">All Status</option>
+                                                    <option value="online">Online Only</option>
+                                                    <option value="offline">Offline</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-between items-center">
+                                            <button
+                                                onClick={resetFilters}
+                                                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+                                            >
+                                                <FaTimes className="w-4 h-4" />
+                                                Clear All Filters
+                                            </button>
+                                            <div className="text-sm text-gray-600">
+                                                Showing {filteredChannels.length} of {channels.length} channels
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Active Filters Display */}
+                            {hasActiveFilters && (
+                                <div className="mb-6">
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        <span className="text-sm font-medium text-gray-700">Active filters:</span>
+
+                                        {selectedCategory !== 'all' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaTv className="w-3 h-3 text-gray-500" />
+                                                {selectedCategory}
+                                                <button onClick={() => setSelectedCategory('all')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {selectedCountry !== 'all' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaGlobe className="w-3 h-3 text-gray-500" />
+                                                {selectedCountry}
+                                                <button onClick={() => setSelectedCountry('all')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {selectedLanguage !== 'all' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaLanguage className="w-3 h-3 text-gray-500" />
+                                                {selectedLanguage}
+                                                <button onClick={() => setSelectedLanguage('all')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {searchTerm && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaSearch className="w-3 h-3 text-gray-500" />
+                                                &quot;{searchTerm}&quot;
+                                                <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {sortBy === 'favorites' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaHeart className="w-3 h-3 text-red-500" />
+                                                Favorites
+                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {sortBy === 'recent' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaHistory className="w-3 h-3 text-blue-500" />
+                                                Recently Viewed
+                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+
+                                        {sortBy === 'trending' && (
+                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                                <FaFire className="w-3 h-3 text-orange-500" />
+                                                Trending Now
+                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
+                                                    <FaTimes className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Quick Category Navigation */}
+                            <div className="mb-8">
+                                <h2 className="text-xl font-bold text-gray-900 mb-4">Browse by Category</h2>
+                                <div className="flex flex-wrap gap-3">
+                                    {Object.entries(CATEGORY_ICONS).map(([category, icon]) => (
+                                        <button
+                                            key={category}
+                                            onClick={() => setSelectedCategory(category)}
+                                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                selectedCategory === category
+                                                    ? 'bg-red-600 text-white'
+                                                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {icon} {category}
+                                        </button>
+                                    ))}
                                     <button
-                                        onClick={resetFilters}
-                                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+                                        onClick={() => setSortBy('trending')}
+                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                                            sortBy === 'trending' ? 'bg-orange-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
                                     >
-                                        <FaTimes className="w-4 h-4" />
-                                        Clear All Filters
+                                        <FaFire className="w-4 h-4" />
+                                        Trending
                                     </button>
-                                    <div className="text-sm text-gray-600">
-                                        Showing {filteredChannels.length} of {channels.length} channels
-                                    </div>
+                                    <button
+                                        onClick={() => setSortBy('recent')}
+                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                                            sortBy === 'recent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        <FaHistory className="w-4 h-4" />
+                                        Recent
+                                    </button>
+                                    <button
+                                        onClick={() => setSortBy('favorites')}
+                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                                            sortBy === 'favorites' ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        <FaHeart className="w-4 h-4" />
+                                        Favorites
+                                    </button>
                                 </div>
                             </div>
-                        )}
-                    </div>
 
-                    {/* Active Filters Display */}
-                    {hasActiveFilters && (
-                        <div className="mb-6">
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                <span className="text-sm font-medium text-gray-700">Active filters:</span>
-                                
-                                {selectedCategory !== 'all' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaTv className="w-3 h-3 text-gray-500" />
-                                        {selectedCategory}
-                                        <button onClick={() => setSelectedCategory('all')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
+                            {/* Channels Section */}
+                            <section className="mb-12">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-2xl font-bold text-gray-900">
+                                        {getSectionTitle()}
+                                        <span className="text-lg font-normal text-gray-600 ml-3">
+                                            ({filteredChannels.length} channels)
+                                        </span>
+                                    </h2>
+                                </div>
+
+                                {filteredChannels.length === 0 ? (
+                                    <EmptyState
+                                        sortBy={sortBy}
+                                        searchTerm={searchTerm}
+                                        onReset={resetFilters}
+                                        onBrowseAll={() => router.push('/channels')}
+                                    />
+                                ) : viewMode === 'grid' ? (
+                                    <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                                        {filteredChannels.map((channel) => (
+                                            <ChannelCard
+                                                key={getChannelKey(channel)}
+                                                channel={channel}
+                                                featured={sortBy === 'trending'}
+                                                isFavorite={isFavorite(channel)}
+                                                onToggleFavorite={toggleFavorite}
+                                                onWatch={handleWatchChannel}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {filteredChannels.map((channel) => (
+                                            <ChannelRow
+                                                key={getChannelKey(channel)}
+                                                channel={channel}
+                                                isFavorite={isFavorite(channel)}
+                                                onToggleFavorite={toggleFavorite}
+                                                onWatch={handleWatchChannel}
+                                            />
+                                        ))}
+                                    </div>
                                 )}
-                                
-                                {selectedCountry !== 'all' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaGlobe className="w-3 h-3 text-gray-500" />
-                                        {selectedCountry}
-                                        <button onClick={() => setSelectedCountry('all')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                                
-                                {selectedLanguage !== 'all' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaLanguage className="w-3 h-3 text-gray-500" />
-                                        {selectedLanguage}
-                                        <button onClick={() => setSelectedLanguage('all')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                                
-                                {searchTerm && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaSearch className="w-3 h-3 text-gray-500" />
-                                        &quot;{searchTerm}&quot;
-                                        <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                                
-                                {sortBy === 'favorites' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaHeart className="w-3 h-3 text-red-500" />
-                                        Favorites
-                                        <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                                
-                                {sortBy === 'recent' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaHistory className="w-3 h-3 text-blue-500" />
-                                        Recently Viewed
-                                        <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                                
-                                {sortBy === 'trending' && (
-                                    <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                        <FaFire className="w-3 h-3 text-orange-500" />
-                                        Trending Now
-                                        <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                            <FaTimes className="w-3 h-3" />
-                                        </button>
-                                    </span>
-                                )}
-                            </div>
-                        </div>
+                            </section>
+                        </>
                     )}
-
-                    {/* Quick Category Navigation */}
-                    <div className="mb-8">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">Browse by Category</h2>
-                        <div className="flex flex-wrap gap-3">
-                            {Object.entries(CATEGORY_ICONS).map(([category, icon]) => (
-                                <button
-                                    key={category}
-                                    onClick={() => setSelectedCategory(category)}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                        selectedCategory === category 
-                                            ? 'bg-red-600 text-white' 
-                                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    {icon} {category}
-                                </button>
-                            ))}
-                            <button
-                                onClick={() => setSortBy('trending')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                    sortBy === 'trending' ? 'bg-orange-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                }`}
-                            >
-                                <FaFire className="w-4 h-4" />
-                                Trending
-                            </button>
-                            <button
-                                onClick={() => setSortBy('recent')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                    sortBy === 'recent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                }`}
-                            >
-                                <FaHistory className="w-4 h-4" />
-                                Recent
-                            </button>
-                            <button
-                                onClick={() => setSortBy('favorites')}
-                                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                    sortBy === 'favorites' ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                }`}
-                            >
-                                <FaHeart className="w-4 h-4" />
-                                Favorites
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Channels Section */}
-                    <section className="mb-12">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-bold text-gray-900">
-                                {getSectionTitle()}
-                                <span className="text-lg font-normal text-gray-600 ml-3">
-                                    ({filteredChannels.length} channels)
-                                </span>
-                            </h2>
-                        </div>
-
-                        {filteredChannels.length === 0 ? (
-                            <EmptyState 
-                                sortBy={sortBy}
-                                searchTerm={searchTerm}
-                                onReset={resetFilters}
-                                onBrowseAll={() => router.push('/channels')}
-                            />
-                        ) : viewMode === 'grid' ? (
-                            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                                {filteredChannels.map((channel) => (
-                                    <ChannelCard
-                                        key={getChannelKey(channel)}
-                                        channel={channel}
-                                        featured={sortBy === 'trending'}
-                                        isFavorite={isFavorite(channel)}
-                                        onToggleFavorite={toggleFavorite}
-                                        onWatch={handleWatchChannel}
-                                    />
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {filteredChannels.map((channel) => (
-                                    <ChannelRow
-                                        key={getChannelKey(channel)}
-                                        channel={channel}
-                                        isFavorite={isFavorite(channel)}
-                                        onToggleFavorite={toggleFavorite}
-                                        onWatch={handleWatchChannel}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </section>
                 </div>
             </main>
 
-            {/* Footer */}
-            <footer className="bg-white border-t border-gray-300 mt-12 py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="text-center">
-                        <div className="mb-6">
-                            <span className="text-3xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                                BraveStream Channels
-                            </span>
-                        </div>
-                        <p className="text-gray-600 mb-4">
-                            Watch {channels.length} live TV channels from around the world
-                        </p>
-                        <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-500">
-                            <span>⚡ Instant Streaming</span>
-                            <span>🌍 {countries.length} Countries</span>
-                            <span>📺 {categories.length} Categories</span>
-                            <span>🎯 HD Quality</span>
-                        </div>
-                    </div>
-                </div>
-            </footer>
+            
 
             {/* Global Styles */}
             <style jsx global>{`

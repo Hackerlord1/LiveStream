@@ -131,18 +131,8 @@ function extractAllMatches(data: ApiResponse): Match[] {
 }
 
 function useFallbackMatches(): Match[] {
-    try {
-        const mockData = getMockMatches();
-        if (Array.isArray(mockData)) {
-            logger.info(`Using fallback mock data (${mockData.length} matches)`);
-            apiCache.set(CACHE_CONFIG.KEYS.MATCHES, mockData);
-            return mockData;
-        }
-    } catch (error) {
-        logger.error('Error getting mock matches:', error);
-    }
-    logger.warn('Returning empty matches array');
-    return []; // Always return an array
+    logger.warn('API unavailable — returning empty matches');
+    return [];
 }
 
 // ========== FILTER FUNCTIONS ==========

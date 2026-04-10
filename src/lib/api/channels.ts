@@ -74,9 +74,11 @@ function handleChannelsError(error: unknown): void {
 }
 
 function useFallbackChannels(): ChannelsResponse {
-    const mockData = getMockChannels();
-    apiCache.set(CACHE_CONFIG.KEYS.CHANNELS, mockData);
-    return mockData;
+    logger.warn('API unavailable — returning empty channels');
+    return {
+        total_channels: 0,
+        channels: []
+    };
 }
 
 // ========== FILTER FUNCTIONS ==========

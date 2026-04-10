@@ -7,27 +7,27 @@ import Image from "next/image";
 import { createTeamSlug } from '@/lib/api/team-normalization';
 
 // Import from the new modular API structure
-import { 
-    fetchAllMatches, 
-    getSportsCounts, 
-    getLiveMatches 
+import {
+    fetchAllMatches,
+    getSportsCounts,
+    getLiveMatches
 } from "@/lib/api";
 import type { Match, SportType } from "@/lib/api";
 
-import { 
-    FaFire, 
-    FaClock, 
-    FaTv, 
-    FaPlay, 
-    FaFilter, 
-    FaSearch, 
-    FaTimes, 
-    FaChevronDown, 
-    FaCalendarDay, 
-    FaFutbol, 
-    FaBasketballBall, 
-    FaFootballBall, 
-    FaHockeyPuck, 
+import {
+    FaFire,
+    FaClock,
+    FaTv,
+    FaPlay,
+    FaFilter,
+    FaSearch,
+    FaTimes,
+    FaChevronDown,
+    FaCalendarDay,
+    FaFutbol,
+    FaBasketballBall,
+    FaFootballBall,
+    FaHockeyPuck,
     FaEye,
     FaHeart,
     FaPaypal
@@ -84,12 +84,46 @@ const LoadingSpinner = () => (
     </div>
 );
 
-// ========== EMPTY STATE COMPONENT ==========
-const EmptyState = ({ 
-    searchTerm, 
-    onReset 
-}: { 
-    searchTerm: string; 
+// ========== NO DATA / SERVICE UNAVAILABLE STATE ==========
+const NoDataState = ({ onRetry }: { onRetry: () => void }) => (
+    <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+        <div className="w-20 h-20 mx-auto mb-6 bg-yellow-50 rounded-full flex items-center justify-center">
+            <span className="text-4xl">🛠️</span>
+        </div>
+        <h3 className="text-2xl font-bold mb-3 text-gray-900">
+            We&apos;re Working on the Games
+        </h3>
+        <p className="text-gray-600 max-w-lg mx-auto mb-2 text-base">
+            Our team is currently updating the match schedule. Live games and upcoming fixtures will appear here shortly.
+        </p>
+        <p className="text-gray-400 max-w-md mx-auto mb-8 text-sm">
+            This usually takes just a few minutes. Thanks for your patience!
+        </p>
+        <div className="flex flex-wrap justify-center gap-4">
+            <button
+                onClick={onRetry}
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-xl text-white font-medium transition-colors shadow-md flex items-center gap-2"
+            >
+                <FaFire className="w-4 h-4" />
+                Try Again
+            </button>
+            <Link
+                href="/channels"
+                className="px-6 py-3 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl text-gray-700 font-medium transition-colors flex items-center gap-2"
+            >
+                <FaTv className="w-4 h-4" />
+                Browse Channels
+            </Link>
+        </div>
+    </div>
+);
+
+// ========== EMPTY STATE COMPONENT (for filter results) ==========
+const EmptyState = ({
+    searchTerm,
+    onReset
+}: {
+    searchTerm: string;
     onReset: () => void;
 }) => (
     <div className="text-center py-12 bg-white rounded-xl border border-gray-300 shadow-sm">
@@ -98,8 +132,8 @@ const EmptyState = ({
         </div>
         <h3 className="text-xl font-semibold mb-2 text-gray-900">No Matches Found</h3>
         <p className="text-gray-600 max-w-md mx-auto mb-6 text-sm">
-            {searchTerm 
-                ? `No matches found for "${searchTerm}"` 
+            {searchTerm
+                ? `No matches found for "${searchTerm}"`
                 : 'No matches match your current filters'}
         </p>
         <button
@@ -174,7 +208,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                             />
                         </div>
                         <span
-                        className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
                             style={{
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
@@ -190,7 +224,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                         </span>
                     </div>
 
-                    {/* Score / Time — fixed center, never shrinks */}
+                    {/* Score / Time */}
                     <div className="flex flex-col items-center flex-shrink-0 px-1" style={{ width: '30%', minWidth: '55px' }}>
                         <div className="text-[10px] text-gray-400 mb-0.5 whitespace-nowrap">
                             {formatTime(match.start)}
@@ -224,7 +258,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                             />
                         </div>
                         <span
-                        className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
                             style={{
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
@@ -276,7 +310,6 @@ const MatchCard = ({ match }: { match: Match }) => {
         </Link>
     );
 };
-
 // ========== MAIN COMPONENT ==========
 export default function Home() {
     const [matches, setMatches] = useState<Match[]>([]);
@@ -300,13 +333,13 @@ export default function Home() {
         try {
             setLoading(true);
             setError(null);
-            
+
             console.log('🔄 Fetching matches...');
             const data = await fetchAllMatches();
             console.log('📦 Received data:', data);
             console.log('📦 Data type:', typeof data);
             console.log('📦 Is array:', Array.isArray(data));
-            
+
             if (Array.isArray(data)) {
                 console.log(`✅ Setting ${data.length} matches`);
                 setMatches(data);
@@ -329,7 +362,7 @@ export default function Home() {
             console.warn('tournaments useMemo: matches is not an array');
             return [];
         }
-        
+
         const uniqueTournaments = new Set<string>();
         matches.forEach(match => {
             if (match?.tournament) uniqueTournaments.add(match.tournament);
@@ -342,7 +375,7 @@ export default function Home() {
             console.warn('dates useMemo: matches is not an array');
             return [];
         }
-        
+
         const uniqueDates = new Set<string>();
         matches.forEach(match => {
             if (match?.start) {
@@ -359,10 +392,10 @@ export default function Home() {
             console.warn('filteredMatches useMemo: matches is not an array');
             return [];
         }
-        
+
         return matches.filter(match => {
             if (!match) return false;
-            
+
             const searchLower = searchTerm.toLowerCase();
             const searchMatch = searchTerm === '' ||
                 match.homeTeam?.toLowerCase().includes(searchLower) ||
@@ -372,7 +405,7 @@ export default function Home() {
 
             const sportMatch = selectedSport === 'all' || match.sport === selectedSport;
             const tournamentMatch = selectedTournament === 'all' || match.tournament === selectedTournament;
-            const dateMatch = selectedDate === 'all' || 
+            const dateMatch = selectedDate === 'all' ||
                 (match.start && formatDateString(match.start) === selectedDate);
             const statusMatch = activeFilter === 'all' ||
                 (activeFilter === 'live' && match.status === 'live') ||
@@ -400,9 +433,9 @@ export default function Home() {
         setActiveFilter('all');
     }, []);
 
-    const hasActiveFilters = selectedSport !== 'all' || 
-        selectedTournament !== 'all' || 
-        selectedDate !== 'all' || 
+    const hasActiveFilters = selectedSport !== 'all' ||
+        selectedTournament !== 'all' ||
+        selectedDate !== 'all' ||
         searchTerm !== '';
 
     if (loading) {
@@ -445,12 +478,12 @@ export default function Home() {
 
             {/* Main Container */}
             <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4">
-                
+
                 {/* Error Message */}
                 {error && (
                     <div className="mb-6 p-4 bg-red-100 border border-red-300 rounded-xl text-red-700">
                         <p>{error}</p>
-                        <button 
+                        <button
                             onClick={loadMatches}
                             className="mt-2 text-sm underline hover:no-underline"
                         >
@@ -459,231 +492,238 @@ export default function Home() {
                     </div>
                 )}
 
-                {/* Filter Bar */}
-                <div className="mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => setActiveFilter('all')}
-                                className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all ${
-                                    activeFilter === 'all' 
-                                        ? 'bg-red-600 text-white shadow-md' 
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                All ({matches.length})
-                            </button>
-                            <button
-                                onClick={() => setActiveFilter('live')}
-                                className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
-                                    activeFilter === 'live' 
-                                        ? 'bg-red-600 text-white shadow-md' 
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                <FaFire className="w-3 h-3 sm:w-4 sm:h-4" />
-                                Live ({liveMatches.length})
-                            </button>
-                            <button
-                                onClick={() => setActiveFilter('upcoming')}
-                                className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
-                                    activeFilter === 'upcoming' 
-                                        ? 'bg-blue-600 text-white shadow-md' 
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                <FaClock className="w-3 h-3 sm:w-4 sm:h-4" />
-                                Upcoming
-                            </button>
-                        </div>
+                {/* NO DATA STATE — shown when matches array is empty and no error */}
+                {matches.length === 0 && !error ? (
+                    <NoDataState onRetry={loadMatches} />
+                ) : matches.length > 0 && (
+                    <>
+                        {/* Filter Bar */}
+                        <div className="mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        onClick={() => setActiveFilter('all')}
+                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all ${
+                                            activeFilter === 'all'
+                                                ? 'bg-red-600 text-white shadow-md'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        All ({matches.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveFilter('live')}
+                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
+                                            activeFilter === 'live'
+                                                ? 'bg-red-600 text-white shadow-md'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        <FaFire className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        Live ({liveMatches.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveFilter('upcoming')}
+                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
+                                            activeFilter === 'upcoming'
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        <FaClock className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        Upcoming
+                                    </button>
+                                </div>
 
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowFilters(!showFilters)}
-                                className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
-                            >
-                                <FaFilter className="w-3 h-3 sm:w-4 sm:h-4" />
-                                Filters
-                                <FaChevronDown className={`w-2 h-2 sm:w-3 sm:h-3 transform transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-                            </button>
-                            <button
-                                onClick={resetFilters}
-                                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-                            >
-                                <FaTimes className="w-2 h-2 sm:w-3 sm:h-3" />
-                                Reset
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Advanced Filters */}
-                    {showFilters && (
-                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
-                                <select
-                                    value={selectedSport}
-                                    onChange={(e) => setSelectedSport(e.target.value)}
-                                    className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                >
-                                    <option value="all">All Sports</option>
-                                    {Object.keys(sportsCounts).map((sport) => (
-                                        <option key={sport} value={sport}>
-                                            {sport} ({sportsCounts[sport as SportType]})
-                                        </option>
-                                    ))}
-                                </select>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
+                                    >
+                                        <FaFilter className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        Filters
+                                        <FaChevronDown className={`w-2 h-2 sm:w-3 sm:h-3 transform transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    <button
+                                        onClick={resetFilters}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                                    >
+                                        <FaTimes className="w-2 h-2 sm:w-3 sm:h-3" />
+                                        Reset
+                                    </button>
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">League/Cup</label>
-                                <select
-                                    value={selectedTournament}
-                                    onChange={(e) => setSelectedTournament(e.target.value)}
-                                    className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                >
-                                    <option value="all">All Tournaments</option>
-                                    {tournaments.map((tournament) => (
-                                        <option key={tournament} value={tournament}>
-                                            {tournament}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            {/* Advanced Filters */}
+                            {showFilters && (
+                                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                                        <select
+                                            value={selectedSport}
+                                            onChange={(e) => setSelectedSport(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                        >
+                                            <option value="all">All Sports</option>
+                                            {Object.keys(sportsCounts).map((sport) => (
+                                                <option key={sport} value={sport}>
+                                                    {sport} ({sportsCounts[sport as SportType]})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                                <select
-                                    value={selectedDate}
-                                    onChange={(e) => setSelectedDate(e.target.value)}
-                                    className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                >
-                                    <option value="all">All Dates</option>
-                                    {dates.map((date) => (
-                                        <option key={date} value={date}>
-                                            {date}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">League/Cup</label>
+                                        <select
+                                            value={selectedTournament}
+                                            onChange={(e) => setSelectedTournament(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                        >
+                                            <option value="all">All Tournaments</option>
+                                            {tournaments.map((tournament) => (
+                                                <option key={tournament} value={tournament}>
+                                                    {tournament}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                {/* Active Filters Display */}
-                {hasActiveFilters && (
-                    <div className="mb-6">
-                        <div className="flex flex-wrap gap-2 mb-2">
-                            {selectedSport !== 'all' && (
-                                <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                    {getSportIconSmall(selectedSport)}
-                                    {selectedSport}
-                                    <button 
-                                        onClick={() => setSelectedSport('all')} 
-                                        className="text-gray-500 hover:text-gray-900"
-                                    >
-                                        <FaTimes className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            )}
-                            {selectedTournament !== 'all' && (
-                                <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                    <FaFutbol className="w-3 h-3 text-gray-500" />
-                                    {selectedTournament}
-                                    <button 
-                                        onClick={() => setSelectedTournament('all')} 
-                                        className="text-gray-500 hover:text-gray-900"
-                                    >
-                                        <FaTimes className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            )}
-                            {selectedDate !== 'all' && (
-                                <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                    <FaCalendarDay className="w-3 h-3 text-gray-500" />
-                                    {selectedDate}
-                                    <button 
-                                        onClick={() => setSelectedDate('all')} 
-                                        className="text-gray-500 hover:text-gray-900"
-                                    >
-                                        <FaTimes className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            )}
-                            {searchTerm && (
-                                <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                    <FaSearch className="w-3 h-3 text-gray-500" />
-                                    &quot;{searchTerm}&quot;
-                                    <button 
-                                        onClick={() => setSearchTerm('')} 
-                                        className="text-gray-500 hover:text-gray-900"
-                                    >
-                                        <FaTimes className="w-3 h-3" />
-                                    </button>
-                                </span>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                        <select
+                                            value={selectedDate}
+                                            onChange={(e) => setSelectedDate(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                        >
+                                            <option value="all">All Dates</option>
+                                            {dates.map((date) => (
+                                                <option key={date} value={date}>
+                                                    {date}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                             )}
                         </div>
-                        <p className="text-sm text-gray-600">
-                            Showing {filteredMatches.length} of {matches.length} matches
-                        </p>
-                    </div>
-                )}
 
-                {/* Sports Quick Filter */}
-                <div className="flex flex-wrap gap-2 mb-6">
-                    <button
-                        onClick={() => setSelectedSport('all')}
-                        className={`px-3 py-2 text-sm rounded-lg transition-all ${
-                            selectedSport === 'all' 
-                                ? 'bg-red-600 text-white shadow-md' 
-                                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                        }`}
-                    >
-                        All Sports
-                    </button>
-                    {Object.entries(sportsCounts).map(([sport, count]) => (
-                        <button
-                            key={sport}
-                            onClick={() => setSelectedSport(sport)}
-                            className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center gap-2 ${
-                                selectedSport === sport 
-                                    ? 'bg-red-600 text-white shadow-md' 
-                                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                            }`}
-                        >
-                            {getSportIconSmall(sport)}
-                            <span className="font-medium">{sport}</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                                selectedSport === sport ? 'bg-white/30' : 'bg-gray-200'
-                            }`}>
-                                {count}
-                            </span>
-                        </button>
-                    ))}
-                </div>
+                        {/* Active Filters Display */}
+                        {hasActiveFilters && (
+                            <div className="mb-6">
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {selectedSport !== 'all' && (
+                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                            {getSportIconSmall(selectedSport)}
+                                            {selectedSport}
+                                            <button
+                                                onClick={() => setSelectedSport('all')}
+                                                className="text-gray-500 hover:text-gray-900"
+                                            >
+                                                <FaTimes className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    )}
+                                    {selectedTournament !== 'all' && (
+                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                            <FaFutbol className="w-3 h-3 text-gray-500" />
+                                            {selectedTournament}
+                                            <button
+                                                onClick={() => setSelectedTournament('all')}
+                                                className="text-gray-500 hover:text-gray-900"
+                                            >
+                                                <FaTimes className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    )}
+                                    {selectedDate !== 'all' && (
+                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                            <FaCalendarDay className="w-3 h-3 text-gray-500" />
+                                            {selectedDate}
+                                            <button
+                                                onClick={() => setSelectedDate('all')}
+                                                className="text-gray-500 hover:text-gray-900"
+                                            >
+                                                <FaTimes className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    )}
+                                    {searchTerm && (
+                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                            <FaSearch className="w-3 h-3 text-gray-500" />
+                                            &quot;{searchTerm}&quot;
+                                            <button
+                                                onClick={() => setSearchTerm('')}
+                                                className="text-gray-500 hover:text-gray-900"
+                                            >
+                                                <FaTimes className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                    Showing {filteredMatches.length} of {matches.length} matches
+                                </p>
+                            </div>
+                        )}
 
-                {/* Matches Section */}
-                <section className="mb-12">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-                            {activeFilter === 'all' ? 'All Matches' : 
-                             activeFilter === 'live' ? 'Live Matches' : 'Upcoming Matches'}
-                            <span className="ml-2 px-2 py-1 text-xs sm:text-sm bg-red-100 text-red-700 rounded-full">
-                                {filteredMatches.length}
-                            </span>
-                        </h2>
-                    </div>
-
-                    {filteredMatches.length === 0 ? (
-                        <EmptyState searchTerm={searchTerm} onReset={resetFilters} />
-                    ) : (
-                        <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 md:gap-6">
-                            {filteredMatches.map((match) => (
-                                <MatchCard key={match.gameID} match={match} />
+                        {/* Sports Quick Filter */}
+                        <div className="flex flex-wrap gap-2 mb-6">
+                            <button
+                                onClick={() => setSelectedSport('all')}
+                                className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                                    selectedSport === 'all'
+                                        ? 'bg-red-600 text-white shadow-md'
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                }`}
+                            >
+                                All Sports
+                            </button>
+                            {Object.entries(sportsCounts).map(([sport, count]) => (
+                                <button
+                                    key={sport}
+                                    onClick={() => setSelectedSport(sport)}
+                                    className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center gap-2 ${
+                                        selectedSport === sport
+                                            ? 'bg-red-600 text-white shadow-md'
+                                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                    }`}
+                                >
+                                    {getSportIconSmall(sport)}
+                                    <span className="font-medium">{sport}</span>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                        selectedSport === sport ? 'bg-white/30' : 'bg-gray-200'
+                                    }`}>
+                                        {count}
+                                    </span>
+                                </button>
                             ))}
                         </div>
-                    )}
-                </section>
+
+                        {/* Matches Section */}
+                        <section className="mb-12">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                                    {activeFilter === 'all' ? 'All Matches' :
+                                     activeFilter === 'live' ? 'Live Matches' : 'Upcoming Matches'}
+                                    <span className="ml-2 px-2 py-1 text-xs sm:text-sm bg-red-100 text-red-700 rounded-full">
+                                        {filteredMatches.length}
+                                    </span>
+                                </h2>
+                            </div>
+
+                            {filteredMatches.length === 0 ? (
+                                <EmptyState searchTerm={searchTerm} onReset={resetFilters} />
+                            ) : (
+                                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 md:gap-6">
+                                    {filteredMatches.map((match) => (
+                                        <MatchCard key={match.gameID} match={match} />
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </>
+                )}
             </div>
         </div>
     );
