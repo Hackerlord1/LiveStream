@@ -1,4 +1,3 @@
-// tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
     content: [
@@ -6,11 +5,11 @@ module.exports = {
         './src/components/**/*.{js,ts,jsx,tsx,mdx}',
         './src/app/**/*.{js,ts,jsx,tsx,mdx}',
     ],
+    darkMode: 'media', // 👈 ADD THIS LINE
     theme: {
         extend: {
             screens: {
                 'xs': '375px',
-                // ... other breakpoints
             },
             container: {
                 center: true,

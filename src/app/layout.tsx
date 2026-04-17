@@ -6,7 +6,7 @@ import "./globals.css";
 // Using Inter font (better for SEO and readability than Geist)
 const inter = Inter({
     subsets: ["latin"],
-    display: 'swap', // Improves performance and CLS
+    display: 'swap',
     variable: '--font-inter',
 });
 
@@ -14,7 +14,11 @@ export const viewport: Viewport = {
     width: 'device-width',
     initialScale: 1,
     maximumScale: 5,
-    themeColor: '#dc2626', // Red theme color matching your brand
+    colorScheme: 'light dark',
+    themeColor: [
+        { media: '(prefers-color-scheme: light)', color: '#e8e8e8' },
+        { media: '(prefers-color-scheme: dark)', color: '#1a1a2e' },
+    ],
 }
 
 export const metadata: Metadata = {
@@ -101,7 +105,6 @@ export const metadata: Metadata = {
     },
     category: 'sports',
     classification: 'Sports Streaming Service',
-
     icons: {
         icon: [
             { url: '/favicon.ico' },
@@ -121,7 +124,6 @@ export const metadata: Metadata = {
         ],
     },
     manifest: '/site.webmanifest',
-
     other: {
         'application-name': 'BraveStream',
         'apple-mobile-web-app-title': 'BraveStream',
@@ -137,7 +139,7 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en" className={inter.variable}>
+        <html lang="en" className={inter.variable} suppressHydrationWarning>
             <head>
                 {/* Structured Data for Sports Website */}
                 <script
@@ -199,7 +201,13 @@ export default function RootLayout({
                 {/* DNS Prefetch for API domains */}
                 <link rel="dns-prefetch" href="https://api.bravestream.live" />
             </head>
-            <body className={`${inter.className} antialiased bg-gray-900 text-white`}>
+            <body
+                className={`${inter.className} antialiased transition-colors duration-300`}
+                style={{
+                    backgroundColor: 'var(--neu-bg-page)',
+                    color: 'var(--text-secondary)',
+                }}
+            >
                 {/* Navigation will be added here */}
                 <main className="min-h-screen">
                     {children}

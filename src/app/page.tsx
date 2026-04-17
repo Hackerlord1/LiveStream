@@ -1,4 +1,4 @@
-// src/app/page.tsx - Fixed: removed hardcoded scores, improved score display
+// src/app/page.tsx
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { createTeamSlug } from '@/lib/api/team-normalization';
 
-// Import from the new modular API structure
 import {
     fetchAllMatches,
     getSportsCounts,
@@ -76,27 +75,48 @@ const formatDateString = (dateString: string): string => {
 
 // ========== LOADING COMPONENT ==========
 const LoadingSpinner = () => (
-    <div className="min-h-screen bg-[#e8e8e8] text-gray-900 flex items-center justify-center">
+    <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-primary)' }}
+    >
         <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-700">Loading matches...</p>
+            <p style={{ color: 'var(--text-muted)' }}>Loading matches...</p>
         </div>
     </div>
 );
 
 // ========== NO DATA / SERVICE UNAVAILABLE STATE ==========
 const NoDataState = ({ onRetry }: { onRetry: () => void }) => (
-    <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
-        <div className="w-20 h-20 mx-auto mb-6 bg-yellow-50 rounded-full flex items-center justify-center">
+    <div
+        className="text-center py-16 rounded-2xl shadow-sm"
+        style={{
+            backgroundColor: 'var(--surface-primary)',
+            border: '1px solid var(--border-primary)',
+        }}
+    >
+        <div
+            className="w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--warning-bg)' }}
+        >
             <span className="text-4xl">🛠️</span>
         </div>
-        <h3 className="text-2xl font-bold mb-3 text-gray-900">
+        <h3
+            className="text-2xl font-bold mb-3"
+            style={{ color: 'var(--text-primary)' }}
+        >
             We&apos;re Working on the Games
         </h3>
-        <p className="text-gray-600 max-w-lg mx-auto mb-2 text-base">
+        <p
+            className="max-w-lg mx-auto mb-2 text-base"
+            style={{ color: 'var(--text-secondary)' }}
+        >
             Our team is currently updating the match schedule. Live games and upcoming fixtures will appear here shortly.
         </p>
-        <p className="text-gray-400 max-w-md mx-auto mb-8 text-sm">
+        <p
+            className="max-w-md mx-auto mb-8 text-sm"
+            style={{ color: 'var(--text-muted)' }}
+        >
             This usually takes just a few minutes. Thanks for your patience!
         </p>
         <div className="flex flex-wrap justify-center gap-4">
@@ -109,7 +129,12 @@ const NoDataState = ({ onRetry }: { onRetry: () => void }) => (
             </button>
             <Link
                 href="/channels"
-                className="px-6 py-3 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl text-gray-700 font-medium transition-colors flex items-center gap-2"
+                className="px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
+                style={{
+                    backgroundColor: 'var(--surface-primary)',
+                    border: '1px solid var(--border-primary)',
+                    color: 'var(--text-secondary)',
+                }}
             >
                 <FaTv className="w-4 h-4" />
                 Browse Channels
@@ -118,7 +143,7 @@ const NoDataState = ({ onRetry }: { onRetry: () => void }) => (
     </div>
 );
 
-// ========== EMPTY STATE COMPONENT (for filter results) ==========
+// ========== EMPTY STATE COMPONENT ==========
 const EmptyState = ({
     searchTerm,
     onReset
@@ -126,12 +151,29 @@ const EmptyState = ({
     searchTerm: string;
     onReset: () => void;
 }) => (
-    <div className="text-center py-12 bg-white rounded-xl border border-gray-300 shadow-sm">
-        <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-            <FaTv className="text-2xl text-gray-400" />
+    <div
+        className="text-center py-12 rounded-xl shadow-sm"
+        style={{
+            backgroundColor: 'var(--surface-primary)',
+            border: '1px solid var(--border-primary)',
+        }}
+    >
+        <div
+            className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--surface-secondary)' }}
+        >
+            <FaTv className="text-2xl" style={{ color: 'var(--text-muted)' }} />
         </div>
-        <h3 className="text-xl font-semibold mb-2 text-gray-900">No Matches Found</h3>
-        <p className="text-gray-600 max-w-md mx-auto mb-6 text-sm">
+        <h3
+            className="text-xl font-semibold mb-2"
+            style={{ color: 'var(--text-primary)' }}
+        >
+            No Matches Found
+        </h3>
+        <p
+            className="max-w-md mx-auto mb-6 text-sm"
+            style={{ color: 'var(--text-secondary)' }}
+        >
             {searchTerm
                 ? `No matches found for "${searchTerm}"`
                 : 'No matches match your current filters'}
@@ -184,7 +226,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                         {match.status === 'live' ? '● LIVE' :
                             match.status === 'upcoming' ? 'UPCOMING' : 'ENDED'}
                     </div>
-                    <div className="flex items-center gap-1 text-gray-500 flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                         <FaEye className="w-3 h-3" />
                         <span className="text-[11px]">{match.channels?.length || 0}</span>
                     </div>
@@ -208,8 +250,9 @@ const MatchCard = ({ match }: { match: Match }) => {
                             />
                         </div>
                         <span
-                            className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            className="text-[10px] sm:text-[11px] font-bold text-center leading-tight w-full overflow-hidden"
                             style={{
+                                color: 'var(--text-primary)',
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
@@ -226,11 +269,14 @@ const MatchCard = ({ match }: { match: Match }) => {
 
                     {/* Score / Time */}
                     <div className="flex flex-col items-center flex-shrink-0 px-1" style={{ width: '30%', minWidth: '55px' }}>
-                        <div className="text-[10px] text-gray-400 mb-0.5 whitespace-nowrap">
+                        <div className="text-[10px] mb-0.5 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                             {formatTime(match.start)}
                         </div>
                         {match.score && match.score.home !== undefined && match.score.away !== undefined ? (
-                            <div className="text-sm sm:text-base font-extrabold text-gray-900 whitespace-nowrap">
+                            <div
+                                className="text-sm sm:text-base font-extrabold whitespace-nowrap"
+                                style={{ color: 'var(--text-primary)' }}
+                            >
                                 {match.score.home} - {match.score.away}
                             </div>
                         ) : match.status === 'live' ? (
@@ -238,7 +284,12 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 LIVE
                             </div>
                         ) : (
-                            <div className="text-sm sm:text-base font-extrabold text-gray-400">VS</div>
+                            <div
+                                className="text-sm sm:text-base font-extrabold"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                VS
+                            </div>
                         )}
                     </div>
 
@@ -258,8 +309,9 @@ const MatchCard = ({ match }: { match: Match }) => {
                             />
                         </div>
                         <span
-                            className="text-[10px] sm:text-[11px] font-bold text-gray-800 text-center leading-tight w-full overflow-hidden"
+                            className="text-[10px] sm:text-[11px] font-bold text-center leading-tight w-full overflow-hidden"
                             style={{
+                                color: 'var(--text-primary)',
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
@@ -289,17 +341,22 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 />
                             </div>
                         )}
-                        <span className="text-[11px] text-gray-500 truncate min-w-0">
+                        <span className="text-[11px] truncate min-w-0" style={{ color: 'var(--text-muted)' }}>
                             {match.tournament}
                         </span>
                     </div>
                 </div>
 
                 {/* Bottom Bar */}
-                <div className="flex items-center justify-between pt-2.5 border-t border-gray-300/60 mt-auto flex-shrink-0 w-full overflow-hidden">
+                <div
+                    className="flex items-center justify-between pt-2.5 mt-auto flex-shrink-0 w-full overflow-hidden"
+                    style={{ borderTop: '1px solid var(--border-secondary)' }}
+                >
                     <div className="flex items-center gap-1 min-w-0 overflow-hidden">
                         <span className="flex-shrink-0">{getSportIconSmall(match.sport)}</span>
-                        <span className="text-[11px] text-gray-500 truncate">{match.sport}</span>
+                        <span className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                            {match.sport}
+                        </span>
                     </div>
                     <button className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-[11px] font-semibold text-white transition-all duration-200 shadow-sm flex-shrink-0 whitespace-nowrap flex items-center gap-1">
                         <FaPlay className="w-2 h-2" />
@@ -310,6 +367,7 @@ const MatchCard = ({ match }: { match: Match }) => {
         </Link>
     );
 };
+
 // ========== MAIN COMPONENT ==========
 export default function Home() {
     const [matches, setMatches] = useState<Match[]>([]);
@@ -336,9 +394,6 @@ export default function Home() {
 
             console.log('🔄 Fetching matches...');
             const data = await fetchAllMatches();
-            console.log('📦 Received data:', data);
-            console.log('📦 Data type:', typeof data);
-            console.log('📦 Is array:', Array.isArray(data));
 
             if (Array.isArray(data)) {
                 console.log(`✅ Setting ${data.length} matches`);
@@ -358,11 +413,7 @@ export default function Home() {
     };
 
     const tournaments = useMemo(() => {
-        if (!Array.isArray(matches)) {
-            console.warn('tournaments useMemo: matches is not an array');
-            return [];
-        }
-
+        if (!Array.isArray(matches)) return [];
         const uniqueTournaments = new Set<string>();
         matches.forEach(match => {
             if (match?.tournament) uniqueTournaments.add(match.tournament);
@@ -371,27 +422,18 @@ export default function Home() {
     }, [matches]);
 
     const dates = useMemo(() => {
-        if (!Array.isArray(matches)) {
-            console.warn('dates useMemo: matches is not an array');
-            return [];
-        }
-
+        if (!Array.isArray(matches)) return [];
         const uniqueDates = new Set<string>();
         matches.forEach(match => {
-            if (match?.start) {
-                uniqueDates.add(formatDateString(match.start));
-            }
+            if (match?.start) uniqueDates.add(formatDateString(match.start));
         });
-        return Array.from(uniqueDates).sort((a, b) => {
-            return new Date(a).getTime() - new Date(b).getTime();
-        });
+        return Array.from(uniqueDates).sort((a, b) =>
+            new Date(a).getTime() - new Date(b).getTime()
+        );
     }, [matches]);
 
     const filteredMatches = useMemo(() => {
-        if (!Array.isArray(matches)) {
-            console.warn('filteredMatches useMemo: matches is not an array');
-            return [];
-        }
+        if (!Array.isArray(matches)) return [];
 
         return matches.filter(match => {
             if (!match) return false;
@@ -443,30 +485,39 @@ export default function Home() {
     }
 
     return (
-        <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
+        <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-secondary)' }}>
             <Header />
 
-            {/* ===== DONATION BANNER - Below Header ===== */}
+            {/* ===== DONATION BANNER ===== */}
             {showDonateBanner && (
                 <div className="w-full bg-gradient-to-r from-[#0070ba] via-[#003087] to-[#0070ba] relative" style={{ zIndex: 50 }}>
                     <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6">
                         <div className="flex items-center justify-center py-3 gap-3 sm:gap-4">
                             <FaHeart className="w-4 h-4 text-red-400 animate-pulse flex-shrink-0 hidden sm:block" />
-                            <p className="text-white text-sm sm:text-base font-medium text-center">
+                            {/* ✅ FIXED — Added inline style to force white */}
+                            <p
+                                className="text-sm sm:text-base font-medium text-center"
+                                style={{ color: '#ffffff' }}
+                            >
                                 Enjoy free streams? Help us keep going!
                             </p>
                             <a
                                 href={paypalDonateUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 bg-[#ffc439] hover:bg-[#f0b72d] text-[#003087] font-bold text-sm sm:text-base px-5 py-2 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 flex-shrink-0"
+                                className="inline-flex items-center gap-2 font-bold text-sm sm:text-base px-5 py-2 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 flex-shrink-0"
+                                style={{
+                                    backgroundColor: '#ffc439',
+                                    color: '#003087',
+                                }}
                             >
                                 <FaPaypal className="w-5 h-5" />
                                 <span>Donate with PayPal</span>
                             </a>
                             <button
                                 onClick={() => setShowDonateBanner(false)}
-                                className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors p-1"
+                                className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 transition-colors p-1"
+                                style={{ color: 'rgba(255, 255, 255, 0.6)' }}
                                 aria-label="Close donation banner"
                             >
                                 <FaTimes className="w-4 h-4" />
@@ -481,7 +532,14 @@ export default function Home() {
 
                 {/* Error Message */}
                 {error && (
-                    <div className="mb-6 p-4 bg-red-100 border border-red-300 rounded-xl text-red-700">
+                    <div
+                        className="mb-6 p-4 rounded-xl"
+                        style={{
+                            backgroundColor: 'var(--error-bg)',
+                            border: '1px solid var(--brand-red)',
+                            color: 'var(--error-text)',
+                        }}
+                    >
                         <p>{error}</p>
                         <button
                             onClick={loadMatches}
@@ -492,43 +550,66 @@ export default function Home() {
                     </div>
                 )}
 
-                {/* NO DATA STATE — shown when matches array is empty and no error */}
+                {/* NO DATA STATE */}
                 {matches.length === 0 && !error ? (
                     <NoDataState onRetry={loadMatches} />
                 ) : matches.length > 0 && (
                     <>
                         {/* Filter Bar */}
-                        <div className="mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                        <div
+                            className="mb-6 rounded-xl p-4 shadow-sm"
+                            style={{
+                                backgroundColor: 'var(--surface-primary)',
+                                border: '1px solid var(--border-primary)',
+                            }}
+                        >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div className="flex flex-wrap gap-2">
+                                    {/* All Button */}
                                     <button
                                         onClick={() => setActiveFilter('all')}
                                         className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all ${
                                             activeFilter === 'all'
                                                 ? 'bg-red-600 text-white shadow-md'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                : ''
                                         }`}
+                                        style={activeFilter !== 'all' ? {
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        } : undefined}
                                     >
                                         All ({matches.length})
                                     </button>
+
+                                    {/* Live Button */}
                                     <button
                                         onClick={() => setActiveFilter('live')}
                                         className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
                                             activeFilter === 'live'
                                                 ? 'bg-red-600 text-white shadow-md'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                : ''
                                         }`}
+                                        style={activeFilter !== 'live' ? {
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        } : undefined}
                                     >
                                         <FaFire className="w-3 h-3 sm:w-4 sm:h-4" />
                                         Live ({liveMatches.length})
                                     </button>
+
+                                    {/* Upcoming Button */}
                                     <button
                                         onClick={() => setActiveFilter('upcoming')}
                                         className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
                                             activeFilter === 'upcoming'
                                                 ? 'bg-blue-600 text-white shadow-md'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                : ''
                                         }`}
+                                        style={activeFilter !== 'upcoming' ? {
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        } : undefined}
                                     >
                                         <FaClock className="w-3 h-3 sm:w-4 sm:h-4" />
                                         Upcoming
@@ -538,7 +619,11 @@ export default function Home() {
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setShowFilters(!showFilters)}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700"
+                                        className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
+                                        style={{
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        }}
                                     >
                                         <FaFilter className="w-3 h-3 sm:w-4 sm:h-4" />
                                         Filters
@@ -546,7 +631,8 @@ export default function Home() {
                                     </button>
                                     <button
                                         onClick={resetFilters}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                                        className="flex items-center gap-2 px-3 py-2 text-sm transition-colors"
+                                        style={{ color: 'var(--text-muted)' }}
                                     >
                                         <FaTimes className="w-2 h-2 sm:w-3 sm:h-3" />
                                         Reset
@@ -558,11 +644,21 @@ export default function Home() {
                             {showFilters && (
                                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Sport</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            Sport
+                                        </label>
                                         <select
                                             value={selectedSport}
                                             onChange={(e) => setSelectedSport(e.target.value)}
-                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            style={{
+                                                backgroundColor: 'var(--input-bg)',
+                                                border: '1px solid var(--input-border)',
+                                                color: 'var(--input-text)',
+                                            }}
                                         >
                                             <option value="all">All Sports</option>
                                             {Object.keys(sportsCounts).map((sport) => (
@@ -574,11 +670,21 @@ export default function Home() {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">League/Cup</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            League/Cup
+                                        </label>
                                         <select
                                             value={selectedTournament}
                                             onChange={(e) => setSelectedTournament(e.target.value)}
-                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            style={{
+                                                backgroundColor: 'var(--input-bg)',
+                                                border: '1px solid var(--input-border)',
+                                                color: 'var(--input-text)',
+                                            }}
                                         >
                                             <option value="all">All Tournaments</option>
                                             {tournaments.map((tournament) => (
@@ -590,11 +696,21 @@ export default function Home() {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                        <label
+                                            className="block text-sm font-medium mb-1"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            Date
+                                        </label>
                                         <select
                                             value={selectedDate}
                                             onChange={(e) => setSelectedDate(e.target.value)}
-                                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                            style={{
+                                                backgroundColor: 'var(--input-bg)',
+                                                border: '1px solid var(--input-border)',
+                                                color: 'var(--input-text)',
+                                            }}
                                         >
                                             <option value="all">All Dates</option>
                                             {dates.map((date) => (
@@ -613,55 +729,83 @@ export default function Home() {
                             <div className="mb-6">
                                 <div className="flex flex-wrap gap-2 mb-2">
                                     {selectedSport !== 'all' && (
-                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
+                                        <span
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+                                            style={{
+                                                backgroundColor: 'var(--surface-primary)',
+                                                border: '1px solid var(--border-primary)',
+                                                color: 'var(--text-secondary)',
+                                            }}
+                                        >
                                             {getSportIconSmall(selectedSport)}
                                             {selectedSport}
                                             <button
                                                 onClick={() => setSelectedSport('all')}
-                                                className="text-gray-500 hover:text-gray-900"
+                                                style={{ color: 'var(--text-muted)' }}
                                             >
                                                 <FaTimes className="w-3 h-3" />
                                             </button>
                                         </span>
                                     )}
                                     {selectedTournament !== 'all' && (
-                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                            <FaFutbol className="w-3 h-3 text-gray-500" />
+                                        <span
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+                                            style={{
+                                                backgroundColor: 'var(--surface-primary)',
+                                                border: '1px solid var(--border-primary)',
+                                                color: 'var(--text-secondary)',
+                                            }}
+                                        >
+                                            <FaFutbol className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
                                             {selectedTournament}
                                             <button
                                                 onClick={() => setSelectedTournament('all')}
-                                                className="text-gray-500 hover:text-gray-900"
+                                                style={{ color: 'var(--text-muted)' }}
                                             >
                                                 <FaTimes className="w-3 h-3" />
                                             </button>
                                         </span>
                                     )}
                                     {selectedDate !== 'all' && (
-                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                            <FaCalendarDay className="w-3 h-3 text-gray-500" />
+                                        <span
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+                                            style={{
+                                                backgroundColor: 'var(--surface-primary)',
+                                                border: '1px solid var(--border-primary)',
+                                                color: 'var(--text-secondary)',
+                                            }}
+                                        >
+                                            <FaCalendarDay className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
                                             {selectedDate}
                                             <button
                                                 onClick={() => setSelectedDate('all')}
-                                                className="text-gray-500 hover:text-gray-900"
+                                                style={{ color: 'var(--text-muted)' }}
                                             >
                                                 <FaTimes className="w-3 h-3" />
                                             </button>
                                         </span>
                                     )}
                                     {searchTerm && (
-                                        <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                            <FaSearch className="w-3 h-3 text-gray-500" />
+                                        <span
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+                                            style={{
+                                                backgroundColor: 'var(--surface-primary)',
+                                                border: '1px solid var(--border-primary)',
+                                                color: 'var(--text-secondary)',
+                                            }}
+                                        >
+                                            <FaSearch className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
                                             &quot;{searchTerm}&quot;
                                             <button
                                                 onClick={() => setSearchTerm('')}
-                                                className="text-gray-500 hover:text-gray-900"
+                                                style={{ color: 'var(--text-muted)' }}
                                             >
                                                 <FaTimes className="w-3 h-3" />
                                             </button>
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                     Showing {filteredMatches.length} of {matches.length} matches
                                 </p>
                             </div>
@@ -674,8 +818,13 @@ export default function Home() {
                                 className={`px-3 py-2 text-sm rounded-lg transition-all ${
                                     selectedSport === 'all'
                                         ? 'bg-red-600 text-white shadow-md'
-                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                        : ''
                                 }`}
+                                style={selectedSport !== 'all' ? {
+                                    backgroundColor: 'var(--surface-primary)',
+                                    color: 'var(--text-secondary)',
+                                    border: '1px solid var(--border-primary)',
+                                } : undefined}
                             >
                                 All Sports
                             </button>
@@ -686,14 +835,24 @@ export default function Home() {
                                     className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center gap-2 ${
                                         selectedSport === sport
                                             ? 'bg-red-600 text-white shadow-md'
-                                            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                            : ''
                                     }`}
+                                    style={selectedSport !== sport ? {
+                                        backgroundColor: 'var(--surface-primary)',
+                                        color: 'var(--text-secondary)',
+                                        border: '1px solid var(--border-primary)',
+                                    } : undefined}
                                 >
                                     {getSportIconSmall(sport)}
                                     <span className="font-medium">{sport}</span>
-                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                                        selectedSport === sport ? 'bg-white/30' : 'bg-gray-200'
-                                    }`}>
+                                    <span
+                                        className="text-xs px-1.5 py-0.5 rounded-full"
+                                        style={{
+                                            backgroundColor: selectedSport === sport
+                                                ? 'rgba(255,255,255,0.3)'
+                                                : 'var(--surface-secondary)',
+                                        }}
+                                    >
                                         {count}
                                     </span>
                                 </button>
@@ -703,10 +862,19 @@ export default function Home() {
                         {/* Matches Section */}
                         <section className="mb-12">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                                <h2
+                                    className="text-xl sm:text-2xl font-bold"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
                                     {activeFilter === 'all' ? 'All Matches' :
-                                     activeFilter === 'live' ? 'Live Matches' : 'Upcoming Matches'}
-                                    <span className="ml-2 px-2 py-1 text-xs sm:text-sm bg-red-100 text-red-700 rounded-full">
+                                        activeFilter === 'live' ? 'Live Matches' : 'Upcoming Matches'}
+                                    <span
+                                        className="ml-2 px-2 py-1 text-xs sm:text-sm rounded-full"
+                                        style={{
+                                            backgroundColor: 'var(--error-bg)',
+                                            color: 'var(--error-text)',
+                                        }}
+                                    >
                                         {filteredMatches.length}
                                     </span>
                                 </h2>

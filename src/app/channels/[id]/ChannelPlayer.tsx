@@ -6,11 +6,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
-// API - separate type import
 import type { ApiChannel } from '@/lib/api';
 import { getEmbedUrl } from '@/lib/api';
 
-// Icons
 import {
     FaExpand,
     FaCompress,
@@ -45,22 +43,12 @@ interface ShareOption {
 const STORAGE_KEY = 'favorite-channels';
 
 const STATUS_CONFIG = {
-    online: {
-        color: 'bg-green-500',
-        text: 'LIVE',
-        pulseColor: 'bg-green-400',
-    },
-    offline: {
-        color: 'bg-red-500',
-        text: 'OFFLINE',
-        pulseColor: 'bg-red-400',
-    },
+    online: { color: 'bg-green-500', text: 'LIVE', pulseColor: 'bg-green-400' },
+    offline: { color: 'bg-red-500', text: 'OFFLINE', pulseColor: 'bg-red-400' },
 } as const;
 
-// ========== HELPER FUNCTIONS ==========
-const getChannelKey = (channel: ApiChannel): string => {
-    return `${channel.name}|${channel.code}`;
-};
+// ========== HELPERS ==========
+const getChannelKey = (channel: ApiChannel): string => `${channel.name}|${channel.code}`;
 
 const formatViewers = (viewers: number): string => {
     if (viewers >= 1_000_000) return `${(viewers / 1_000_000).toFixed(1)}M`;
@@ -68,13 +56,11 @@ const formatViewers = (viewers: number): string => {
     return viewers.toString();
 };
 
-const getStatusConfig = (status: string) => {
-    return STATUS_CONFIG[status.toLowerCase() as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.offline;
-};
+const getStatusConfig = (status: string) =>
+    STATUS_CONFIG[status.toLowerCase() as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.offline;
 
 // ========== SUB-COMPONENTS ==========
 
-// Loading Overlay
 const LoadingOverlay = () => (
     <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-50 rounded-xl">
         <div className="text-center">
@@ -90,7 +76,6 @@ const LoadingOverlay = () => (
     </div>
 );
 
-// Error/Offline State
 interface StreamErrorStateProps {
     isError: boolean;
     onRetry: () => void;
@@ -99,9 +84,7 @@ interface StreamErrorStateProps {
 const StreamErrorState = ({ isError, onRetry }: StreamErrorStateProps) => (
     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
         <div className="text-center p-8">
-            <div className="text-6xl mb-6">
-                {isError ? '⚠️' : '📺'}
-            </div>
+            <div className="text-6xl mb-6">{isError ? '⚠️' : '📺'}</div>
             <h3 className="text-2xl font-bold text-white mb-3">
                 {isError ? 'Stream Unavailable' : 'Channel Offline'}
             </h3>
@@ -121,7 +104,6 @@ const StreamErrorState = ({ isError, onRetry }: StreamErrorStateProps) => (
     </div>
 );
 
-// Share Dropdown
 interface ShareDropdownProps {
     isOpen: boolean;
     onClose: () => void;
@@ -130,19 +112,15 @@ interface ShareDropdownProps {
 
 const ShareDropdown = ({ isOpen, onClose, shareOptions }: ShareDropdownProps) => {
     if (!isOpen) return null;
-
     return (
         <>
-            {/* Backdrop */}
-            <div 
-                className="fixed inset-0 z-40" 
-                onClick={onClose}
-            />
-            
-            {/* Dropdown */}
+            <div className="fixed inset-0 z-40" onClick={onClose} />
             <div className="absolute right-0 top-full mt-2 neumorphic-dropdown w-56 z-50">
                 <div className="py-2">
-                    <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <div
+                        className="px-4 py-2 text-xs font-semibold uppercase tracking-wide"
+                        style={{ color: 'var(--text-muted)' }}
+                    >
                         Share this channel
                     </div>
                     {shareOptions.map((option, index) => (
@@ -152,7 +130,7 @@ const ShareDropdown = ({ isOpen, onClose, shareOptions }: ShareDropdownProps) =>
                             className="dropdown-item flex items-center gap-3"
                         >
                             {option.icon}
-                            {option.name}
+                            <span style={{ color: 'var(--text-secondary)' }}>{option.name}</span>
                         </button>
                     ))}
                 </div>
@@ -161,7 +139,6 @@ const ShareDropdown = ({ isOpen, onClose, shareOptions }: ShareDropdownProps) =>
     );
 };
 
-// Info Card
 interface InfoCardProps {
     icon: React.ReactNode;
     label: string;
@@ -171,11 +148,9 @@ interface InfoCardProps {
 
 const InfoCard = ({ icon, label, value, iconColor = 'text-gray-500' }: InfoCardProps) => (
     <div className="neumorphic-card text-center p-4">
-        <div className={`${iconColor} mx-auto mb-2 flex justify-center`}>
-            {icon}
-        </div>
-        <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
-        <div className="font-bold text-gray-900 mt-1">{value}</div>
+        <div className={`${iconColor} mx-auto mb-2 flex justify-center`}>{icon}</div>
+        <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</div>
+        <div className="font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{value}</div>
     </div>
 );
 
@@ -183,7 +158,6 @@ const InfoCard = ({ icon, label, value, iconColor = 'text-gray-500' }: InfoCardP
 export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
     const router = useRouter();
 
-    // State
     const [isLoading, setIsLoading] = useState(true);
     const [streamError, setStreamError] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -192,112 +166,69 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
     const [streamUrl, setStreamUrl] = useState(() => getEmbedUrl(channel));
     const [copied, setCopied] = useState(false);
 
-    // Refs
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
 
-    // Derived state
     const channelKey = getChannelKey(channel);
     const isFavorite = favoriteChannels.includes(channelKey);
     const statusConfig = getStatusConfig(channel.status);
     const isOnline = channel.status.toLowerCase() === 'online';
 
-    // Load favorites from localStorage
     useEffect(() => {
         if (typeof window === 'undefined') return;
-
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                setFavoriteChannels(JSON.parse(saved));
-            }
-        } catch (error) {
-            console.error('Failed to load favorites:', error);
-        }
+            if (saved) setFavoriteChannels(JSON.parse(saved));
+        } catch (error) { console.error('Failed to load favorites:', error); }
     }, []);
 
-    // Toggle favorite
     const toggleFavorite = useCallback(() => {
         const newFavorites = isFavorite
             ? favoriteChannels.filter(f => f !== channelKey)
             : [...favoriteChannels, channelKey];
-
         setFavoriteChannels(newFavorites);
-
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(newFavorites));
-        }
+        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(newFavorites));
     }, [channelKey, isFavorite, favoriteChannels]);
 
-    // Reload stream
     const handleReload = useCallback(() => {
-        setIsLoading(true);
-        setStreamError(false);
-        // Add cache-buster to force reload
+        setIsLoading(true); setStreamError(false);
         setStreamUrl(`${getEmbedUrl(channel)}&_t=${Date.now()}`);
     }, [channel]);
 
-    // Fullscreen toggle
     const handleFullScreen = useCallback(async () => {
         const container = videoContainerRef.current;
         if (!container) return;
-
         try {
-            if (!document.fullscreenElement) {
-                await container.requestFullscreen();
-                setIsFullScreen(true);
-            } else {
-                await document.exitFullscreen();
-                setIsFullScreen(false);
-            }
-        } catch (error) {
-            console.error('Fullscreen error:', error);
-            // Fallback for browsers that don't support fullscreen API
+            if (!document.fullscreenElement) { await container.requestFullscreen(); setIsFullScreen(true); }
+            else { await document.exitFullscreen(); setIsFullScreen(false); }
+        } catch {
             container.classList.toggle('fullscreen-fallback');
             setIsFullScreen(!isFullScreen);
         }
     }, [isFullScreen]);
 
-    // Share functionality
     const handleShare = useCallback(async () => {
         if (typeof window === 'undefined') return;
-
-        // Try native share first
         if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: `Watch ${channel.name} Live`,
-                    text: `Watching ${channel.name} on BraveStream`,
-                    url: window.location.href,
-                });
-                return;
-            } catch (error) {
-                // User cancelled or share failed, fall through to dropdown
-            }
+            try { await navigator.share({ title: `Watch ${channel.name} Live`, text: `Watching ${channel.name} on BraveStream`, url: window.location.href }); return; }
+            catch { /* cancelled */ }
         }
-
         setShowShareOptions(!showShareOptions);
     }, [channel.name, showShareOptions]);
 
-    // Copy to clipboard
     const copyToClipboard = useCallback(async () => {
         if (typeof window === 'undefined') return;
-
         try {
             await navigator.clipboard.writeText(window.location.href);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            setCopied(true); setTimeout(() => setCopied(false), 2000);
             setShowShareOptions(false);
-        } catch (error) {
-            console.error('Failed to copy:', error);
-        }
+        } catch (error) { console.error('Failed to copy:', error); }
     }, []);
 
-    // Share options
     const shareOptions: ShareOption[] = [
         {
             name: copied ? 'Copied!' : 'Copy Link',
-            icon: <FaCopy className={`w-4 h-4 ${copied ? 'text-green-500' : 'text-gray-500'}`} />,
+            icon: <FaCopy className={`w-4 h-4 ${copied ? 'text-green-500' : ''}`} style={!copied ? { color: 'var(--text-muted)' } : undefined} />,
             action: copyToClipboard,
         },
         {
@@ -331,123 +262,94 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
         },
     ];
 
-    // Fix iframe size
     const fixIframeSize = useCallback(() => {
         if (!iframeRef.current || !videoContainerRef.current) return;
-
         const container = videoContainerRef.current;
         const iframe = iframeRef.current;
-
         requestAnimationFrame(() => {
             iframe.style.width = `${container.clientWidth}px`;
             iframe.style.height = `${container.clientHeight}px`;
         });
     }, []);
 
-    // Resize observer effect
     useEffect(() => {
         if (streamError) return;
-
-        // Initial fix
         const timeoutId = setTimeout(fixIframeSize, 100);
-
-        // Window resize handler
         const handleResize = () => requestAnimationFrame(fixIframeSize);
         window.addEventListener('resize', handleResize);
-
-        // Container resize observer
         const observer = new ResizeObserver(handleResize);
-        if (videoContainerRef.current) {
-            observer.observe(videoContainerRef.current);
-        }
-
-        return () => {
-            clearTimeout(timeoutId);
-            window.removeEventListener('resize', handleResize);
-            observer.disconnect();
-        };
+        if (videoContainerRef.current) observer.observe(videoContainerRef.current);
+        return () => { clearTimeout(timeoutId); window.removeEventListener('resize', handleResize); observer.disconnect(); };
     }, [streamError, fixIframeSize]);
 
-    // Fullscreen change listener
     useEffect(() => {
-        const handleFullScreenChange = () => {
-            setIsFullScreen(!!document.fullscreenElement);
-        };
-
-        document.addEventListener('fullscreenchange', handleFullScreenChange);
-        return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
+        const handler = () => setIsFullScreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handler);
+        return () => document.removeEventListener('fullscreenchange', handler);
     }, []);
 
-    // Image error handler
     const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-        const target = e.target as HTMLImageElement;
-        target.src = '/channel-placeholder.svg';
+        const target = e.target as HTMLImageElement; target.src = '/channel-placeholder.svg';
     };
 
-    // Iframe handlers
-    const handleIframeLoad = useCallback(() => {
-        fixIframeSize();
-        setIsLoading(false);
-    }, [fixIframeSize]);
+    const handleIframeLoad = useCallback(() => { fixIframeSize(); setIsLoading(false); }, [fixIframeSize]);
+    const handleIframeError = useCallback(() => { setStreamError(true); setIsLoading(false); }, []);
 
-    const handleIframeError = useCallback(() => {
-        setStreamError(true);
-        setIsLoading(false);
-    }, []);
-
+    // ========== RENDER ==========
     return (
-        <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
-            {/* Header */}
-            <header className="bg-[#e8e8e8] border-b border-gray-300 py-3 shadow-sm sticky top-0 z-40">
+        <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-secondary)' }}>
+
+            {/* ===== HEADER ===== */}
+            <header
+                className="py-3 shadow-sm sticky top-0 z-40 transition-colors duration-300"
+                style={{
+                    backgroundColor: 'var(--neu-bg-page)',
+                    borderBottom: '1px solid var(--border-primary)',
+                }}
+            >
                 <div className="max-w-7xl mx-auto px-4">
                     <div className="flex items-center justify-between">
-                        {/* Back Button */}
                         <Link href="/channels" className="neumorphic-nav-item group">
-                            <FaArrowLeft className="w-4 h-4" />
-                            <span className="hidden sm:inline">Back to Channels</span>
+                            <FaArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                            <span className="hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>Back to Channels</span>
                         </Link>
 
-                        {/* Actions */}
                         <div className="flex items-center gap-3">
-                            {/* Favorite Button */}
+                            {/* Favorite */}
                             <button
                                 onClick={toggleFavorite}
                                 className="neumorphic-button p-2"
                                 title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
                             >
                                 <FaHeart
-                                    className={`w-5 h-5 transition-colors ${
-                                        isFavorite ? 'text-red-500 fill-current' : 'text-gray-700'
-                                    }`}
+                                    className={`w-5 h-5 transition-colors ${isFavorite ? 'text-red-500 fill-current' : ''}`}
+                                    style={!isFavorite ? { color: 'var(--text-secondary)' } : undefined}
                                 />
                             </button>
 
-                            {/* Share Button */}
+                            {/* Share */}
                             <div className="relative">
-                                <button
-                                    onClick={handleShare}
-                                    className="neumorphic-button p-2"
-                                    title="Share channel"
-                                >
-                                    <FaShareAlt className="w-5 h-5 text-gray-700" />
+                                <button onClick={handleShare} className="neumorphic-button p-2" title="Share channel">
+                                    <FaShareAlt className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                                 </button>
-
-                                <ShareDropdown
-                                    isOpen={showShareOptions}
-                                    onClose={() => setShowShareOptions(false)}
-                                    shareOptions={shareOptions}
-                                />
+                                <ShareDropdown isOpen={showShareOptions} onClose={() => setShowShareOptions(false)} shareOptions={shareOptions} />
                             </div>
 
                             {/* Status Badge */}
-                            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-300">
+                            <div
+                                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg"
+                                style={{
+                                    backgroundColor: 'var(--surface-primary)',
+                                    border: '1px solid var(--border-primary)',
+                                }}
+                            >
                                 <div className="relative">
                                     <div className={`w-2 h-2 rounded-full ${statusConfig.color}`}></div>
                                     {isOnline && (
                                         <div className={`absolute inset-0 w-2 h-2 rounded-full ${statusConfig.pulseColor} animate-ping`}></div>
                                     )}
                                 </div>
-                                <span className="text-sm font-medium text-gray-700">
+                                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
                                     {statusConfig.text}
                                 </span>
                             </div>
@@ -458,89 +360,65 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
             <main className="relative">
                 <div className="max-w-7xl mx-auto px-4 py-6">
-                    {/* Channel Header */}
+
+                    {/* ===== CHANNEL HEADER ===== */}
                     <div className="neumorphic-card mb-6">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
                             <div className="flex items-center gap-4 sm:gap-6">
-                                {/* Channel Logo */}
+                                {/* Logo */}
                                 <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0">
                                     <div className="absolute inset-0 neumorphic-logo rounded-xl"></div>
                                     <Image
-                                        src={channel.image}
-                                        alt={channel.name}
-                                        fill
+                                        src={channel.image} alt={channel.name} fill
                                         className="object-contain p-3 sm:p-4"
-                                        onError={handleImageError}
-                                        sizes="80px"
-                                        priority
+                                        onError={handleImageError} sizes="80px" priority
                                     />
                                 </div>
 
-                                {/* Channel Info */}
+                                {/* Info */}
                                 <div>
-                                    <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900">
+                                    <h1 className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
                                         {channel.name}
                                     </h1>
-                                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm text-gray-600">
-                                        <div className="flex items-center gap-1">
-                                            <FaGlobe className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{channel.country}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <FaTv className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{channel.category}</span>
-                                        </div>
+                                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
+                                        <div className="flex items-center gap-1"><FaGlobe className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.country}</span></div>
+                                        <div className="flex items-center gap-1"><FaTv className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.category}</span></div>
                                         {channel.language && (
-                                            <div className="flex items-center gap-1">
-                                                <FaLanguage className="w-3 h-3 sm:w-4 sm:h-4" />
-                                                <span>{channel.language}</span>
-                                            </div>
+                                            <div className="flex items-center gap-1"><FaLanguage className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.language}</span></div>
                                         )}
-                                        <div className="flex items-center gap-1">
-                                            <FaEye className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{formatViewers(channel.viewers)} viewers</span>
-                                        </div>
+                                        <div className="flex items-center gap-1"><FaEye className="w-3 h-3 sm:w-4 sm:h-4" /><span>{formatViewers(channel.viewers)} viewers</span></div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Reload Button */}
-                            <button
-                                onClick={handleReload}
-                                className="neumorphic-button p-3 self-end sm:self-auto"
-                                title="Reload stream"
-                            >
-                                <FaRedoAlt className="w-5 h-5 sm:w-6 sm:h-6 text-gray-700" />
+                            {/* Reload */}
+                            <button onClick={handleReload} className="neumorphic-button p-3 self-end sm:self-auto" title="Reload stream">
+                                <FaRedoAlt className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--text-secondary)' }} />
                             </button>
                         </div>
                     </div>
 
-                    {/* Main Content Grid */}
+                    {/* ===== MAIN CONTENT GRID ===== */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
                         {/* Video Player */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div
-                                ref={videoContainerRef}
-                                className="neumorphic-video-container relative bg-black"
-                            >
+                            <div ref={videoContainerRef} className="neumorphic-video-container relative bg-black">
                                 {isOnline && !streamError ? (
                                     <div className="absolute inset-0 w-full h-full">
-                                        {/* Loading Overlay */}
                                         {isLoading && <LoadingOverlay />}
-
-                                        {/* Video Iframe */}
                                         <iframe
                                             ref={iframeRef}
                                             src={streamUrl}
                                             className="absolute inset-0 w-full h-full border-0 rounded-xl"
                                             allowFullScreen
                                             allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                                            title={`${channel.name} - Live Stream`}                                            loading="eager"
+                                            title={`${channel.name} - Live Stream`}
+                                            loading="eager"
                                             onLoad={handleIframeLoad}
                                             onError={handleIframeError}
                                         />
-
-                                        {/* Bottom Controls Overlay */}
+                                        {/* Controls Overlay */}
                                         <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
                                             <div className="flex items-center justify-between text-white">
                                                 <div className="flex items-center gap-4 text-sm">
@@ -548,134 +426,86 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
                                                         <span className="font-medium">LIVE</span>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <FaSignal className="w-4 h-4" />
-                                                        <span>HD</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <FaEye className="w-4 h-4" />
-                                                        <span>{formatViewers(channel.viewers)}</span>
-                                                    </div>
+                                                    <div className="flex items-center gap-2"><FaSignal className="w-4 h-4" /><span>HD</span></div>
+                                                    <div className="flex items-center gap-2"><FaEye className="w-4 h-4" /><span>{formatViewers(channel.viewers)}</span></div>
                                                 </div>
                                                 <button
                                                     onClick={handleFullScreen}
                                                     className="p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 transition-colors"
                                                     title={isFullScreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                                                 >
-                                                    {isFullScreen ? (
-                                                        <FaCompress className="w-5 h-5" />
-                                                    ) : (
-                                                        <FaExpand className="w-5 h-5" />
-                                                    )}
+                                                    {isFullScreen ? <FaCompress className="w-5 h-5" /> : <FaExpand className="w-5 h-5" />}
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 ) : (
-                                    <StreamErrorState
-                                        isError={streamError}
-                                        onRetry={handleReload}
-                                    />
+                                    <StreamErrorState isError={streamError} onRetry={handleReload} />
                                 )}
                             </div>
 
                             {/* Stream Info Cards */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <InfoCard
-                                    icon={<FaSignal className="w-5 h-5" />}
-                                    label="Quality"
-                                    value="HD"
-                                    iconColor="text-green-500"
-                                />
-                                <InfoCard
-                                    icon={<FaBroadcastTower className="w-5 h-5" />}
-                                    label="Source"
-                                    value="Official"
-                                    iconColor="text-blue-500"
-                                />
-                                <InfoCard
-                                    icon={<FaGlobe className="w-5 h-5" />}
-                                    label="Country"
-                                    value={channel.country || 'International'}
-                                    iconColor="text-purple-500"
-                                />
-                                <InfoCard
-                                    icon={<FaTv className="w-5 h-5" />}
-                                    label="Category"
-                                    value={channel.category || 'General'}
-                                    iconColor="text-red-500"
-                                />
+                                <InfoCard icon={<FaSignal className="w-5 h-5" />} label="Quality" value="HD" iconColor="text-green-500" />
+                                <InfoCard icon={<FaBroadcastTower className="w-5 h-5" />} label="Source" value="Official" iconColor="text-blue-500" />
+                                <InfoCard icon={<FaGlobe className="w-5 h-5" />} label="Country" value={channel.country || 'International'} iconColor="text-purple-500" />
+                                <InfoCard icon={<FaTv className="w-5 h-5" />} label="Category" value={channel.category || 'General'} iconColor="text-red-500" />
                             </div>
                         </div>
 
-                        {/* Sidebar */}
+                        {/* ===== SIDEBAR ===== */}
                         <aside className="space-y-6">
-                            {/* Channel Details Card */}
+
+                            {/* Channel Details */}
                             <div className="neumorphic-card p-6">
-                                <h3 className="text-lg font-bold mb-4 text-gray-900">
+                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
                                     Channel Details
                                 </h3>
                                 <div className="space-y-4 text-sm">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-600">Status</span>
-                                        <span className="font-semibold flex items-center gap-2">
-                                            <div className={`w-2 h-2 rounded-full ${statusConfig.color}`}></div>
-                                            {statusConfig.text}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Viewers</span>
-                                        <span className="font-semibold">
-                                            {formatViewers(channel.viewers)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Language</span>
-                                        <span className="font-semibold">
-                                            {channel.language || 'Multiple'}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Category</span>
-                                        <span className="font-semibold">
-                                            {channel.category}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Region Code</span>
-                                        <span className="font-mono font-semibold uppercase">
-                                            {channel.code}
-                                        </span>
-                                    </div>
+                                    {[
+                                        { label: 'Status', value: statusConfig.text, dot: true },
+                                        { label: 'Viewers', value: formatViewers(channel.viewers) },
+                                        { label: 'Language', value: channel.language || 'Multiple' },
+                                        { label: 'Category', value: channel.category },
+                                        { label: 'Region Code', value: channel.code, mono: true },
+                                    ].map((item) => (
+                                        <div key={item.label} className="flex justify-between items-center">
+                                            <span style={{ color: 'var(--text-muted)' }}>{item.label}</span>
+                                            <span
+                                                className={`font-semibold flex items-center gap-2 ${item.mono ? 'font-mono uppercase' : ''}`}
+                                                style={{ color: 'var(--text-primary)' }}
+                                            >
+                                                {item.dot && <div className={`w-2 h-2 rounded-full ${statusConfig.color}`}></div>}
+                                                {item.value}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* Troubleshooting Card */}
-                            <div className="neumorphic-card p-6 bg-gradient-to-br from-red-50 to-orange-50">
-                                <h3 className="text-lg font-bold mb-3 text-gray-900">
+                            {/* Troubleshooting */}
+                            <div
+                                className="neumorphic-card p-6"
+                                style={{
+                                    background: `linear-gradient(to bottom right, var(--error-bg), var(--warning-bg))`,
+                                }}
+                            >
+                                <h3 className="text-lg font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
                                     Having Issues?
                                 </h3>
-                                <ul className="text-sm space-y-2 text-gray-700">
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-red-500 mt-0.5">•</span>
-                                        Try refreshing the stream
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-red-500 mt-0.5">•</span>
-                                        Disable ad-blockers temporarily
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-red-500 mt-0.5">•</span>
-                                        Use Chrome or Firefox browser
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-red-500 mt-0.5">•</span>
-                                        Check your internet connection
-                                    </li>
-                                    <li className="flex items-start gap-2">
-                                        <span className="text-red-500 mt-0.5">•</span>
-                                        Try a VPN if geo-restricted
-                                    </li>
+                                <ul className="text-sm space-y-2" style={{ color: 'var(--text-secondary)' }}>
+                                    {[
+                                        'Try refreshing the stream',
+                                        'Disable ad-blockers temporarily',
+                                        'Use Chrome or Firefox browser',
+                                        'Check your internet connection',
+                                        'Try a VPN if geo-restricted',
+                                    ].map((tip, i) => (
+                                        <li key={i} className="flex items-start gap-2">
+                                            <span className="text-red-500 mt-0.5">•</span>
+                                            {tip}
+                                        </li>
+                                    ))}
                                 </ul>
                                 <button
                                     onClick={handleReload}
@@ -688,31 +518,44 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
                             {/* Quick Actions */}
                             <div className="neumorphic-card p-6">
-                                <h3 className="text-lg font-bold mb-4 text-gray-900">
+                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
                                     Quick Actions
                                 </h3>
                                 <div className="space-y-3">
                                     <button
                                         onClick={toggleFavorite}
-                                        className={`w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${
-                                            isFavorite
-                                                ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
+                                        className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                        style={{
+                                            backgroundColor: isFavorite ? 'var(--error-bg)' : 'var(--surface-secondary)',
+                                            color: isFavorite ? 'var(--error-text)' : 'var(--text-secondary)',
+                                        }}
                                     >
                                         <FaHeart className={isFavorite ? 'text-red-500' : ''} />
                                         {isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
                                     </button>
-                                    <button
-                                        onClick={handleShare}
-                                        className="w-full px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        <FaShareAlt />
-                                        Share Channel
-                                    </button>
+                                    {[
+                                        { onClick: handleShare, icon: <FaShareAlt />, label: 'Share Channel' },
+                                    ].map((btn, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={btn.onClick}
+                                            className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                            style={{
+                                                backgroundColor: 'var(--surface-secondary)',
+                                                color: 'var(--text-secondary)',
+                                            }}
+                                        >
+                                            {btn.icon}
+                                            {btn.label}
+                                        </button>
+                                    ))}
                                     <Link
                                         href="/channels"
-                                        className="w-full px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                        className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                        style={{
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        }}
                                     >
                                         <FaTv />
                                         Browse All Channels
@@ -723,132 +566,6 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                     </div>
                 </div>
             </main>
-
-            {/* Global Styles */}
-            <style jsx global>{`
-                .neumorphic-card {
-                    background: #e0e0e0;
-                    border-radius: 20px;
-                    padding: 20px;
-                    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
-                }
-
-                .neumorphic-video-container {
-                    background: #1a1a1a;
-                    border-radius: 20px;
-                    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
-                    position: relative;
-                    overflow: hidden;
-                    height: 65vh;
-                    min-height: 450px;
-                    max-height: 700px;
-                }
-
-                .neumorphic-nav-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 10px 16px;
-                    border-radius: 12px;
-                    background: #e0e0e0;
-                    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
-                    transition: all 0.2s ease;
-                    color: #374151;
-                    font-weight: 500;
-                }
-
-                .neumorphic-nav-item:hover {
-                    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
-                }
-
-                .neumorphic-button {
-                    border-radius: 12px;
-                    background: #e0e0e0;
-                    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    border: none;
-                }
-
-                .neumorphic-button:hover {
-                    box-shadow: inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff;
-                }
-
-                .neumorphic-button:active {
-                    box-shadow: inset 6px 6px 12px #bebebe, inset -6px -6px 12px #ffffff;
-                }
-
-                .neumorphic-logo {
-                    background: #e0e0e0;
-                    box-shadow: 4px 4px 8px #bebebe, -4px -4px 8px #ffffff;
-                }
-
-                .neumorphic-dropdown {
-                    background: #e8e8e8;
-                    border-radius: 12px;
-                    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff, 0 10px 30px rgba(0, 0, 0, 0.1);
-                    border: 1px solid rgba(255, 255, 255, 0.5);
-                }
-
-                .dropdown-item {
-                    display: block;
-                    padding: 10px 16px;
-                    color: #4b5563;
-                    width: 100%;
-                    text-align: left;
-                    cursor: pointer;
-                    transition: background 0.2s ease;
-                    border: none;
-                    background: none;
-                    font-size: 14px;
-                }
-
-                .dropdown-item:hover {
-                    background: rgba(0, 0, 0, 0.05);
-                }
-
-                .fullscreen-fallback {
-                    position: fixed !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    z-index: 9999 !important;
-                    border-radius: 0 !important;
-                }
-
-                @keyframes ping {
-                    75%, 100% {
-                        transform: scale(2);
-                        opacity: 0;
-                    }
-                }
-
-                .animate-ping {
-                    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
-                }
-
-                @media (max-width: 768px) {
-                    .neumorphic-video-container {
-                        height: 50vh;
-                        min-height: 300px;
-                    }
-                }
-
-                @media (max-width: 640px) {
-                    .neumorphic-video-container {
-                        height: 40vh;
-                        min-height: 250px;
-                    }
-
-                    .neumorphic-card {
-                        padding: 16px;
-                    }
-                }
-            `}</style>
         </div>
     );
 }

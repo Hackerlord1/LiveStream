@@ -25,7 +25,7 @@ import {
     FaHistory,
 } from 'react-icons/fa';
 
-// API imports - types separated for better tree-shaking
+// API imports
 import type { ApiChannel } from '@/lib/api';
 import {
     fetchAllChannels,
@@ -62,18 +62,12 @@ const CATEGORY_ICONS: Record<string, string> = {
 
 // ========== HELPER FUNCTIONS ==========
 const getStatusColor = (status: string): string => {
-    const colors: Record<string, string> = {
-        online: 'bg-green-500',
-        offline: 'bg-gray-500',
-    };
+    const colors: Record<string, string> = { online: 'bg-green-500', offline: 'bg-gray-500' };
     return colors[status.toLowerCase()] || 'bg-yellow-500';
 };
 
 const getStatusText = (status: string): string => {
-    const texts: Record<string, string> = {
-        online: 'Live Now',
-        offline: 'Offline',
-    };
+    const texts: Record<string, string> = { online: 'Live Now', offline: 'Offline' };
     return texts[status.toLowerCase()] || 'Unknown';
 };
 
@@ -90,9 +84,9 @@ const getQualityIndicator = (viewers: number): string => {
 };
 
 const getQualityColor = (viewers: number): string => {
-    if (viewers > 1000) return 'bg-green-100 text-green-800';
-    if (viewers > 500) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
+    if (viewers > 1000) return 'status-success';
+    if (viewers > 500) return 'status-warning';
+    return 'status-error';
 };
 
 const getChannelKey = (channel: ApiChannel): string => {
@@ -101,27 +95,39 @@ const getChannelKey = (channel: ApiChannel): string => {
 
 // ========== LOADING COMPONENT ==========
 const LoadingSpinner = () => (
-    <div className="min-h-screen bg-[#e8e8e8] text-gray-900 flex items-center justify-center">
+    <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-primary)' }}
+    >
         <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-700">Loading channels...</p>
+            <p style={{ color: 'var(--text-muted)' }}>Loading channels...</p>
         </div>
     </div>
 );
 
-// ========== NO DATA / SERVICE UNAVAILABLE STATE ==========
+// ========== NO DATA STATE ==========
 const NoChannelsDataState = ({ onRetry }: { onRetry: () => void }) => (
-    <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
-        <div className="w-20 h-20 mx-auto mb-6 bg-yellow-50 rounded-full flex items-center justify-center">
+    <div
+        className="text-center py-16 rounded-2xl shadow-sm"
+        style={{
+            backgroundColor: 'var(--surface-primary)',
+            border: '1px solid var(--border-primary)',
+        }}
+    >
+        <div
+            className="w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--warning-bg)' }}
+        >
             <span className="text-4xl">🛠️</span>
         </div>
-        <h3 className="text-2xl font-bold mb-3 text-gray-900">
+        <h3 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
             We&apos;re Working on the Channels
         </h3>
-        <p className="text-gray-600 max-w-lg mx-auto mb-2 text-base">
+        <p className="max-w-lg mx-auto mb-2 text-base" style={{ color: 'var(--text-secondary)' }}>
             Our team is currently updating the channel list. Live TV channels will appear here shortly.
         </p>
-        <p className="text-gray-400 max-w-md mx-auto mb-8 text-sm">
+        <p className="max-w-md mx-auto mb-8 text-sm" style={{ color: 'var(--text-muted)' }}>
             This usually takes just a few minutes. Thanks for your patience!
         </p>
         <button
@@ -134,7 +140,7 @@ const NoChannelsDataState = ({ onRetry }: { onRetry: () => void }) => (
     </div>
 );
 
-// ========== EMPTY STATE COMPONENT ==========
+// ========== EMPTY STATE ==========
 interface EmptyStateProps {
     sortBy: SortOption;
     searchTerm: string;
@@ -145,11 +151,11 @@ interface EmptyStateProps {
 const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProps) => {
     const getIcon = () => {
         const icons: Record<string, React.ReactNode> = {
-            favorites: <FaHeart className="text-4xl text-gray-400" />,
-            recent: <FaHistory className="text-4xl text-gray-400" />,
-            trending: <FaFire className="text-4xl text-gray-400" />,
+            favorites: <FaHeart className="text-4xl" style={{ color: 'var(--text-muted)' }} />,
+            recent: <FaHistory className="text-4xl" style={{ color: 'var(--text-muted)' }} />,
+            trending: <FaFire className="text-4xl" style={{ color: 'var(--text-muted)' }} />,
         };
-        return icons[sortBy] || <FaTv className="text-4xl text-gray-400" />;
+        return icons[sortBy] || <FaTv className="text-4xl" style={{ color: 'var(--text-muted)' }} />;
     };
 
     const getTitle = () => {
@@ -169,12 +175,21 @@ const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProp
     };
 
     return (
-        <div className="text-center py-16 bg-white rounded-2xl border border-gray-300 shadow-sm">
-            <div className="w-24 h-24 mx-auto mb-6 bg-gray-100 rounded-full flex items-center justify-center">
+        <div
+            className="text-center py-16 rounded-2xl shadow-sm"
+            style={{
+                backgroundColor: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+            }}
+        >
+            <div
+                className="w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: 'var(--surface-secondary)' }}
+            >
                 {getIcon()}
             </div>
-            <h3 className="text-2xl font-semibold mb-3 text-gray-900">{getTitle()}</h3>
-            <p className="text-gray-600 max-w-md mx-auto mb-8 text-lg">{getMessage()}</p>
+            <h3 className="text-2xl font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>{getTitle()}</h3>
+            <p className="max-w-md mx-auto mb-8 text-lg" style={{ color: 'var(--text-secondary)' }}>{getMessage()}</p>
             <div className="flex flex-wrap justify-center gap-4">
                 <button
                     onClick={onReset}
@@ -185,7 +200,12 @@ const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProp
                 {sortBy === 'favorites' && (
                     <button
                         onClick={onBrowseAll}
-                        className="px-6 py-3 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl text-gray-700 font-medium transition-colors"
+                        className="px-6 py-3 rounded-xl font-medium transition-colors"
+                        style={{
+                            backgroundColor: 'var(--surface-primary)',
+                            border: '1px solid var(--border-primary)',
+                            color: 'var(--text-secondary)',
+                        }}
                     >
                         Browse All Channels
                     </button>
@@ -195,7 +215,7 @@ const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProp
     );
 };
 
-// ========== CHANNEL CARD COMPONENT ==========
+// ========== CHANNEL CARD ==========
 interface ChannelCardProps {
     channel: ApiChannel;
     featured?: boolean;
@@ -204,26 +224,21 @@ interface ChannelCardProps {
     onWatch: (channel: ApiChannel) => void;
 }
 
-const ChannelCard = ({
-    channel,
-    featured = false,
-    isFavorite,
-    onToggleFavorite,
-    onWatch
-}: ChannelCardProps) => (
-    <Link
-        href={`/channels/${encodeURIComponent(getChannelKey(channel))}`}
-        className="block"
-    >
+const ChannelCard = ({ channel, featured = false, isFavorite, onToggleFavorite, onWatch }: ChannelCardProps) => (
+    <Link href={`/channels/${encodeURIComponent(getChannelKey(channel))}`} className="block">
         <div className={`neumorphic-card group relative ${featured ? 'featured-card' : ''}`}>
             {/* Favorite Button */}
             <button
                 onClick={(e) => onToggleFavorite(channel, e)}
-                className="absolute top-3 right-3 z-20 p-2 bg-white/80 hover:bg-white rounded-full shadow-md transition-all hover:scale-110"
+                className="absolute top-3 right-3 z-20 p-2 rounded-full shadow-md transition-all hover:scale-110"
+                style={{
+                    backgroundColor: 'var(--surface-primary)',
+                    opacity: 0.9,
+                }}
                 title={isFavorite ? "Remove from favorites" : "Add to favorites"}
             >
-                <FaHeart
-                    className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-current' : 'text-gray-400'}`}
+                <FaHeart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-current' : ''}`}
+                    style={!isFavorite ? { color: 'var(--text-muted)' } : undefined}
                 />
             </button>
 
@@ -244,29 +259,32 @@ const ChannelCard = ({
 
             {/* Channel Logo */}
             <div className="flex items-center justify-center h-32 mt-4">
-                <div className="relative w-24 h-24 bg-white rounded-2xl p-3 shadow-inner group-hover:shadow-lg transition-all duration-300">
+                <div
+                    className="relative w-24 h-24 rounded-2xl p-3 shadow-inner group-hover:shadow-lg transition-all duration-300"
+                    style={{ backgroundColor: 'var(--surface-primary)' }}
+                >
                     <Image
                         src={channel.image}
                         alt={channel.name}
                         fill
                         className="object-contain p-1 group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src = '/channel-placeholder.svg';
-                        }}
+                        onError={(e) => { const target = e.target as HTMLImageElement; target.src = '/channel-placeholder.svg'; }}
                     />
                 </div>
             </div>
 
             {/* Channel Info */}
             <div className="text-center mt-4">
-                <h3 className="font-bold text-gray-900 truncate text-lg group-hover:text-red-600 transition-colors">
+                <h3
+                    className="font-bold truncate text-lg group-hover:text-red-600 transition-colors"
+                    style={{ color: 'var(--text-primary)' }}
+                >
                     {channel.name}
                 </h3>
                 <div className="flex items-center justify-center gap-2 mt-1">
-                    <span className="text-xs text-gray-600">{channel.country}</span>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className="text-xs text-gray-600">{channel.category}</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{channel.country}</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>•</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{channel.category}</span>
                 </div>
             </div>
 
@@ -278,16 +296,16 @@ const ChannelCard = ({
             </div>
 
             {/* Viewers and Action */}
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-300">
+            <div
+                className="flex items-center justify-between mt-4 pt-3"
+                style={{ borderTop: '1px solid var(--border-secondary)' }}
+            >
                 <div className="flex items-center gap-1">
-                    <FaEye className="w-3 h-3 text-gray-500" />
-                    <span className="text-xs text-gray-600">{formatViewers(channel.viewers)}</span>
+                    <FaEye className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatViewers(channel.viewers)}</span>
                 </div>
                 <button
-                    onClick={(e) => {
-                        e.preventDefault();
-                        onWatch(channel);
-                    }}
+                    onClick={(e) => { e.preventDefault(); onWatch(channel); }}
                     className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-xs font-semibold text-white transition-all duration-300 shadow-sm hover:shadow-md group-hover:scale-105 flex items-center gap-1"
                 >
                     <FaPlay className="w-3 h-3" />
@@ -298,7 +316,7 @@ const ChannelCard = ({
     </Link>
 );
 
-// ========== CHANNEL ROW COMPONENT ==========
+// ========== CHANNEL ROW ==========
 interface ChannelRowProps {
     channel: ApiChannel;
     isFavorite: boolean;
@@ -311,16 +329,16 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
         <div className="flex items-center gap-4">
             {/* Channel Logo */}
             <div className="relative w-16 h-16 flex-shrink-0">
-                <div className="absolute inset-0 bg-white rounded-xl p-2 shadow-inner">
+                <div
+                    className="absolute inset-0 rounded-xl p-2 shadow-inner"
+                    style={{ backgroundColor: 'var(--surface-primary)' }}
+                >
                     <Image
                         src={channel.image}
                         alt={channel.name}
                         fill
                         className="object-contain"
-                        onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src = '/channel-placeholder.svg';
-                        }}
+                        onError={(e) => { const target = e.target as HTMLImageElement; target.src = '/channel-placeholder.svg'; }}
                     />
                 </div>
             </div>
@@ -329,22 +347,25 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
             <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between">
                     <div>
-                        <h3 className="font-bold text-gray-900 text-lg group-hover:text-red-600 transition-colors">
+                        <h3
+                            className="font-bold text-lg group-hover:text-red-600 transition-colors"
+                            style={{ color: 'var(--text-primary)' }}
+                        >
                             {channel.name}
                         </h3>
                         <div className="flex items-center gap-3 mt-1">
-                            <span className="text-sm text-gray-600">{channel.category}</span>
-                            <span className="text-xs text-gray-400">•</span>
-                            <span className="text-sm text-gray-600">{channel.country}</span>
-                            <span className="text-xs text-gray-400">•</span>
-                            <span className="text-sm text-gray-600">{channel.language}</span>
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{channel.category}</span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>•</span>
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{channel.country}</span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>•</span>
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{channel.language}</span>
                         </div>
                     </div>
 
-                    {/* Status Indicator */}
+                    {/* Status */}
                     <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(channel.status)}`}></div>
-                        <span className="text-xs text-gray-600">{getStatusText(channel.status)}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{getStatusText(channel.status)}</span>
                     </div>
                 </div>
 
@@ -352,22 +373,22 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
                 <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-1">
-                            <FaEye className="w-3 h-3 text-gray-500" />
-                            <span className="text-xs text-gray-600">{formatViewers(channel.viewers)} viewers</span>
+                            <FaEye className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatViewers(channel.viewers)} viewers</span>
                         </div>
-                        <div className={`text-xs px-2 py-1 rounded ${getQualityColor(channel.viewers)}`}>
+                        <span className={`text-xs px-2 py-1 rounded ${getQualityColor(channel.viewers)}`}>
                             {getQualityIndicator(channel.viewers)}
-                        </div>
+                        </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                         <button
                             onClick={(e) => onToggleFavorite(channel, e)}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 rounded-lg transition-colors hover-surface"
                             title={isFavorite ? "Remove from favorites" : "Add to favorites"}
                         >
-                            <FaHeart
-                                className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-current' : 'text-gray-400'}`}
+                            <FaHeart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-current' : ''}`}
+                                style={!isFavorite ? { color: 'var(--text-muted)' } : undefined}
                             />
                         </button>
                         <button
@@ -383,7 +404,7 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
         </div>
     </div>
 );
-// ========== MAIN COMPONENT ==========
+// ========== MAIN COMPONENT (continued) ==========
 export default function ChannelsPage() {
     const router = useRouter();
 
@@ -403,178 +424,93 @@ export default function ChannelsPage() {
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [isSearching, setIsSearching] = useState(false);
 
-    // Load channels and user data on mount
-    useEffect(() => {
-        loadChannels();
-        loadUserData();
-    }, []);
+    useEffect(() => { loadChannels(); loadUserData(); }, []);
 
     const loadChannels = async () => {
         try {
-            setLoading(true);
-            setError(null);
+            setLoading(true); setError(null);
             const data = await fetchAllChannels();
-            setChannels(data.channels);
-            setSearchResults(data.channels);
+            setChannels(data.channels); setSearchResults(data.channels);
         } catch (err) {
             console.error('Error loading channels:', err);
             setError('Failed to load channels. Please try again.');
-        } finally {
-            setLoading(false);
-        }
+        } finally { setLoading(false); }
     };
 
     const loadUserData = () => {
         if (typeof window === 'undefined') return;
-
         try {
             const savedFavorites = localStorage.getItem(STORAGE_KEYS.FAVORITES);
-            if (savedFavorites) {
-                setFavoriteChannels(JSON.parse(savedFavorites));
-            }
-
+            if (savedFavorites) setFavoriteChannels(JSON.parse(savedFavorites));
             const savedRecent = localStorage.getItem(STORAGE_KEYS.RECENT);
-            if (savedRecent) {
-                setRecentlyViewed(JSON.parse(savedRecent));
-            }
-        } catch (err) {
-            console.error('Error loading user data:', err);
-        }
+            if (savedRecent) setRecentlyViewed(JSON.parse(savedRecent));
+        } catch (err) { console.error('Error loading user data:', err); }
     };
 
-    // Memoized filter values
     const categories = useMemo(() => getChannelCategories(channels), [channels]);
     const countries = useMemo(() => getChannelCountries(channels), [channels]);
     const languages = useMemo(() => getChannelLanguages(channels), [channels]);
 
-    // Search effect with debounce
     useEffect(() => {
         const search = async () => {
-            if (searchTerm.trim() === '') {
-                setSearchResults(channels);
-                setIsSearching(false);
-                return;
-            }
-
+            if (searchTerm.trim() === '') { setSearchResults(channels); setIsSearching(false); return; }
             setIsSearching(true);
-            try {
-                const results = await searchChannels(searchTerm);
-                setSearchResults(results);
-            } catch (err) {
-                console.error('Search error:', err);
-                setSearchResults(channels);
-            } finally {
-                setIsSearching(false);
-            }
+            try { const results = await searchChannels(searchTerm); setSearchResults(results); }
+            catch { setSearchResults(channels); }
+            finally { setIsSearching(false); }
         };
-
         const debounceTimer = setTimeout(search, 300);
         return () => clearTimeout(debounceTimer);
     }, [searchTerm, channels]);
 
-    // Filtered and sorted channels
     const filteredChannels = useMemo(() => {
         const channelsToFilter = searchTerm ? searchResults : channels;
-
         let filtered = channelsToFilter.filter(channel => {
             const categoryMatch = selectedCategory === 'all' || channel.category === selectedCategory;
             const countryMatch = selectedCountry === 'all' || channel.country === selectedCountry;
             const languageMatch = selectedLanguage === 'all' || channel.language === selectedLanguage;
             return categoryMatch && countryMatch && languageMatch;
         });
-
-        // Apply special filters
-        if (sortBy === 'favorites') {
-            filtered = filtered.filter(channel => favoriteChannels.includes(getChannelKey(channel)));
-        } else if (sortBy === 'recent') {
-            filtered = filtered.filter(channel => recentlyViewed.includes(getChannelKey(channel)));
-        } else if (sortBy === 'trending') {
-            filtered = [...filtered].sort((a, b) => b.viewers - a.viewers).slice(0, 50);
-        }
-
-        // Sort
+        if (sortBy === 'favorites') filtered = filtered.filter(ch => favoriteChannels.includes(getChannelKey(ch)));
+        else if (sortBy === 'recent') filtered = filtered.filter(ch => recentlyViewed.includes(getChannelKey(ch)));
+        else if (sortBy === 'trending') filtered = [...filtered].sort((a, b) => b.viewers - a.viewers).slice(0, 50);
         switch (sortBy) {
-            case 'viewers':
-                return filtered.sort((a, b) => b.viewers - a.viewers);
-            case 'country':
-                return filtered.sort((a, b) => (a.country || '').localeCompare(b.country || ''));
-            case 'name':
-                return filtered.sort((a, b) => a.name.localeCompare(b.name));
-            case 'recent':
-                return filtered.sort((a, b) => {
-                    const aIndex = recentlyViewed.indexOf(getChannelKey(a));
-                    const bIndex = recentlyViewed.indexOf(getChannelKey(b));
-                    if (aIndex === -1 && bIndex === -1) return 0;
-                    if (aIndex === -1) return 1;
-                    if (bIndex === -1) return -1;
-                    return aIndex - bIndex;
-                });
-            default:
-                return filtered;
+            case 'viewers': return filtered.sort((a, b) => b.viewers - a.viewers);
+            case 'country': return filtered.sort((a, b) => (a.country || '').localeCompare(b.country || ''));
+            case 'name': return filtered.sort((a, b) => a.name.localeCompare(b.name));
+            case 'recent': return filtered.sort((a, b) => {
+                const aI = recentlyViewed.indexOf(getChannelKey(a)), bI = recentlyViewed.indexOf(getChannelKey(b));
+                if (aI === -1 && bI === -1) return 0; if (aI === -1) return 1; if (bI === -1) return -1; return aI - bI;
+            });
+            default: return filtered;
         }
     }, [channels, searchResults, searchTerm, selectedCategory, selectedCountry, selectedLanguage, sortBy, favoriteChannels, recentlyViewed]);
 
-    // Reset filters
     const resetFilters = useCallback(() => {
-        setSearchTerm('');
-        setSelectedCategory('all');
-        setSelectedCountry('all');
-        setSelectedLanguage('all');
-        setSortBy('viewers');
-        setSearchResults(channels);
+        setSearchTerm(''); setSelectedCategory('all'); setSelectedCountry('all'); setSelectedLanguage('all'); setSortBy('viewers'); setSearchResults(channels);
     }, [channels]);
 
-    // Handle watch channel
     const handleWatchChannel = useCallback((channel: ApiChannel) => {
         const channelKey = getChannelKey(channel);
-
-        // Update recently viewed
-        const updatedRecent = [
-            channelKey,
-            ...recentlyViewed.filter(key => key !== channelKey)
-        ].slice(0, MAX_RECENT_CHANNELS);
-
+        const updatedRecent = [channelKey, ...recentlyViewed.filter(key => key !== channelKey)].slice(0, MAX_RECENT_CHANNELS);
         setRecentlyViewed(updatedRecent);
-
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updatedRecent));
-        }
-
+        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updatedRecent));
         router.push(`/channels/${encodeURIComponent(channelKey)}`);
     }, [router, recentlyViewed]);
 
-    // Toggle favorite
     const toggleFavorite = useCallback((channel: ApiChannel, e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-
+        e.stopPropagation(); e.preventDefault();
         const channelKey = getChannelKey(channel);
         const newFavorites = favoriteChannels.includes(channelKey)
-            ? favoriteChannels.filter(fav => fav !== channelKey)
-            : [...favoriteChannels, channelKey];
-
+            ? favoriteChannels.filter(fav => fav !== channelKey) : [...favoriteChannels, channelKey];
         setFavoriteChannels(newFavorites);
-
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(newFavorites));
-        }
+        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(newFavorites));
     }, [favoriteChannels]);
 
-    // Check if channel is favorite
-    const isFavorite = useCallback((channel: ApiChannel) => {
-        return favoriteChannels.includes(getChannelKey(channel));
-    }, [favoriteChannels]);
+    const isFavorite = useCallback((channel: ApiChannel) => favoriteChannels.includes(getChannelKey(channel)), [favoriteChannels]);
 
-    // Check if any filters are active
-    const hasActiveFilters = selectedCategory !== 'all' ||
-        selectedCountry !== 'all' ||
-        selectedLanguage !== 'all' ||
-        searchTerm !== '' ||
-        sortBy === 'favorites' ||
-        sortBy === 'recent' ||
-        sortBy === 'trending';
+    const hasActiveFilters = selectedCategory !== 'all' || selectedCountry !== 'all' || selectedLanguage !== 'all' || searchTerm !== '' || sortBy === 'favorites' || sortBy === 'recent' || sortBy === 'trending';
 
-    // Get section title
     const getSectionTitle = () => {
         if (searchTerm) return `Search Results for "${searchTerm}"`;
         if (sortBy === 'favorites') return 'Your Favorite Channels';
@@ -583,12 +519,11 @@ export default function ChannelsPage() {
         return 'All Channels';
     };
 
-    if (loading) {
-        return <LoadingSpinner />;
-    }
+    if (loading) return <LoadingSpinner />;
 
+    // ========== RENDER ==========
     return (
-        <div className="min-h-screen bg-[#e8e8e8] text-gray-900">
+        <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-secondary)' }}>
             <Header />
 
             <main className="relative z-10">
@@ -596,24 +531,29 @@ export default function ChannelsPage() {
 
                     {/* Error Message */}
                     {error && (
-                        <div className="mb-6 p-4 bg-red-100 border border-red-300 rounded-xl text-red-700">
+                        <div
+                            className="mb-6 p-4 rounded-xl"
+                            style={{
+                                backgroundColor: 'var(--error-bg)',
+                                border: '1px solid var(--brand-red)',
+                                color: 'var(--error-text)',
+                            }}
+                        >
                             <p>{error}</p>
-                            <button
-                                onClick={loadChannels}
-                                className="mt-2 text-sm underline hover:no-underline"
-                            >
-                                Try again
-                            </button>
+                            <button onClick={loadChannels} className="mt-2 text-sm underline hover:no-underline">Try again</button>
                         </div>
                     )}
 
-                    {/* NO DATA STATE — shown when channels array is empty and no error */}
+                    {/* NO DATA STATE */}
                     {channels.length === 0 && !error ? (
                         <NoChannelsDataState onRetry={loadChannels} />
                     ) : channels.length > 0 && (
                         <>
-                            {/* Search and Filter Section */}
-                            <div className="sticky top-16 z-30 bg-[#e8e8e8] py-4 mb-6">
+                            {/* ===== SEARCH & FILTER SECTION ===== */}
+                            <div
+                                className="sticky top-16 z-30 py-4 mb-6"
+                                style={{ backgroundColor: 'var(--neu-bg-page)' }}
+                            >
                                 <div className="flex flex-col md:flex-row gap-4">
                                     {/* Search Bar */}
                                     <div className="w-full md:w-auto md:flex-1">
@@ -623,9 +563,14 @@ export default function ChannelsPage() {
                                                 placeholder="Search channels by name, category, or country..."
                                                 value={searchTerm}
                                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                                className="w-full px-4 py-3 bg-white rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm text-sm"
+                                                className="w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm text-sm"
+                                                style={{
+                                                    backgroundColor: 'var(--surface-primary)',
+                                                    color: 'var(--text-primary)',
+                                                    border: '1px solid var(--border-primary)',
+                                                }}
                                             />
-                                            <FaSearch className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                            <FaSearch className="absolute right-3 top-1/2 transform -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
                                             {isSearching && (
                                                 <div className="absolute right-10 top-1/2 transform -translate-y-1/2">
                                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-red-600"></div>
@@ -636,22 +581,21 @@ export default function ChannelsPage() {
 
                                     {/* View Toggle */}
                                     <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setViewMode('grid')}
-                                            className={`px-3 py-2 rounded-lg transition-colors ${
-                                                viewMode === 'grid' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
-                                            }`}
-                                        >
-                                            Grid
-                                        </button>
-                                        <button
-                                            onClick={() => setViewMode('list')}
-                                            className={`px-3 py-2 rounded-lg transition-colors ${
-                                                viewMode === 'list' ? 'bg-red-600 text-white' : 'bg-white text-gray-700'
-                                            }`}
-                                        >
-                                            List
-                                        </button>
+                                        {(['grid', 'list'] as ViewMode[]).map((mode) => (
+                                            <button
+                                                key={mode}
+                                                onClick={() => setViewMode(mode)}
+                                                className={`px-3 py-2 rounded-lg transition-colors capitalize ${
+                                                    viewMode === mode ? 'bg-red-600 text-white' : ''
+                                                }`}
+                                                style={viewMode !== mode ? {
+                                                    backgroundColor: 'var(--surface-primary)',
+                                                    color: 'var(--text-secondary)',
+                                                } : undefined}
+                                            >
+                                                {mode}
+                                            </button>
+                                        ))}
                                     </div>
 
                                     {/* Sort and Filter */}
@@ -660,7 +604,12 @@ export default function ChannelsPage() {
                                             <select
                                                 value={sortBy}
                                                 onChange={(e) => setSortBy(e.target.value as SortOption)}
-                                                className="px-4 py-3 bg-white rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm appearance-none pr-10 text-sm"
+                                                className="px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm appearance-none pr-10 text-sm"
+                                                style={{
+                                                    backgroundColor: 'var(--surface-primary)',
+                                                    color: 'var(--text-primary)',
+                                                    border: '1px solid var(--border-primary)',
+                                                }}
                                             >
                                                 <option value="viewers">Most Viewed</option>
                                                 <option value="trending">Trending Now</option>
@@ -669,12 +618,17 @@ export default function ChannelsPage() {
                                                 <option value="name">Name A-Z</option>
                                                 <option value="country">By Country</option>
                                             </select>
-                                            <FaChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                            <FaChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
                                         </div>
 
                                         <button
                                             onClick={() => setShowFilters(!showFilters)}
-                                            className="flex items-center gap-2 px-4 py-3 bg-white hover:bg-gray-100 rounded-xl transition-colors text-gray-700 border border-gray-300 shadow-sm text-sm"
+                                            className="flex items-center gap-2 px-4 py-3 rounded-xl transition-colors shadow-sm text-sm"
+                                            style={{
+                                                backgroundColor: 'var(--surface-primary)',
+                                                color: 'var(--text-secondary)',
+                                                border: '1px solid var(--border-primary)',
+                                            }}
                                         >
                                             <FaFilter className="w-4 h-4" />
                                             {showFilters ? 'Hide Filters' : 'Filters'}
@@ -683,70 +637,57 @@ export default function ChannelsPage() {
                                     </div>
                                 </div>
 
-                                {/* Advanced Filters */}
+                                {/* ===== ADVANCED FILTERS ===== */}
                                 {showFilters && (
-                                    <div className="mt-4 bg-white rounded-xl p-4 shadow-sm border border-gray-300">
+                                    <div
+                                        className="mt-4 rounded-xl p-4 shadow-sm"
+                                        style={{
+                                            backgroundColor: 'var(--surface-primary)',
+                                            border: '1px solid var(--border-primary)',
+                                        }}
+                                    >
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    <FaTv className="inline mr-2" />
-                                                    Category
-                                                </label>
-                                                <select
-                                                    value={selectedCategory}
-                                                    onChange={(e) => setSelectedCategory(e.target.value)}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                                >
-                                                    <option value="all">All Categories</option>
-                                                    {categories.map((category) => (
-                                                        <option key={category} value={category}>
-                                                            {CATEGORY_ICONS[category] || '📺'} {category}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            {[
+                                                { label: 'Category', icon: <FaTv className="inline mr-2" />, value: selectedCategory, setter: setSelectedCategory, options: categories, allLabel: 'All Categories', withIcons: true },
+                                                { label: 'Country', icon: <FaGlobe className="inline mr-2" />, value: selectedCountry, setter: setSelectedCountry, options: countries, allLabel: 'All Countries' },
+                                                { label: 'Language', icon: <FaLanguage className="inline mr-2" />, value: selectedLanguage, setter: setSelectedLanguage, options: languages, allLabel: 'All Languages' },
+                                            ].map((filter) => (
+                                                <div key={filter.label}>
+                                                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                                        {filter.icon}{filter.label}
+                                                    </label>
+                                                    <select
+                                                        value={filter.value}
+                                                        onChange={(e) => filter.setter(e.target.value)}
+                                                        className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                        style={{
+                                                            backgroundColor: 'var(--input-bg)',
+                                                            border: '1px solid var(--input-border)',
+                                                            color: 'var(--input-text)',
+                                                        }}
+                                                    >
+                                                        <option value="all">{filter.allLabel}</option>
+                                                        {filter.options.map((opt) => (
+                                                            <option key={opt} value={opt}>
+                                                                {filter.withIcons ? `${CATEGORY_ICONS[opt] || '📺'} ` : ''}{opt}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            ))}
 
+                                            {/* Status Filter */}
                                             <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    <FaGlobe className="inline mr-2" />
-                                                    Country
+                                                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                                    <FaSignal className="inline mr-2" />Status
                                                 </label>
                                                 <select
-                                                    value={selectedCountry}
-                                                    onChange={(e) => setSelectedCountry(e.target.value)}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                                >
-                                                    <option value="all">All Countries</option>
-                                                    {countries.map((country) => (
-                                                        <option key={country} value={country}>{country}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    <FaLanguage className="inline mr-2" />
-                                                    Language
-                                                </label>
-                                                <select
-                                                    value={selectedLanguage}
-                                                    onChange={(e) => setSelectedLanguage(e.target.value)}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                                >
-                                                    <option value="all">All Languages</option>
-                                                    {languages.map((language) => (
-                                                        <option key={language} value={language}>{language}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    <FaSignal className="inline mr-2" />
-                                                    Status
-                                                </label>
-                                                <select
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                    className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                    style={{
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        border: '1px solid var(--input-border)',
+                                                        color: 'var(--input-text)',
+                                                    }}
                                                 >
                                                     <option value="all">All Status</option>
                                                     <option value="online">Online Only</option>
@@ -758,12 +699,16 @@ export default function ChannelsPage() {
                                         <div className="flex justify-between items-center">
                                             <button
                                                 onClick={resetFilters}
-                                                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+                                                className="px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+                                                style={{
+                                                    backgroundColor: 'var(--surface-secondary)',
+                                                    color: 'var(--text-secondary)',
+                                                }}
                                             >
                                                 <FaTimes className="w-4 h-4" />
                                                 Clear All Filters
                                             </button>
-                                            <div className="text-sm text-gray-600">
+                                            <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                                 Showing {filteredChannels.length} of {channels.length} channels
                                             </div>
                                         </div>
@@ -771,138 +716,89 @@ export default function ChannelsPage() {
                                 )}
                             </div>
 
-                            {/* Active Filters Display */}
+                            {/* ===== ACTIVE FILTERS DISPLAY ===== */}
                             {hasActiveFilters && (
                                 <div className="mb-6">
                                     <div className="flex flex-wrap gap-2 mb-3">
-                                        <span className="text-sm font-medium text-gray-700">Active filters:</span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Active filters:</span>
 
-                                        {selectedCategory !== 'all' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaTv className="w-3 h-3 text-gray-500" />
-                                                {selectedCategory}
-                                                <button onClick={() => setSelectedCategory('all')} className="text-gray-500 hover:text-gray-900">
+                                        {[
+                                            { active: selectedCategory !== 'all', icon: <FaTv className="w-3 h-3" />, label: selectedCategory, onClear: () => setSelectedCategory('all') },
+                                            { active: selectedCountry !== 'all', icon: <FaGlobe className="w-3 h-3" />, label: selectedCountry, onClear: () => setSelectedCountry('all') },
+                                            { active: selectedLanguage !== 'all', icon: <FaLanguage className="w-3 h-3" />, label: selectedLanguage, onClear: () => setSelectedLanguage('all') },
+                                            { active: !!searchTerm, icon: <FaSearch className="w-3 h-3" />, label: `"${searchTerm}"`, onClear: () => setSearchTerm('') },
+                                            { active: sortBy === 'favorites', icon: <FaHeart className="w-3 h-3 text-red-500" />, label: 'Favorites', onClear: () => setSortBy('viewers') },
+                                            { active: sortBy === 'recent', icon: <FaHistory className="w-3 h-3 text-blue-500" />, label: 'Recently Viewed', onClear: () => setSortBy('viewers') },
+                                            { active: sortBy === 'trending', icon: <FaFire className="w-3 h-3 text-orange-500" />, label: 'Trending Now', onClear: () => setSortBy('viewers') },
+                                        ].filter(f => f.active).map((filter, index) => (
+                                            <span
+                                                key={index}
+                                                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm"
+                                                style={{
+                                                    backgroundColor: 'var(--surface-primary)',
+                                                    border: '1px solid var(--border-primary)',
+                                                    color: 'var(--text-secondary)',
+                                                }}
+                                            >
+                                                <span style={{ color: 'var(--text-muted)' }}>{filter.icon}</span>
+                                                {filter.label}
+                                                <button onClick={filter.onClear} style={{ color: 'var(--text-muted)' }}>
                                                     <FaTimes className="w-3 h-3" />
                                                 </button>
                                             </span>
-                                        )}
-
-                                        {selectedCountry !== 'all' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaGlobe className="w-3 h-3 text-gray-500" />
-                                                {selectedCountry}
-                                                <button onClick={() => setSelectedCountry('all')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
-
-                                        {selectedLanguage !== 'all' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaLanguage className="w-3 h-3 text-gray-500" />
-                                                {selectedLanguage}
-                                                <button onClick={() => setSelectedLanguage('all')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
-
-                                        {searchTerm && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaSearch className="w-3 h-3 text-gray-500" />
-                                                &quot;{searchTerm}&quot;
-                                                <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
-
-                                        {sortBy === 'favorites' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaHeart className="w-3 h-3 text-red-500" />
-                                                Favorites
-                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
-
-                                        {sortBy === 'recent' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaHistory className="w-3 h-3 text-blue-500" />
-                                                Recently Viewed
-                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
-
-                                        {sortBy === 'trending' && (
-                                            <span className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full text-sm border border-gray-300">
-                                                <FaFire className="w-3 h-3 text-orange-500" />
-                                                Trending Now
-                                                <button onClick={() => setSortBy('viewers')} className="text-gray-500 hover:text-gray-900">
-                                                    <FaTimes className="w-3 h-3" />
-                                                </button>
-                                            </span>
-                                        )}
+                                        ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Quick Category Navigation */}
+                            {/* ===== CATEGORY NAVIGATION ===== */}
                             <div className="mb-8">
-                                <h2 className="text-xl font-bold text-gray-900 mb-4">Browse by Category</h2>
+                                <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>Browse by Category</h2>
                                 <div className="flex flex-wrap gap-3">
                                     {Object.entries(CATEGORY_ICONS).map(([category, icon]) => (
                                         <button
                                             key={category}
                                             onClick={() => setSelectedCategory(category)}
                                             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                                                selectedCategory === category
-                                                    ? 'bg-red-600 text-white'
-                                                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                                                selectedCategory === category ? 'bg-red-600 text-white' : ''
                                             }`}
+                                            style={selectedCategory !== category ? {
+                                                backgroundColor: 'var(--surface-primary)',
+                                                color: 'var(--text-secondary)',
+                                            } : undefined}
                                         >
                                             {icon} {category}
                                         </button>
                                     ))}
-                                    <button
-                                        onClick={() => setSortBy('trending')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                            sortBy === 'trending' ? 'bg-orange-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                        }`}
-                                    >
-                                        <FaFire className="w-4 h-4" />
-                                        Trending
-                                    </button>
-                                    <button
-                                        onClick={() => setSortBy('recent')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                            sortBy === 'recent' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                        }`}
-                                    >
-                                        <FaHistory className="w-4 h-4" />
-                                        Recent
-                                    </button>
-                                    <button
-                                        onClick={() => setSortBy('favorites')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                                            sortBy === 'favorites' ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
-                                        }`}
-                                    >
-                                        <FaHeart className="w-4 h-4" />
-                                        Favorites
-                                    </button>
+                                    {[
+                                        { key: 'trending', icon: <FaFire className="w-4 h-4" />, label: 'Trending', activeColor: 'bg-orange-600' },
+                                        { key: 'recent', icon: <FaHistory className="w-4 h-4" />, label: 'Recent', activeColor: 'bg-blue-600' },
+                                        { key: 'favorites', icon: <FaHeart className="w-4 h-4" />, label: 'Favorites', activeColor: 'bg-red-600' },
+                                    ].map((btn) => (
+                                        <button
+                                            key={btn.key}
+                                            onClick={() => setSortBy(btn.key as SortOption)}
+                                            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                                                sortBy === btn.key ? `${btn.activeColor} text-white` : ''
+                                            }`}
+                                            style={sortBy !== btn.key ? {
+                                                backgroundColor: 'var(--surface-primary)',
+                                                color: 'var(--text-secondary)',
+                                            } : undefined}
+                                        >
+                                            {btn.icon}
+                                            {btn.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* Channels Section */}
+                            {/* ===== CHANNELS SECTION ===== */}
                             <section className="mb-12">
                                 <div className="flex items-center justify-between mb-6">
-                                    <h2 className="text-2xl font-bold text-gray-900">
+                                    <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                                         {getSectionTitle()}
-                                        <span className="text-lg font-normal text-gray-600 ml-3">
+                                        <span className="text-lg font-normal ml-3" style={{ color: 'var(--text-muted)' }}>
                                             ({filteredChannels.length} channels)
                                         </span>
                                     </h2>
@@ -946,61 +842,6 @@ export default function ChannelsPage() {
                     )}
                 </div>
             </main>
-
-            
-
-            {/* Global Styles */}
-            <style jsx global>{`
-                .neumorphic-card {
-                    background: #e0e0e0;
-                    border-radius: 20px;
-                    padding: 16px;
-                    box-shadow: 8px 8px 16px #bebebe, -8px -8px 16px #ffffff;
-                    transition: all 0.3s ease;
-                    cursor: pointer;
-                    display: flex;
-                    flex-direction: column;
-                    position: relative;
-                    min-height: 260px;
-                }
-
-                .neumorphic-card.featured-card {
-                    border: 2px solid #fbbf24;
-                }
-
-                .neumorphic-card:hover {
-                    transform: translateY(-8px);
-                    box-shadow: 12px 12px 24px #bebebe, -12px -12px 24px #ffffff;
-                }
-
-                @media (max-width: 640px) {
-                    .neumorphic-card {
-                        min-height: 220px;
-                        padding: 12px;
-                    }
-                }
-
-                @media (min-width: 376px) and (max-width: 639px) {
-                    .xs\\:grid-cols-2 {
-                        grid-template-columns: repeat(2, minmax(0, 1fr));
-                    }
-                }
-
-                @keyframes fadeIn {
-                    from {
-                        opacity: 0;
-                        transform: translateY(20px);
-                    }
-                    to {
-                        opacity: 1;
-                        transform: translateY(0);
-                    }
-                }
-
-                .neumorphic-card {
-                    animation: fadeIn 0.5s ease-out;
-                }
-            `}</style>
         </div>
     );
 }

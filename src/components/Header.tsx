@@ -1,11 +1,11 @@
+// src/components/Header.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { FaBars, FaTimes, FaSearch } from 'react-icons/fa';
-import { GiSoccerBall, GiTvRemote } from 'react-icons/gi';
-import { MdLiveTv } from 'react-icons/md';
+import { GiSoccerBall } from 'react-icons/gi';
 
 const NAV_LINKS = [
     { href: '/', label: 'Home' },
@@ -44,13 +44,26 @@ export default function Header({ onSearch, searchValue = '' }: {
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-50 bg-[#e8e8e8] border-b border-gray-200 shadow-sm">
+            {/* ========== MAIN HEADER ========== */}
+            <header
+                className="fixed top-0 left-0 right-0 z-50 transition-colors duration-300"
+                style={{
+                    backgroundColor: 'var(--neu-bg-page)',
+                    borderBottom: '1px solid var(--border-primary)',
+                    boxShadow: '0 1px 3px var(--shadow-color)',
+                }}
+            >
                 <div className="max-w-7xl mx-auto px-4">
                     <div className="flex items-center justify-between h-16">
+
+                        {/* ========== LOGO ========== */}
                         <Link href="/" className="flex items-center gap-3 group">
                             <div
-                                className="w-10 h-10 rounded-xl bg-[#e0e0e0] flex items-center justify-center"
-                                style={{ boxShadow: '4px 4px 8px #bebebe, -4px -4px 8px #ffffff' }}
+                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300"
+                                style={{
+                                    backgroundColor: 'var(--neu-bg)',
+                                    boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
+                                }}
                             >
                                 <GiSoccerBall className="w-6 h-6 text-red-600 group-hover:scale-110 transition-transform" />
                             </div>
@@ -59,54 +72,95 @@ export default function Header({ onSearch, searchValue = '' }: {
                             </span>
                         </Link>
 
+                        {/* ========== DESKTOP NAV ========== */}
                         <nav className="hidden lg:flex items-center gap-1">
                             {NAV_LINKS.map((link) => (
                                 <Link
                                     key={link.href}
                                     href={link.href}
-                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
                                         pathname === link.href
-                                            ? 'text-red-600 bg-red-50 font-semibold'
-                                            : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                                            ? 'text-red-600 font-semibold'
+                                            : ''
                                     }`}
+                                    style={{
+                                        color: pathname === link.href
+                                            ? 'var(--brand-red)'
+                                            : 'var(--text-muted)',
+                                        backgroundColor: pathname === link.href
+                                            ? 'var(--error-bg)'
+                                            : 'transparent',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (pathname !== link.href) {
+                                            e.currentTarget.style.color = 'var(--brand-red)';
+                                            e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (pathname !== link.href) {
+                                            e.currentTarget.style.color = 'var(--text-muted)';
+                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                        }
+                                    }}
                                 >
                                     {link.label}
                                 </Link>
                             ))}
                         </nav>
 
+                        {/* ========== RIGHT SIDE ACTIONS ========== */}
                         <div className="flex items-center gap-3">
+
+                            {/* Search Bar (Desktop) */}
                             <form onSubmit={handleSearch} className="hidden lg:block relative">
                                 <input
                                     type="text"
                                     placeholder="Search matches..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-52 focus:w-64 pl-4 pr-10 py-2 rounded-full text-sm text-gray-700 bg-[#e0e0e0] border-none transition-all duration-300 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                                    style={{ boxShadow: 'inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff' }}
+                                    className="w-52 focus:w-64 pl-4 pr-10 py-2 rounded-full text-sm border-none transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                                    style={{
+                                        backgroundColor: 'var(--neu-bg)',
+                                        color: 'var(--text-primary)',
+                                        boxShadow: 'inset 4px 4px 8px var(--neu-shadow-dark), inset -4px -4px 8px var(--neu-shadow-light)',
+                                    }}
                                 />
                                 <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
-                                    <FaSearch className="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors" />
+                                    <FaSearch
+                                        className="w-4 h-4 transition-colors"
+                                        style={{ color: 'var(--text-muted)' }}
+                                    />
                                 </button>
                             </form>
 
+                            {/* LIVE Badge */}
                             <Link
                                 href="/"
-                                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-600 text-sm font-medium hover:bg-red-100 transition-colors"
+                                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                                style={{
+                                    backgroundColor: 'var(--error-bg)',
+                                    border: '1px solid var(--brand-red)',
+                                    color: 'var(--brand-red)',
+                                }}
                             >
                                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                                 LIVE
                             </Link>
 
+                            {/* Mobile Menu Toggle */}
                             <button
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                className="lg:hidden p-2.5 rounded-xl bg-[#e0e0e0]"
-                                style={{ boxShadow: '4px 4px 8px #bebebe, -4px -4px 8px #ffffff' }}
+                                className="lg:hidden p-2.5 rounded-xl transition-colors duration-300"
+                                style={{
+                                    backgroundColor: 'var(--neu-bg)',
+                                    boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
+                                }}
                                 aria-label="Toggle menu"
                             >
                                 {isMenuOpen
-                                    ? <FaTimes className="w-5 h-5 text-gray-700" />
-                                    : <FaBars className="w-5 h-5 text-gray-700" />
+                                    ? <FaTimes className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                                    : <FaBars className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                                 }
                             </button>
                         </div>
@@ -114,25 +168,44 @@ export default function Header({ onSearch, searchValue = '' }: {
                 </div>
             </header>
 
+            {/* ========== MOBILE MENU ========== */}
             {isMenuOpen && (
                 <div className="lg:hidden fixed inset-0 z-50">
+                    {/* Backdrop */}
                     <div
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        className="absolute inset-0 backdrop-blur-sm"
+                        style={{ backgroundColor: 'var(--overlay-medium)' }}
                         onClick={() => setIsMenuOpen(false)}
                     />
-                    <div className="absolute top-0 right-0 h-full w-72 bg-[#e8e8e8] shadow-xl">
+
+                    {/* Menu Panel */}
+                    <div
+                        className="absolute top-0 right-0 h-full w-72 shadow-xl transition-colors duration-300"
+                        style={{ backgroundColor: 'var(--neu-bg-page)' }}
+                    >
                         <div className="p-5 h-full overflow-y-auto">
+
+                            {/* Menu Header */}
                             <div className="flex items-center justify-between mb-6">
-                                <span className="text-lg font-bold text-gray-900">Menu</span>
+                                <span
+                                    className="text-lg font-bold"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
+                                    Menu
+                                </span>
                                 <button
                                     onClick={() => setIsMenuOpen(false)}
-                                    className="p-2 rounded-xl bg-[#e0e0e0]"
-                                    style={{ boxShadow: '4px 4px 8px #bebebe, -4px -4px 8px #ffffff' }}
+                                    className="p-2 rounded-xl transition-colors duration-300"
+                                    style={{
+                                        backgroundColor: 'var(--neu-bg)',
+                                        boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
+                                    }}
                                 >
-                                    <FaTimes className="w-5 h-5 text-gray-700" />
+                                    <FaTimes className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                                 </button>
                             </div>
 
+                            {/* Mobile Search */}
                             <form
                                 onSubmit={(e) => { handleSearch(e); setIsMenuOpen(false); }}
                                 className="mb-6 relative"
@@ -142,39 +215,66 @@ export default function Header({ onSearch, searchValue = '' }: {
                                     placeholder="Search matches..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-4 pr-10 py-2.5 rounded-full text-sm text-gray-700 bg-[#e0e0e0] border-none placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                                    style={{ boxShadow: 'inset 4px 4px 8px #bebebe, inset -4px -4px 8px #ffffff' }}
+                                    className="w-full pl-4 pr-10 py-2.5 rounded-full text-sm border-none focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                                    style={{
+                                        backgroundColor: 'var(--neu-bg)',
+                                        color: 'var(--text-primary)',
+                                        boxShadow: 'inset 4px 4px 8px var(--neu-shadow-dark), inset -4px -4px 8px var(--neu-shadow-light)',
+                                    }}
                                 />
                                 <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
-                                    <FaSearch className="w-4 h-4 text-gray-400" />
+                                    <FaSearch className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                                 </button>
                             </form>
 
+                            {/* Mobile Nav Links */}
                             <div className="space-y-2">
                                 {NAV_LINKS.map((link) => (
                                     <Link
                                         key={link.href}
                                         href={link.href}
                                         onClick={() => setIsMenuOpen(false)}
-                                        className={`block px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                                            pathname === link.href
-                                                ? 'text-red-600 bg-red-50 font-semibold'
-                                                : 'text-gray-700 bg-[#e0e0e0]'
-                                        }`}
-                                        style={pathname !== link.href
-                                            ? { boxShadow: '4px 4px 8px #bebebe, -4px -4px 8px #ffffff' }
-                                            : undefined
-                                        }
+                                        className="block px-4 py-3 rounded-xl text-sm font-medium transition-all"
+                                        style={{
+                                            color: pathname === link.href
+                                                ? 'var(--brand-red)'
+                                                : 'var(--text-secondary)',
+                                            backgroundColor: pathname === link.href
+                                                ? 'var(--error-bg)'
+                                                : 'var(--neu-bg)',
+                                            boxShadow: pathname !== link.href
+                                                ? '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)'
+                                                : 'none',
+                                            fontWeight: pathname === link.href ? '600' : '500',
+                                        }}
                                     >
                                         {link.label}
                                     </Link>
                                 ))}
+                            </div>
+
+                            {/* Mobile LIVE Badge */}
+                            <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--border-secondary)' }}>
+                                <Link
+                                    href="/"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold transition-all"
+                                    style={{
+                                        backgroundColor: 'var(--error-bg)',
+                                        color: 'var(--brand-red)',
+                                        border: '1px solid var(--brand-red)',
+                                    }}
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    Watch LIVE Now
+                                </Link>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* Spacer for fixed header */}
             <div className="h-16" aria-hidden="true" />
         </>
     );
