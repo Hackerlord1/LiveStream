@@ -81,7 +81,7 @@ function extractAllMatches(data: ApiResponse): Match[] {
     const allMatches: Match[] = [];
 
     // Safely access cdnlivetv.tv property
-    const sportsData = data?.["cdnlivetv.tv"];
+    const sportsData = data?.["cdn-live-tv"];
 
     if (!sportsData || typeof sportsData !== 'object') {
         logger.warn('No sports data in API response');
