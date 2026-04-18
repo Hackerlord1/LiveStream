@@ -1,7 +1,7 @@
 // src/lib/api/config.ts - UPDATED VERSION
 
 // ========== API CONFIGURATION ==========
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.cdn-live.tv/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.cdnlivetv.tv/api/v1';
 const API_USER = process.env.NEXT_PUBLIC_API_USER || 'cdnlivetv';
 const API_PLAN = process.env.NEXT_PUBLIC_API_PLAN || 'free';
 
@@ -63,8 +63,8 @@ export const STREAM_CONFIG = {
 // ========== DEFAULT VALUES ==========
 export const DEFAULTS = {
     IMAGES: {
-        TEAM_LOGO: 'https://api.cdn-live.tv/api/v1/team/logo.png',
-        CHANNEL: 'https://api.cdn-live.tv/api/v1/channels/images6318/default.png',
+        TEAM_LOGO: 'https://api.cdnlivetv.tv/api/v1/team/logo.png',
+        CHANNEL: 'https://api.cdnlivetv.tv/api/v1/channels/images6318/default.png',
     },
     CHANNEL: {
         NAME: 'Unknown Channel',

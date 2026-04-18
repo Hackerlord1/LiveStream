@@ -71,7 +71,7 @@ export interface SportsData {
 }
 
 export interface ApiResponse {
-    "cdn-live-tv": SportsData;
+    "cdnlivetv.tv": SportsData;
 }
 
 // ========== FILTER TYPES ==========

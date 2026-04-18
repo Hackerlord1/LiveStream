@@ -80,8 +80,8 @@ export async function fetchAllMatches(): Promise<Match[]> {
 function extractAllMatches(data: ApiResponse): Match[] {
     const allMatches: Match[] = [];
 
-    // Safely access cdn-live-tv property
-    const sportsData = data?.["cdn-live-tv"];
+    // Safely access cdnlivetv.tv property
+    const sportsData = data?.["cdnlivetv.tv"];
 
     if (!sportsData || typeof sportsData !== 'object') {
         logger.warn('No sports data in API response');
