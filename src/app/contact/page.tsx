@@ -102,7 +102,7 @@ export default function ContactPage() {
                 {/* Quick Contact Info */}
                 <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
                     {[
-                        { icon: <FaEnvelope className="text-red-600 shrink-0" />, label: 'Email', value: 'support@bravestream.live' },
+                        { icon: <FaEnvelope className="text-red-600 shrink-0" />, label: 'Email', value: 'support@sms.bravestream.live' },
                         { icon: <FaPhone className="text-red-600 shrink-0" />, label: 'Phone', value: '+254 791 220 335' },
                         { icon: <FaClock className="text-red-600 shrink-0" />, label: 'Response Time', value: '~15 minutes' },
                     ].map((item) => (
