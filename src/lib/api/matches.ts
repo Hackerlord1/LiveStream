@@ -79,6 +79,7 @@ export async function fetchAllMatches(): Promise<Match[]> {
 
 function extractAllMatches(data: ApiResponse): Match[] {
     const allMatches: Match[] = [];
+    const seenGameIDs = new Set<string>(); // Track unique gameIDs
 
     // Safely access cdnlivetv.tv property
     const sportsData = data?.["cdn-live-tv"];
@@ -111,8 +112,25 @@ function extractAllMatches(data: ApiResponse): Match[] {
                 }
 
                 const transformed = matches.map(match => transformMatchData(match, sportType));
-                allMatches.push(...transformed);
-                logger.debug(`Added ${transformed.length} ${sportType} matches`);
+                
+                // DEDUPLICATE: Only add matches with unique gameID
+                let duplicatesRemoved = 0;
+                transformed.forEach(transformedMatch => {
+                    if (transformedMatch && transformedMatch.gameID) {
+                        if (!seenGameIDs.has(transformedMatch.gameID)) {
+                            seenGameIDs.add(transformedMatch.gameID);
+                            allMatches.push(transformedMatch);
+                        } else {
+                            duplicatesRemoved++;
+                            logger.debug(`Removed duplicate gameID: ${transformedMatch.gameID} from ${sportType}`);
+                        }
+                    } else {
+                        // If no gameID, still add it (shouldn't normally happen)
+                        allMatches.push(transformedMatch);
+                    }
+                });
+                
+                logger.debug(`Added ${transformed.length - duplicatesRemoved} ${sportType} matches (${duplicatesRemoved} duplicates removed)`);
             } catch (error) {
                 logger.error(`Error transforming ${sportType} matches:`, error);
             }
@@ -122,7 +140,7 @@ function extractAllMatches(data: ApiResponse): Match[] {
     }
 
     // Log summary
-    logger.info(`Total matches extracted: ${allMatches.length}`);
+    logger.info(`Total matches extracted: ${allMatches.length} (unique gameIDs: ${seenGameIDs.size})`);
     if (allMatches.length > 0) {
         logger.debug('Sample gameIDs:', allMatches.slice(0, 3).map(m => m.gameID));
     }

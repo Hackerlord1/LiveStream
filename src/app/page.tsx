@@ -381,36 +381,45 @@ export default function Home() {
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
     const [showDonateBanner, setShowDonateBanner] = useState(true);
 
-    const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm0%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
+    const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm1%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
 
     useEffect(() => {
         loadMatches();
     }, []);
 
     const loadMatches = async () => {
-        try {
-            setLoading(true);
-            setError(null);
+    try {
+        setLoading(true);
+        setError(null);
 
-            console.log('🔄 Fetching matches...');
-            const data = await fetchAllMatches();
+        console.log('🔄 Fetching matches...');
+        const data = await fetchAllMatches();
 
-            if (Array.isArray(data)) {
-                console.log(`✅ Setting ${data.length} matches`);
-                setMatches(data);
-            } else {
-                console.error('❌ fetchAllMatches did not return an array:', data);
-                setMatches([]);
-                setError('Invalid data received from server');
+        if (Array.isArray(data)) {
+            // DEDUPLICATE: Extra safety check
+            const uniqueData = data.filter((match, index, self) => 
+                index === self.findIndex(m => m.gameID === match.gameID)
+            );
+            
+            if (uniqueData.length !== data.length) {
+                console.warn(`⚠️ Removed ${data.length - uniqueData.length} duplicate matches`);
             }
-        } catch (err) {
-            console.error('💥 Error loading matches:', err);
-            setError('Failed to load matches. Please try again.');
+            
+            console.log(`✅ Setting ${uniqueData.length} matches`);
+            setMatches(uniqueData);
+        } else {
+            console.error('❌ fetchAllMatches did not return an array:', data);
             setMatches([]);
-        } finally {
-            setLoading(false);
+            setError('Invalid data received from server');
         }
-    };
+    } catch (err) {
+        console.error('💥 Error loading matches:', err);
+        setError('Failed to load matches. Please try again.');
+        setMatches([]);
+    } finally {
+        setLoading(false);
+    }
+};
 
     const tournaments = useMemo(() => {
         if (!Array.isArray(matches)) return [];
