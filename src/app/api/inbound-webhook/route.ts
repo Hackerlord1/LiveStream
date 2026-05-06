@@ -6,39 +6,60 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Get the raw payload and headers for verification
-    const payload = await req.text();
-    const headers = {
-      id: req.headers.get('svix-id') || '',
-      timestamp: req.headers.get('svix-timestamp') || '',
-      signature: req.headers.get('svix-signature') || '',
-    };
+    // Log 1: Webhook was called
+    console.log("📨 Webhook received at:", new Date().toISOString());
 
-    // 2. Verify the webhook is really from Resend (Security)
-    const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const verifiedPayload = resend.webhooks.verify({
-        payload,
-        headers,
-        webhookSecret,
-      });
-      if (verifiedPayload.type !== 'email.received') {
-        return NextResponse.json({ message: 'Invalid event' }, { status: 200 });
-      }
+    const payload = await req.text();
+    console.log("📦 Payload received:", payload.substring(0, 200) + "..."); // Log first 200 chars
+
+    const id = req.headers.get('svix-id');
+    const timestamp = req.headers.get('svix-timestamp');
+    const signature = req.headers.get('svix-signature');
+
+    console.log("🔑 Headers present:", { 
+      hasId: !!id, 
+      hasTimestamp: !!timestamp, 
+      hasSignature: !!signature 
+    });
+
+    if (!id || !timestamp || !signature) {
+      console.error("❌ Missing webhook headers");
+      return new NextResponse('Missing headers', { status: 400 });
     }
 
-    // 3. Parse the payload to get the email ID
-    const body = JSON.parse(payload);
-    const emailId = body.data.email_id;
+    // Log 2: Verify webhook
+    console.log("🔐 Verifying webhook signature...");
+    const result = resend.webhooks.verify({
+      payload,
+      headers: { id, timestamp, signature },
+      webhookSecret: process.env.RESEND_WEBHOOK_SECRET!,
+    });
+    console.log("✅ Webhook verified successfully");
 
-    // 4. Fetch the full email content from Resend
-    const { data: email, error: fetchError } = await resend.emails.receiving.get(emailId);
-    if (fetchError) throw new Error(`Failed to fetch email: ${fetchError.message}`);
+    // Log 3: Check event type
+    console.log("📧 Event type:", result.type);
+    if (result.type !== 'email.received') {
+      console.log("⚠️ Not an email.received event, ignoring");
+      return NextResponse.json({ message: 'Invalid event' }, { status: 200 });
+    }
 
-    // 5. Forward the email to your personal Gmail
+    // Log 4: Fetch email content
+    console.log("📥 Fetching email content for ID:", result.data.email_id);
+    const { data: email, error: emailError } = await resend.emails.receiving.get(result.data.email_id);
+    
+    if (emailError) {
+      console.error("❌ Failed to fetch email:", emailError);
+      throw new Error(`Failed to fetch email: ${emailError.message}`);
+    }
+    console.log("✅ Email fetched successfully");
+    console.log("📨 From:", email.from);
+    console.log("📨 Subject:", email.subject);
+
+    // Log 5: Forward to your Gmail
+    console.log("📤 Forwarding to hemankipkoechchirchir@gmail.com...");
     const { error: sendError } = await resend.emails.send({
-      from: 'Forwarded <noreply@sms.bravestream.live>', // Use your verified subdomain
-      to: ['hemankipkoechchirchir@gmail.com'],        // Your Gmail address
+      from: 'Forwarded <noreply@sms.bravestream.live>',
+      to: ['hemankipkoechchirchir@gmail.com'],
       subject: `[Forwarded] ${email.subject}`,
       html: `
         <h2>New Email Received</h2>
@@ -50,10 +71,15 @@ export async function POST(req: NextRequest) {
       `,
     });
 
-    if (sendError) throw new Error(`Failed to forward: ${sendError.message}`);
+    if (sendError) {
+      console.error("❌ Failed to forward:", sendError);
+      throw new Error(`Failed to forward: ${sendError.message}`);
+    }
+    console.log("✅ Email forwarded successfully!");
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Webhook Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("💥 Webhook error:", error);
+    return new NextResponse(`Error: ${error}`, { status: 500 });
   }
 }
