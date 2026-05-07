@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     console.log('📤 Forwarding to Gmail...');
 
     const { error: sendError } = await resend.emails.send({
-      from: 'Forwarded <noreply@sms.bravestream.live>',
+      from: 'Forwarded <noreply@inbound.bravestream.live>',
       to: ['hemankipkoechchirchir@gmail.com'],
       subject: `[Forwarded] ${email.subject || '(No subject)'}`,
       html: `

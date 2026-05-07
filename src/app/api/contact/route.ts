@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
         }
 
         const { error } = await resend.emails.send({
-            from: 'BraveStream <noreply@sms.bravestream.live>',
+            from: 'BraveStream <noreply@inbound.bravestream.live>',
             to: 'hemankipkoechchirchir@gmail.com',
             replyTo: email,
             subject: `[Contact] ${subject} — ${name}`,

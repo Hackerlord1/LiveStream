@@ -15,7 +15,7 @@ import {
 const FAQS = [
     { q: "How do I report a broken stream?", a: "Use the 'Report Stream' button on the player page or contact support immediately." },
     { q: "Is BraveStream available in my country?", a: "We're available worldwide. Some content may have regional restrictions based on broadcasting rights." },
-    { q: "How can I become a content partner?", a: "Email partnership@bravestream.live with details about your content." },
+    { q: "How can I become a content partner?", a: "Email partnership@inbound.bravestream.live with details about your content." },
     { q: "Do you offer mobile apps?", a: "Yes! Our platform is fully responsive and works on all devices." },
 ] as const;
 
@@ -102,7 +102,7 @@ export default function ContactPage() {
                 {/* Quick Contact Info */}
                 <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
                     {[
-                        { icon: <FaEnvelope className="text-red-600 shrink-0" />, label: 'Email', value: 'support@sms.bravestream.live' },
+                        { icon: <FaEnvelope className="text-red-600 shrink-0" />, label: 'Email', value: 'support@inbound.bravestream.live' },
                         { icon: <FaPhone className="text-red-600 shrink-0" />, label: 'Phone', value: '+254 791 220 335' },
                         { icon: <FaClock className="text-red-600 shrink-0" />, label: 'Response Time', value: '~15 minutes' },
                     ].map((item) => (
