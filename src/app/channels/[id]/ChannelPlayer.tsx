@@ -434,8 +434,13 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                             >
                                 Back to Channels
                             </span>                        </Link>
-                        <p>For ads free experience use Brave browser on android or Computer</p>
-
+                        <p style={{ fontSize: '12px' }}>
+                        For an ads-free experience, use Brave browser on 
+                        <a href="https://laptop-updates.brave.com/download/android/BRV090?bitness=64"> Android</a>, 
+                        <a href="https://laptop-updates.brave.com/download/ios/BRV090?bitness=64"> iPhone</a>, 
+                        or  
+                        <a href="ms-windows-store://pdp/?ProductId=XP8C9QZMS2PC1T"> Computer</a>.
+                        </p>
                         <div className="flex items-center gap-3">
                             {/* Favorite */}
                             <button

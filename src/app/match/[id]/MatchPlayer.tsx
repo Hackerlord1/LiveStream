@@ -7,6 +7,7 @@ import Image from 'next/image';
 
 // API types
 import type { Match, Channel } from '@/lib/api';
+import AdSpace from '@/components/AdSpace';
 
 // Icons
 import {
@@ -515,6 +516,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     return (
         <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-secondary)' }}>
 
+            {/* ===== AD SPACE 1: TOP BANNER ===== */}
+            <div className="max-w-7xl mx-auto px-4 pt-4">
+            <AdSpace type="banner" className="!min-h-[50px] !h-[80px]" />
+            </div>
+
             {/* ===== HEADER ===== */}
             <header
                 className="py-3 shadow-sm sticky top-0 z-40 transition-colors duration-300"
@@ -529,6 +535,13 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                             <FaArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                             <span className="hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>Back to Matches</span>
                         </Link>
+                        <p style={{ fontSize: '12px' }}>
+                            For an ads-free experience, use Brave browser on
+                            <a href="https://laptop-updates.brave.com/download/android/BRV090?bitness=64"> Android</a>,
+                            <a href="https://laptop-updates.brave.com/download/ios/BRV090?bitness=64"> iPhone</a>,
+                            or
+                            <a href="ms-windows-store://pdp/?ProductId=XP8C9QZMS2PC1T"> Computer</a>.
+                        </p>
                         <div className="flex items-center gap-3">
                             <div className="relative">
                                 <button onClick={handleShare} className="neumorphic-button p-2" aria-label="Share match">
@@ -678,6 +691,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                     <NoStreamState channelCount={match.channels.length} />
                                 )}
                             </div>
+
+                            {/* ===== AD SPACE 2: AFTER VIDEO PLAYER ===== */}
+                            <AdSpace type="in-content" />
 
                             {/* ===== STREAM SERVERS ===== */}
                             {match.channels.length > 0 && (
@@ -879,6 +895,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                 )}
                             </div>
 
+                            {/* ===== AD SPACE 3: SIDEBAR STICKY AD ===== */}
+                            <div className="sticky top-24">
+                                <AdSpace type="sidebar" />
+                            </div>
+
                             {/* ===== ACTIVE STREAM INFO ===== */}
                             {activeStream && (
                                 <div className="neumorphic-card">
@@ -901,7 +922,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Viewers</span>
                                             <div className="flex items-center gap-2">
                                                 <FaEye className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                                                                                                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{formatViewers(activeStream.viewers)}</span>
+                                                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{formatViewers(activeStream.viewers)}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-secondary)' }}>
@@ -915,6 +936,11 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                 </div>
                             )}
                         </aside>
+                    </div>
+
+                    {/* ===== AD SPACE 4 (OPTIONAL): BOTTOM BANNER ===== */}
+                    <div className="mt-6">
+                        <AdSpace type="banner" />
                     </div>
                 </div>
             </main>

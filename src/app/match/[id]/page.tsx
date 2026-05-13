@@ -117,8 +117,6 @@ export default async function MatchPage({ params }: PageProps) {
     if (!match) {
         notFound();
     }
-
-    // REMOVED: <Suspense fallback={<MatchLoadingSkeleton />}>
     return <MatchPlayer match={match} />;
 }
 
