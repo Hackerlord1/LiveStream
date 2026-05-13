@@ -433,8 +433,8 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                 style={{ color: 'var(--text-secondary)' }}
                             >
                                 Back to Channels
-                            </span>
-                        </Link>
+                            </span>                        </Link>
+                        <p>For ads free experience use Brave browser on android or Computer</p>
 
                         <div className="flex items-center gap-3">
                             {/* Favorite */}
