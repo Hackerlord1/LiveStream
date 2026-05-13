@@ -4,7 +4,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
 
 import type { ApiChannel } from '@/lib/api';
 import { getEmbedUrl } from '@/lib/api';
@@ -26,6 +25,7 @@ import {
     FaTwitter,
     FaFacebook,
     FaWhatsapp,
+    FaPlay,
 } from 'react-icons/fa';
 
 // ========== TYPES ==========
@@ -48,7 +48,17 @@ const STATUS_CONFIG = {
 } as const;
 
 // ========== HELPERS ==========
-const getChannelKey = (channel: ApiChannel): string => `${channel.name}|${channel.code}`;
+const getChannelKey = (channel: ApiChannel): string =>
+    [
+        channel.name,
+        channel.code,
+        channel.country,
+        channel.category,
+        channel.language,
+        channel.image,
+    ]
+        .filter(Boolean)
+        .join('|');
 
 const formatViewers = (viewers: number): string => {
     if (viewers >= 1_000_000) return `${(viewers / 1_000_000).toFixed(1)}M`;
@@ -76,6 +86,24 @@ const LoadingOverlay = () => (
     </div>
 );
 
+interface PlayGateProps {
+    onPlay: () => void;
+}
+
+const PlayGate = ({ onPlay }: PlayGateProps) => (
+    <div className="absolute inset-0 flex items-center justify-center bg-black rounded-xl">
+        <button
+            type="button"
+            onClick={onPlay}
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-105"
+            title="Play stream"
+            aria-label="Play stream"
+        >
+            <FaPlay className="w-8 h-8 sm:w-10 sm:h-10 ml-1" />
+        </button>
+    </div>
+);
+
 interface StreamErrorStateProps {
     isError: boolean;
     onRetry: () => void;
@@ -94,6 +122,7 @@ const StreamErrorState = ({ isError, onRetry }: StreamErrorStateProps) => (
                     : 'This channel is currently offline. Check back later.'}
             </p>
             <button
+                type="button"
                 onClick={onRetry}
                 className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-xl text-white font-semibold flex items-center gap-3 mx-auto transition-colors"
             >
@@ -112,6 +141,7 @@ interface ShareDropdownProps {
 
 const ShareDropdown = ({ isOpen, onClose, shareOptions }: ShareDropdownProps) => {
     if (!isOpen) return null;
+
     return (
         <>
             <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -123,14 +153,18 @@ const ShareDropdown = ({ isOpen, onClose, shareOptions }: ShareDropdownProps) =>
                     >
                         Share this channel
                     </div>
+
                     {shareOptions.map((option, index) => (
                         <button
                             key={index}
+                            type="button"
                             onClick={option.action}
                             className="dropdown-item flex items-center gap-3"
                         >
                             {option.icon}
-                            <span style={{ color: 'var(--text-secondary)' }}>{option.name}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                                {option.name}
+                            </span>
                         </button>
                     ))}
                 </div>
@@ -148,17 +182,25 @@ interface InfoCardProps {
 
 const InfoCard = ({ icon, label, value, iconColor = 'text-gray-500' }: InfoCardProps) => (
     <div className="neumorphic-card text-center p-4">
-        <div className={`${iconColor} mx-auto mb-2 flex justify-center`}>{icon}</div>
-        <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</div>
-        <div className="font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{value}</div>
+        <div className={`${iconColor} mx-auto mb-2 flex justify-center`}>
+            {icon}
+        </div>
+        <div
+            className="text-xs uppercase tracking-wide"
+            style={{ color: 'var(--text-muted)' }}
+        >
+            {label}
+        </div>
+        <div className="font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+            {value}
+        </div>
     </div>
 );
 
 // ========== MAIN COMPONENT ==========
 export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
-    const router = useRouter();
-
-    const [isLoading, setIsLoading] = useState(true);
+    const [playerAllowed, setPlayerAllowed] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const [streamError, setStreamError] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [showShareOptions, setShowShareOptions] = useState(false);
@@ -176,31 +218,56 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
+
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) setFavoriteChannels(JSON.parse(saved));
-        } catch (error) { console.error('Failed to load favorites:', error); }
+        } catch (error) {
+            console.error('Failed to load favorites:', error);
+        }
     }, []);
 
     const toggleFavorite = useCallback(() => {
         const newFavorites = isFavorite
-            ? favoriteChannels.filter(f => f !== channelKey)
+            ? favoriteChannels.filter((favorite) => favorite !== channelKey)
             : [...favoriteChannels, channelKey];
+
         setFavoriteChannels(newFavorites);
-        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(newFavorites));
+
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newFavorites));
+        }
     }, [channelKey, isFavorite, favoriteChannels]);
 
+    const handleLoadPlayer = useCallback(() => {
+        setPlayerAllowed(true);
+        setIsLoading(true);
+        setStreamError(false);
+    }, []);
+
     const handleReload = useCallback(() => {
-        setIsLoading(true); setStreamError(false);
-        setStreamUrl(`${getEmbedUrl(channel)}&_t=${Date.now()}`);
+        setPlayerAllowed(false);
+        setIsLoading(false);
+        setStreamError(false);
+
+        const baseUrl = getEmbedUrl(channel);
+        const separator = baseUrl.includes('?') ? '&' : '?';
+
+        setStreamUrl(`${baseUrl}${separator}_t=${Date.now()}`);
     }, [channel]);
 
     const handleFullScreen = useCallback(async () => {
         const container = videoContainerRef.current;
         if (!container) return;
+
         try {
-            if (!document.fullscreenElement) { await container.requestFullscreen(); setIsFullScreen(true); }
-            else { await document.exitFullscreen(); setIsFullScreen(false); }
+            if (!document.fullscreenElement) {
+                await container.requestFullscreen();
+                setIsFullScreen(true);
+            } else {
+                await document.exitFullscreen();
+                setIsFullScreen(false);
+            }
         } catch {
             container.classList.toggle('fullscreen-fallback');
             setIsFullScreen(!isFullScreen);
@@ -209,26 +276,45 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
     const handleShare = useCallback(async () => {
         if (typeof window === 'undefined') return;
+
         if (navigator.share) {
-            try { await navigator.share({ title: `Watch ${channel.name} Live`, text: `Watching ${channel.name} on BraveStream`, url: window.location.href }); return; }
-            catch { /* cancelled */ }
+            try {
+                await navigator.share({
+                    title: `Watch ${channel.name} Live`,
+                    text: `Watching ${channel.name} on BraveStream`,
+                    url: window.location.href,
+                });
+                return;
+            } catch {
+                // User cancelled native share.
+            }
         }
+
         setShowShareOptions(!showShareOptions);
     }, [channel.name, showShareOptions]);
 
     const copyToClipboard = useCallback(async () => {
         if (typeof window === 'undefined') return;
+
         try {
             await navigator.clipboard.writeText(window.location.href);
-            setCopied(true); setTimeout(() => setCopied(false), 2000);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
             setShowShareOptions(false);
-        } catch (error) { console.error('Failed to copy:', error); }
+        } catch (error) {
+            console.error('Failed to copy:', error);
+        }
     }, []);
 
     const shareOptions: ShareOption[] = [
         {
             name: copied ? 'Copied!' : 'Copy Link',
-            icon: <FaCopy className={`w-4 h-4 ${copied ? 'text-green-500' : ''}`} style={!copied ? { color: 'var(--text-muted)' } : undefined} />,
+            icon: (
+                <FaCopy
+                    className={`w-4 h-4 ${copied ? 'text-green-500' : ''}`}
+                    style={!copied ? { color: 'var(--text-muted)' } : undefined}
+                />
+            ),
             action: copyToClipboard,
         },
         {
@@ -264,8 +350,10 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
     const fixIframeSize = useCallback(() => {
         if (!iframeRef.current || !videoContainerRef.current) return;
+
         const container = videoContainerRef.current;
         const iframe = iframeRef.current;
+
         requestAnimationFrame(() => {
             iframe.style.width = `${container.clientWidth}px`;
             iframe.style.height = `${container.clientHeight}px`;
@@ -273,32 +361,58 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
     }, []);
 
     useEffect(() => {
-        if (streamError) return;
+        if (streamError || !playerAllowed) return;
+
         const timeoutId = setTimeout(fixIframeSize, 100);
         const handleResize = () => requestAnimationFrame(fixIframeSize);
+
         window.addEventListener('resize', handleResize);
+
         const observer = new ResizeObserver(handleResize);
-        if (videoContainerRef.current) observer.observe(videoContainerRef.current);
-        return () => { clearTimeout(timeoutId); window.removeEventListener('resize', handleResize); observer.disconnect(); };
-    }, [streamError, fixIframeSize]);
+
+        if (videoContainerRef.current) {
+            observer.observe(videoContainerRef.current);
+        }
+
+        return () => {
+            clearTimeout(timeoutId);
+            window.removeEventListener('resize', handleResize);
+            observer.disconnect();
+        };
+    }, [streamError, playerAllowed, fixIframeSize]);
 
     useEffect(() => {
         const handler = () => setIsFullScreen(!!document.fullscreenElement);
+
         document.addEventListener('fullscreenchange', handler);
+
         return () => document.removeEventListener('fullscreenchange', handler);
     }, []);
 
-    const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-        const target = e.target as HTMLImageElement; target.src = '/channel-placeholder.svg';
+    const handleImageError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+        const target = event.target as HTMLImageElement;
+        target.src = '/channel-placeholder.svg';
     };
 
-    const handleIframeLoad = useCallback(() => { fixIframeSize(); setIsLoading(false); }, [fixIframeSize]);
-    const handleIframeError = useCallback(() => { setStreamError(true); setIsLoading(false); }, []);
+    const handleIframeLoad = useCallback(() => {
+        fixIframeSize();
+        setIsLoading(false);
+    }, [fixIframeSize]);
+
+    const handleIframeError = useCallback(() => {
+        setStreamError(true);
+        setIsLoading(false);
+    }, []);
 
     // ========== RENDER ==========
     return (
-        <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-secondary)' }}>
-
+        <div
+            className="min-h-screen"
+            style={{
+                backgroundColor: 'var(--neu-bg-page)',
+                color: 'var(--text-secondary)',
+            }}
+        >
             {/* ===== HEADER ===== */}
             <header
                 className="py-3 shadow-sm sticky top-0 z-40 transition-colors duration-300"
@@ -310,29 +424,53 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                 <div className="max-w-7xl mx-auto px-4">
                     <div className="flex items-center justify-between">
                         <Link href="/channels" className="neumorphic-nav-item group">
-                            <FaArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                            <span className="hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>Back to Channels</span>
+                            <FaArrowLeft
+                                className="w-4 h-4"
+                                style={{ color: 'var(--text-secondary)' }}
+                            />
+                            <span
+                                className="hidden sm:inline"
+                                style={{ color: 'var(--text-secondary)' }}
+                            >
+                                Back to Channels
+                            </span>
                         </Link>
 
                         <div className="flex items-center gap-3">
                             {/* Favorite */}
                             <button
+                                type="button"
                                 onClick={toggleFavorite}
                                 className="neumorphic-button p-2"
                                 title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
                             >
                                 <FaHeart
-                                    className={`w-5 h-5 transition-colors ${isFavorite ? 'text-red-500 fill-current' : ''}`}
+                                    className={`w-5 h-5 transition-colors ${
+                                        isFavorite ? 'text-red-500 fill-current' : ''
+                                    }`}
                                     style={!isFavorite ? { color: 'var(--text-secondary)' } : undefined}
                                 />
                             </button>
 
                             {/* Share */}
                             <div className="relative">
-                                <button onClick={handleShare} className="neumorphic-button p-2" title="Share channel">
-                                    <FaShareAlt className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                                <button
+                                    type="button"
+                                    onClick={handleShare}
+                                    className="neumorphic-button p-2"
+                                    title="Share channel"
+                                >
+                                    <FaShareAlt
+                                        className="w-5 h-5"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    />
                                 </button>
-                                <ShareDropdown isOpen={showShareOptions} onClose={() => setShowShareOptions(false)} shareOptions={shareOptions} />
+
+                                <ShareDropdown
+                                    isOpen={showShareOptions}
+                                    onClose={() => setShowShareOptions(false)}
+                                    shareOptions={shareOptions}
+                                />
                             </div>
 
                             {/* Status Badge */}
@@ -345,11 +483,18 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                             >
                                 <div className="relative">
                                     <div className={`w-2 h-2 rounded-full ${statusConfig.color}`}></div>
+
                                     {isOnline && (
-                                        <div className={`absolute inset-0 w-2 h-2 rounded-full ${statusConfig.pulseColor} animate-ping`}></div>
+                                        <div
+                                            className={`absolute inset-0 w-2 h-2 rounded-full ${statusConfig.pulseColor} animate-ping`}
+                                        ></div>
                                     )}
                                 </div>
-                                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+
+                                <span
+                                    className="text-sm font-medium"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                >
                                     {statusConfig.text}
                                 </span>
                             </div>
@@ -360,7 +505,6 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
             <main className="relative">
                 <div className="max-w-7xl mx-auto px-4 py-6">
-
                     {/* ===== CHANNEL HEADER ===== */}
                     <div className="neumorphic-card mb-6">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
@@ -368,76 +512,140 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                 {/* Logo */}
                                 <div className="relative w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0">
                                     <div className="absolute inset-0 neumorphic-logo rounded-xl"></div>
+
                                     <Image
-                                        src={channel.image} alt={channel.name} fill
+                                        src={channel.image}
+                                        alt={channel.name}
+                                        fill
                                         className="object-contain p-3 sm:p-4"
-                                        onError={handleImageError} sizes="80px" priority
+                                        onError={handleImageError}
+                                        sizes="80px"
+                                        priority
                                     />
                                 </div>
 
                                 {/* Info */}
                                 <div>
-                                    <h1 className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                                    <h1
+                                        className="text-xl sm:text-2xl md:text-3xl font-bold"
+                                        style={{ color: 'var(--text-primary)' }}
+                                    >
                                         {channel.name}
                                     </h1>
-                                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        <div className="flex items-center gap-1"><FaGlobe className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.country}</span></div>
-                                        <div className="flex items-center gap-1"><FaTv className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.category}</span></div>
+
+                                    <div
+                                        className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm"
+                                        style={{ color: 'var(--text-muted)' }}
+                                    >
+                                        <div className="flex items-center gap-1">
+                                            <FaGlobe className="w-3 h-3 sm:w-4 sm:h-4" />
+                                            <span>{channel.country}</span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                            <FaTv className="w-3 h-3 sm:w-4 sm:h-4" />
+                                            <span>{channel.category}</span>
+                                        </div>
+
                                         {channel.language && (
-                                            <div className="flex items-center gap-1"><FaLanguage className="w-3 h-3 sm:w-4 sm:h-4" /><span>{channel.language}</span></div>
+                                            <div className="flex items-center gap-1">
+                                                <FaLanguage className="w-3 h-3 sm:w-4 sm:h-4" />
+                                                <span>{channel.language}</span>
+                                            </div>
                                         )}
-                                        <div className="flex items-center gap-1"><FaEye className="w-3 h-3 sm:w-4 sm:h-4" /><span>{formatViewers(channel.viewers)} viewers</span></div>
+
+                                        <div className="flex items-center gap-1">
+                                            <FaEye className="w-3 h-3 sm:w-4 sm:h-4" />
+                                            <span>{formatViewers(channel.viewers)} viewers</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Reload */}
-                            <button onClick={handleReload} className="neumorphic-button p-3 self-end sm:self-auto" title="Reload stream">
-                                <FaRedoAlt className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--text-secondary)' }} />
+                            <button
+                                type="button"
+                                onClick={handleReload}
+                                className="neumorphic-button p-3 self-end sm:self-auto"
+                                title="Reload stream"
+                            >
+                                <FaRedoAlt
+                                    className="w-5 h-5 sm:w-6 sm:h-6"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                />
                             </button>
                         </div>
                     </div>
 
                     {/* ===== MAIN CONTENT GRID ===== */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
                         {/* Video Player */}
                         <div className="lg:col-span-2 space-y-6">
-                            <div ref={videoContainerRef} className="neumorphic-video-container relative bg-black">
+                            <div
+                                ref={videoContainerRef}
+                                className="neumorphic-video-container relative bg-black"
+                            >
                                 {isOnline && !streamError ? (
                                     <div className="absolute inset-0 w-full h-full">
-                                        {isLoading && <LoadingOverlay />}
-                                        <iframe
-                                            ref={iframeRef}
-                                            src={streamUrl}
-                                            className="absolute inset-0 w-full h-full border-0 rounded-xl"
-                                            allowFullScreen
-                                            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                                            title={`${channel.name} - Live Stream`}
-                                            loading="eager"
-                                            onLoad={handleIframeLoad}
-                                            onError={handleIframeError}
-                                        />
-                                        {/* Controls Overlay */}
-                                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
-                                            <div className="flex items-center justify-between text-white">
-                                                <div className="flex items-center gap-4 text-sm">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                                                        <span className="font-medium">LIVE</span>
+                                        {!playerAllowed ? (
+                                            <PlayGate onPlay={handleLoadPlayer} />
+                                        ) : (
+                                            <>
+                                                {isLoading && <LoadingOverlay />}
+
+                                                <iframe
+                                                    ref={iframeRef}
+                                                    src={streamUrl}
+                                                    className="absolute inset-0 w-full h-full border-0 rounded-xl"
+                                                    allowFullScreen
+                                                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                                                    title={`${channel.name} - Live Stream`}
+                                                    loading="eager"
+                                                    referrerPolicy="no-referrer"
+                                                    onLoad={handleIframeLoad}
+                                                    onError={handleIframeError}
+                                                />
+
+                                                {/* Controls Overlay */}
+                                                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300">
+                                                    <div className="flex items-center justify-between text-white">
+                                                        <div className="flex items-center gap-4 text-sm">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                                                                <span className="font-medium">LIVE</span>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2">
+                                                                <FaSignal className="w-4 h-4" />
+                                                                <span>HD</span>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2">
+                                                                <FaEye className="w-4 h-4" />
+                                                                <span>{formatViewers(channel.viewers)}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleFullScreen}
+                                                            className="p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 transition-colors"
+                                                            title={
+                                                                isFullScreen
+                                                                    ? 'Exit fullscreen'
+                                                                    : 'Enter fullscreen'
+                                                            }
+                                                        >
+                                                            {isFullScreen ? (
+                                                                <FaCompress className="w-5 h-5" />
+                                                            ) : (
+                                                                <FaExpand className="w-5 h-5" />
+                                                            )}
+                                                        </button>
                                                     </div>
-                                                    <div className="flex items-center gap-2"><FaSignal className="w-4 h-4" /><span>HD</span></div>
-                                                    <div className="flex items-center gap-2"><FaEye className="w-4 h-4" /><span>{formatViewers(channel.viewers)}</span></div>
                                                 </div>
-                                                <button
-                                                    onClick={handleFullScreen}
-                                                    className="p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 transition-colors"
-                                                    title={isFullScreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                                                >
-                                                    {isFullScreen ? <FaCompress className="w-5 h-5" /> : <FaExpand className="w-5 h-5" />}
-                                                </button>
-                                            </div>
-                                        </div>
+                                            </>
+                                        )}
                                     </div>
                                 ) : (
                                     <StreamErrorState isError={streamError} onRetry={handleReload} />
@@ -446,21 +654,47 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
                             {/* Stream Info Cards */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <InfoCard icon={<FaSignal className="w-5 h-5" />} label="Quality" value="HD" iconColor="text-green-500" />
-                                <InfoCard icon={<FaBroadcastTower className="w-5 h-5" />} label="Source" value="Official" iconColor="text-blue-500" />
-                                <InfoCard icon={<FaGlobe className="w-5 h-5" />} label="Country" value={channel.country || 'International'} iconColor="text-purple-500" />
-                                <InfoCard icon={<FaTv className="w-5 h-5" />} label="Category" value={channel.category || 'General'} iconColor="text-red-500" />
+                                <InfoCard
+                                    icon={<FaSignal className="w-5 h-5" />}
+                                    label="Quality"
+                                    value="HD"
+                                    iconColor="text-green-500"
+                                />
+
+                                <InfoCard
+                                    icon={<FaBroadcastTower className="w-5 h-5" />}
+                                    label="Source"
+                                    value="Official"
+                                    iconColor="text-blue-500"
+                                />
+
+                                <InfoCard
+                                    icon={<FaGlobe className="w-5 h-5" />}
+                                    label="Country"
+                                    value={channel.country || 'International'}
+                                    iconColor="text-purple-500"
+                                />
+
+                                <InfoCard
+                                    icon={<FaTv className="w-5 h-5" />}
+                                    label="Category"
+                                    value={channel.category || 'General'}
+                                    iconColor="text-red-500"
+                                />
                             </div>
                         </div>
 
                         {/* ===== SIDEBAR ===== */}
                         <aside className="space-y-6">
-
                             {/* Channel Details */}
                             <div className="neumorphic-card p-6">
-                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+                                <h3
+                                    className="text-lg font-bold mb-4"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
                                     Channel Details
                                 </h3>
+
                                 <div className="space-y-4 text-sm">
                                     {[
                                         { label: 'Status', value: statusConfig.text, dot: true },
@@ -469,13 +703,26 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                         { label: 'Category', value: channel.category },
                                         { label: 'Region Code', value: channel.code, mono: true },
                                     ].map((item) => (
-                                        <div key={item.label} className="flex justify-between items-center">
-                                            <span style={{ color: 'var(--text-muted)' }}>{item.label}</span>
+                                        <div
+                                            key={item.label}
+                                            className="flex justify-between items-center"
+                                        >
+                                            <span style={{ color: 'var(--text-muted)' }}>
+                                                {item.label}
+                                            </span>
+
                                             <span
-                                                className={`font-semibold flex items-center gap-2 ${item.mono ? 'font-mono uppercase' : ''}`}
+                                                className={`font-semibold flex items-center gap-2 ${
+                                                    item.mono ? 'font-mono uppercase' : ''
+                                                }`}
                                                 style={{ color: 'var(--text-primary)' }}
                                             >
-                                                {item.dot && <div className={`w-2 h-2 rounded-full ${statusConfig.color}`}></div>}
+                                                {item.dot && (
+                                                    <div
+                                                        className={`w-2 h-2 rounded-full ${statusConfig.color}`}
+                                                    ></div>
+                                                )}
+
                                                 {item.value}
                                             </span>
                                         </div>
@@ -490,24 +737,33 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
                                     background: `linear-gradient(to bottom right, var(--error-bg), var(--warning-bg))`,
                                 }}
                             >
-                                <h3 className="text-lg font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+                                <h3
+                                    className="text-lg font-bold mb-3"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
                                     Having Issues?
                                 </h3>
-                                <ul className="text-sm space-y-2" style={{ color: 'var(--text-secondary)' }}>
+
+                                <ul
+                                    className="text-sm space-y-2"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                >
                                     {[
                                         'Try refreshing the stream',
                                         'Disable ad-blockers temporarily',
                                         'Use Chrome or Firefox browser',
                                         'Check your internet connection',
                                         'Try a VPN if geo-restricted',
-                                    ].map((tip, i) => (
-                                        <li key={i} className="flex items-start gap-2">
+                                    ].map((tip, index) => (
+                                        <li key={index} className="flex items-start gap-2">
                                             <span className="text-red-500 mt-0.5">•</span>
                                             {tip}
                                         </li>
                                     ))}
                                 </ul>
+
                                 <button
+                                    type="button"
                                     onClick={handleReload}
                                     className="w-full mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                                 >
@@ -518,37 +774,44 @@ export default function ChannelPlayer({ channel }: ChannelPlayerProps) {
 
                             {/* Quick Actions */}
                             <div className="neumorphic-card p-6">
-                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+                                <h3
+                                    className="text-lg font-bold mb-4"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
                                     Quick Actions
                                 </h3>
+
                                 <div className="space-y-3">
                                     <button
+                                        type="button"
                                         onClick={toggleFavorite}
                                         className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
                                         style={{
-                                            backgroundColor: isFavorite ? 'var(--error-bg)' : 'var(--surface-secondary)',
-                                            color: isFavorite ? 'var(--error-text)' : 'var(--text-secondary)',
+                                            backgroundColor: isFavorite
+                                                ? 'var(--error-bg)'
+                                                : 'var(--surface-secondary)',
+                                            color: isFavorite
+                                                ? 'var(--error-text)'
+                                                : 'var(--text-secondary)',
                                         }}
                                     >
                                         <FaHeart className={isFavorite ? 'text-red-500' : ''} />
                                         {isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
                                     </button>
-                                    {[
-                                        { onClick: handleShare, icon: <FaShareAlt />, label: 'Share Channel' },
-                                    ].map((btn, i) => (
-                                        <button
-                                            key={i}
-                                            onClick={btn.onClick}
-                                            className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                                            style={{
-                                                backgroundColor: 'var(--surface-secondary)',
-                                                color: 'var(--text-secondary)',
-                                            }}
-                                        >
-                                            {btn.icon}
-                                            {btn.label}
-                                        </button>
-                                    ))}
+
+                                    <button
+                                        type="button"
+                                        onClick={handleShare}
+                                        className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                        style={{
+                                            backgroundColor: 'var(--surface-secondary)',
+                                            color: 'var(--text-secondary)',
+                                        }}
+                                    >
+                                        <FaShareAlt />
+                                        Share Channel
+                                    </button>
+
                                     <Link
                                         href="/channels"
                                         className="w-full px-4 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"

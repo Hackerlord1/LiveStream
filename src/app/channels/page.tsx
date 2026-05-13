@@ -89,10 +89,37 @@ const getQualityColor = (viewers: number): string => {
     return 'status-error';
 };
 
-const getChannelKey = (channel: ApiChannel): string => {
-    return `${channel.name}|${channel.code}`;
-};
+const getChannelKey = (channel: ApiChannel): string =>
+    [
+        channel.name,
+        channel.code,
+        channel.country,
+        channel.category,
+        channel.language,
+        channel.image,
+    ]
+        .filter(Boolean)
+        .join('|');
 
+const getChannelRouteId = (channel: ApiChannel, allChannels: ApiChannel[]): string => {
+    const sameNameCodeChannels = allChannels.filter(
+        (item) => item.name === channel.name && item.code === channel.code
+    );
+
+    const duplicateIndex = sameNameCodeChannels.findIndex(
+        (item) =>
+            item.name === channel.name &&
+            item.code === channel.code &&
+            item.country === channel.country &&
+            item.category === channel.category &&
+            item.language === channel.language &&
+            item.image === channel.image
+    );
+
+    const safeIndex = duplicateIndex >= 0 ? duplicateIndex : 0;
+
+    return `${channel.name}|${channel.code}|${safeIndex}`;
+};
 // ========== LOADING COMPONENT ==========
 const LoadingSpinner = () => (
     <div
@@ -218,14 +245,15 @@ const EmptyState = ({ sortBy, searchTerm, onReset, onBrowseAll }: EmptyStateProp
 // ========== CHANNEL CARD ==========
 interface ChannelCardProps {
     channel: ApiChannel;
+    channelRouteId: string;
     featured?: boolean;
     isFavorite: boolean;
     onToggleFavorite: (channel: ApiChannel, e: React.MouseEvent) => void;
-    onWatch: (channel: ApiChannel) => void;
+    onWatch: (channel: ApiChannel, channelRouteId: string) => void;
 }
 
-const ChannelCard = ({ channel, featured = false, isFavorite, onToggleFavorite, onWatch }: ChannelCardProps) => (
-    <Link href={`/channels/${encodeURIComponent(getChannelKey(channel))}`} className="block">
+const ChannelCard = ({ channel, channelRouteId, featured = false, isFavorite, onToggleFavorite, onWatch }: ChannelCardProps) => (
+    <Link href={`/channels/${encodeURIComponent(channelRouteId)}`} className="block">
         <div className={`neumorphic-card group relative ${featured ? 'featured-card' : ''}`}>
             {/* Favorite Button */}
             <button
@@ -305,7 +333,7 @@ const ChannelCard = ({ channel, featured = false, isFavorite, onToggleFavorite, 
                     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatViewers(channel.viewers)}</span>
                 </div>
                 <button
-                    onClick={(e) => { e.preventDefault(); onWatch(channel); }}
+                    onClick={(e) => { e.preventDefault(); onWatch(channel, channelRouteId); }}
                     className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-xs font-semibold text-white transition-all duration-300 shadow-sm hover:shadow-md group-hover:scale-105 flex items-center gap-1"
                 >
                     <FaPlay className="w-3 h-3" />
@@ -319,12 +347,13 @@ const ChannelCard = ({ channel, featured = false, isFavorite, onToggleFavorite, 
 // ========== CHANNEL ROW ==========
 interface ChannelRowProps {
     channel: ApiChannel;
+    channelRouteId: string;
     isFavorite: boolean;
     onToggleFavorite: (channel: ApiChannel, e: React.MouseEvent) => void;
-    onWatch: (channel: ApiChannel) => void;
+    onWatch: (channel: ApiChannel, channelRouteId: string) => void;
 }
 
-const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelRowProps) => (
+const ChannelRow = ({ channel, channelRouteId, isFavorite, onToggleFavorite, onWatch }: ChannelRowProps) => (
     <div className="neumorphic-card group hover:shadow-xl transition-all duration-300">
         <div className="flex items-center gap-4">
             {/* Channel Logo */}
@@ -392,7 +421,7 @@ const ChannelRow = ({ channel, isFavorite, onToggleFavorite, onWatch }: ChannelR
                             />
                         </button>
                         <button
-                            onClick={() => onWatch(channel)}
+                            onClick={() => onWatch(channel, channelRouteId)}
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold text-white transition-all duration-300 shadow-sm hover:shadow-md flex items-center gap-2"
                         >
                             <FaPlay className="w-3 h-3" />
@@ -490,13 +519,22 @@ export default function ChannelsPage() {
         setSearchTerm(''); setSelectedCategory('all'); setSelectedCountry('all'); setSelectedLanguage('all'); setSortBy('viewers'); setSearchResults(channels);
     }, [channels]);
 
-    const handleWatchChannel = useCallback((channel: ApiChannel) => {
-        const channelKey = getChannelKey(channel);
-        const updatedRecent = [channelKey, ...recentlyViewed.filter(key => key !== channelKey)].slice(0, MAX_RECENT_CHANNELS);
-        setRecentlyViewed(updatedRecent);
-        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updatedRecent));
-        router.push(`/channels/${encodeURIComponent(channelKey)}`);
-    }, [router, recentlyViewed]);
+    const handleWatchChannel = useCallback((channel: ApiChannel, channelRouteId: string) => {
+    const channelKey = getChannelKey(channel);
+
+    const updatedRecent = [
+        channelKey,
+        ...recentlyViewed.filter((key) => key !== channelKey),
+    ].slice(0, MAX_RECENT_CHANNELS);
+
+    setRecentlyViewed(updatedRecent);
+
+    if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(updatedRecent));
+    }
+
+    router.push(`/channels/${encodeURIComponent(channelRouteId)}`);
+}, [router, recentlyViewed]);
 
     const toggleFavorite = useCallback((channel: ApiChannel, e: React.MouseEvent) => {
         e.stopPropagation(); e.preventDefault();
@@ -813,28 +851,37 @@ export default function ChannelsPage() {
                                     />
                                 ) : viewMode === 'grid' ? (
                                     <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                                        {filteredChannels.map((channel) => (
+                                        {filteredChannels.map((channel, index) => {
+                                        const channelRouteId = getChannelRouteId(channel, channels);
+                                        return (
                                             <ChannelCard
-                                                key={getChannelKey(channel)}
+                                                key={`${channelRouteId}|grid|${index}`}
                                                 channel={channel}
+                                                channelRouteId={channelRouteId}
                                                 featured={sortBy === 'trending'}
                                                 isFavorite={isFavorite(channel)}
                                                 onToggleFavorite={toggleFavorite}
                                                 onWatch={handleWatchChannel}
                                             />
-                                        ))}
+                                        );
+                                    })}
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
-                                        {filteredChannels.map((channel) => (
-                                            <ChannelRow
-                                                key={getChannelKey(channel)}
-                                                channel={channel}
-                                                isFavorite={isFavorite(channel)}
-                                                onToggleFavorite={toggleFavorite}
+                                        {filteredChannels.map((channel) => {
+                                            const channelRouteId = getChannelRouteId(channel, channels);
+
+                                            return (
+                                                <ChannelRow
+                                                    key={`${channelRouteId}|list`}
+                                                    channel={channel}
+                                                    channelRouteId={channelRouteId}
+                                                    isFavorite={isFavorite(channel)}
+                                                    onToggleFavorite={toggleFavorite}
                                                 onWatch={handleWatchChannel}
-                                            />
-                                        ))}
+                                                />
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </section>
