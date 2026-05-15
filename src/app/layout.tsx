@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import ConvexClientProvider from "@/components/ConvexClientProvider";
 
 // Using Inter font (better for SEO and readability than Geist)
 const inter = Inter({
@@ -208,11 +209,13 @@ export default function RootLayout({
                     color: 'var(--text-secondary)',
                 }}
             >
-                {/* Navigation will be added here */}
-                <main className="min-h-screen">
-                    {children}
-                </main>
-                {/* Footer will be added here */}
+                <ConvexClientProvider>
+                    {/* Navigation will be added here */}
+                    <main className="min-h-screen">
+                        {children}
+                    </main>
+                    {/* Footer will be added here */}
+                </ConvexClientProvider>
             </body>
         </html>
     );

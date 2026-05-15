@@ -8,6 +8,8 @@ import Image from 'next/image';
 // API types
 import type { Match, Channel } from '@/lib/api';
 import AdSpace from '@/components/AdSpace';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 
 // Icons
 import {
@@ -45,36 +47,9 @@ interface ChatMessage {
     isAdmin?: boolean;
 }
 
-interface ChatUser {
-    username: string;
-    isAdmin: boolean;
-    color: string;
-}
-
-interface WebSocketMessage {
-    type: 'message' | 'user_count' | 'history' | 'system' | 'typing' | 'rate_limit' | 'error' | 'welcome' | 'user_list' | 'pong';
-    message?: ChatMessage | string;
-    messages?: ChatMessage[];
-    count?: number;
-    username?: string;
-    isTyping?: boolean;
-    color?: string;
-    isAdmin?: boolean;
-    timestamp?: string;
-    users?: ChatUser[];
-    retryAfter?: number;
-}
-
-// ========== CONSTANTS ==========
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://serverstream.onrender.com';
-
 const CHAT_CONFIG = {
     MAX_MESSAGE_LENGTH: 200,
     MAX_USERNAME_LENGTH: 20,
-    MAX_RECONNECT_ATTEMPTS: 5,
-    BASE_RECONNECT_DELAY: 1000,
-    HEARTBEAT_INTERVAL: 25000,
-    TYPING_TIMEOUT: 3000,
     MAX_MESSAGES: 200,
 } as const;
 
@@ -102,9 +77,6 @@ const MATCH_STATUS_CONFIG = {
 } as const;
 
 // ========== HELPER FUNCTIONS ==========
-const generateMessageId = (): string =>
-    `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
 const getUserColor = (username: string): string => {
     const hash = username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return USER_COLORS[hash % USER_COLORS.length];
@@ -221,16 +193,6 @@ const ChatMessageItem = ({ message, isOwnMessage }: ChatMessageItemProps) => (
             ) : undefined}
             dangerouslySetInnerHTML={{ __html: message.message }}
         />
-    </li>
-);
-
-const TypingIndicator = () => (
-    <li className="flex flex-col items-start">
-        <div className="flex w-fit items-center gap-1 rounded-lg px-3 py-2.5 text-sm" style={{ backgroundColor: 'var(--surface-secondary)' }}>
-            <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--text-muted)', animationDelay: '0ms' }}></div>
-            <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--text-light)', animationDelay: '150ms' }}></div>
-            <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--text-muted)', animationDelay: '300ms' }}></div>
-        </div>
     </li>
 );
 
@@ -363,154 +325,169 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const [iframeKey, setIframeKey] = useState<string>('iframe-initial');
 
     // Chat State
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [username, setUsername] = useState('Guest');
     const [isUsernameSet, setIsUsernameSet] = useLocalStorage(`chat-username-set-${match.gameID}`, false);
     const [savedUsername, setSavedUsername] = useLocalStorage(`chat-username-${match.gameID}`, '');
-    const [onlineUsers, setOnlineUsers] = useState(0);
-    const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
-    const [isConnected, setIsConnected] = useState(false);
-    const [isTyping, setIsTyping] = useState(false);
-    const [reconnectAttempts, setReconnectAttempts] = useState(0);
-    const [connectionError, setConnectionError] = useState<string | null>(null);
+
+    // ===== CONVEX HOOKS (REPLACES WEBSOCKET) =====
+    // This auto-subscribes to real-time updates - no WebSocket needed!
+    const convexMessages = useQuery(api.messages.getMessages, {
+        matchId: String(match.gameID),
+    });
+
+    const sendConvexMessage = useMutation(api.messages.sendMessage);
 
     // Refs
     const videoContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Derived
     const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
     const statusConfig = getMatchStatusConfig(match.status);
     const scoreDisplay = getScoreDisplay(match);
 
-    useEffect(() => { setIsMounted(true); setUsername(generateRandomUsername()); setIframeKey(`iframe-${Date.now()}`); }, []);
-    useEffect(() => { if (savedUsername && isMounted) setUsername(savedUsername); }, [savedUsername, isMounted]);
+    // Messages derived from Convex query
+    const messages: ChatMessage[] = (convexMessages ?? []).map((msg) => ({
+        id: msg._id,
+        username: msg.username,
+        message: msg.message,
+        timestamp: new Date(msg.createdAt),
+        color: msg.color || getUserColor(msg.username),
+        isAdmin: msg.isAdmin,
+    }));
 
-    const addMessage = useCallback((message: ChatMessage) => {
-        setMessages(prev => {
-            const newMessages = [...prev, { ...message, id: message.id || generateMessageId(), timestamp: typeof message.timestamp === 'string' ? new Date(message.timestamp) : message.timestamp }];
-            return newMessages.slice(-CHAT_CONFIG.MAX_MESSAGES);
-        });
+    const isConnected = convexMessages !== undefined;
+    const connectionError = convexMessages === undefined ? null : null; // Convex handles errors internally
+
+    useEffect(() => { 
+        setIsMounted(true); 
+        setUsername(generateRandomUsername()); 
+        setIframeKey(`iframe-${Date.now()}`); 
     }, []);
+    
+    useEffect(() => { 
+        if (savedUsername && isMounted) setUsername(savedUsername); 
+    }, [savedUsername, isMounted]);
 
-    // WebSocket Connection (unchanged logic)
-    useEffect(() => {
-        if (!isMounted || !isUsernameSet || !match?.gameID) return;
-        let ws: WebSocket | null = null;
-        let connectionAttempts = 0;
-
-        const connectWebSocket = () => {
-            if (ws) { ws.close(); ws = null; }
-            if (!WS_URL) { setConnectionError('Chat server not configured'); return; }
-            try {
-                const url = new URL(WS_URL);
-                url.searchParams.append('matchId', match.gameID);
-                url.searchParams.append('username', username);
-                ws = new WebSocket(url.toString());
-                ws.onopen = () => {
-                    setIsConnected(true); setConnectionError(null); setReconnectAttempts(0); connectionAttempts = 0;
-                    heartbeatIntervalRef.current = setInterval(() => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' })); }, CHAT_CONFIG.HEARTBEAT_INTERVAL);
-                };
-                ws.onmessage = (event) => { try { handleWebSocketMessage(JSON.parse(event.data)); } catch (error) { console.error('Error parsing WebSocket message:', error); } };
-                ws.onclose = (event) => {
-                    setIsConnected(false); setIsTyping(false);
-                    if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-                    if (event.code !== 1000 && connectionAttempts < CHAT_CONFIG.MAX_RECONNECT_ATTEMPTS) {
-                        connectionAttempts++; setReconnectAttempts(connectionAttempts);
-                        const delay = Math.min(CHAT_CONFIG.BASE_RECONNECT_DELAY * Math.pow(2, connectionAttempts - 1), 30000) + Math.random() * 1000;
-                        reconnectTimeoutRef.current = setTimeout(connectWebSocket, delay);
-                    } else if (connectionAttempts >= CHAT_CONFIG.MAX_RECONNECT_ATTEMPTS) { setConnectionError('Failed to connect. Please refresh the page.'); }
-                };
-                ws.onerror = () => { setConnectionError('Connection error. Trying to reconnect...'); };
-                setWsConnection(ws);
-            } catch { setConnectionError('Failed to connect to chat server'); }
-        };
-
-        const handleWebSocketMessage = (data: WebSocketMessage) => {
-            switch (data.type) {
-                case 'welcome': case 'system':
-                    addMessage({ id: generateMessageId(), username: 'System', message: typeof data.message === 'string' ? data.message : '', timestamp: new Date(), color: '#3B82F6', isAdmin: true }); break;
-                case 'message':
-                    if (data.message && typeof data.message === 'object') addMessage({ id: data.message.id || generateMessageId(), username: data.message.username, message: data.message.message, timestamp: new Date(data.message.timestamp as string), color: data.message.color || getUserColor(data.message.username), isAdmin: data.message.isAdmin }); break;
-                case 'user_count': setOnlineUsers(data.count || 0); break;
-                case 'history':
-                    if (data.messages) setMessages(data.messages.map(msg => ({ ...msg, id: msg.id || generateMessageId(), timestamp: new Date(msg.timestamp as string), color: msg.color || getUserColor(msg.username) }))); break;
-                case 'rate_limit':
-                    addMessage({ id: generateMessageId(), username: 'System', message: typeof data.message === 'string' ? data.message : 'Rate limit exceeded.', timestamp: new Date(), color: '#F59E0B', isAdmin: true }); break;
-                case 'error':
-                    addMessage({ id: generateMessageId(), username: 'System', message: typeof data.message === 'string' ? data.message : 'Server error occurred', timestamp: new Date(), color: '#EF4444', isAdmin: true }); break;
-                case 'typing':
-                    if (data.username && data.username !== username) setIsTyping(data.isTyping || false); break;
-            }
-        };
-        connectWebSocket();
-        return () => {
-            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-            if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close(1000, 'Component unmounting');
-        };
-    }, [isMounted, isUsernameSet, match.gameID, username, addMessage]);
-
+    // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
         if (messages.length === 0) return;
         const lastMessage = messages[messages.length - 1];
-        if (lastMessage.username !== username) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (lastMessage.username !== username) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }, [messages, username]);
 
-    const handleTyping = useCallback((typing: boolean) => {
-        if (!wsConnection || !isConnected) return;
-        if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = null; }
-        wsConnection.send(JSON.stringify({ type: 'typing', username, isTyping: typing }));
-        if (typing) { typingTimeoutRef.current = setTimeout(() => { if (wsConnection && isConnected) wsConnection.send(JSON.stringify({ type: 'typing', username, isTyping: false })); }, CHAT_CONFIG.TYPING_TIMEOUT); }
-    }, [wsConnection, isConnected, username]);
+    const sendMessage = useCallback(async () => {
+        if (!newMessage.trim() || !isConnected) return;
 
-    const sendMessage = useCallback(() => {
-        if (!newMessage.trim() || !wsConnection || !isConnected) return;
-        const messageData = { id: generateMessageId(), username, message: sanitizeMessage(newMessage), timestamp: new Date().toISOString(), color: getUserColor(username) };
         try {
-            wsConnection.send(JSON.stringify({ type: 'message', message: messageData }));
-            setNewMessage(''); inputRef.current?.focus();
-            if (typingTimeoutRef.current) { clearTimeout(typingTimeoutRef.current); handleTyping(false); }
-        } catch { addMessage({ id: generateMessageId(), username: 'System', message: 'Failed to send message.', timestamp: new Date(), color: '#EF4444', isAdmin: true }); }
-    }, [newMessage, wsConnection, isConnected, username, handleTyping, addMessage]);
+            await sendConvexMessage({
+                matchId: String(match.gameID),
+                username,
+                message: sanitizeMessage(newMessage),
+                color: getUserColor(username),
+            });
+
+            setNewMessage('');
+            inputRef.current?.focus();
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to send message.';
+
+            // Show error as system message
+            console.error('Failed to send message:', errorMessage);
+        }
+    }, [newMessage, isConnected, sendConvexMessage, match.gameID, username]);
 
     const saveUsername = useCallback(() => {
         const trimmed = username.trim();
-        if (trimmed.length >= 3 && trimmed.length <= CHAT_CONFIG.MAX_USERNAME_LENGTH) { setSavedUsername(trimmed); setIsUsernameSet(true); }
+        if (trimmed.length >= 3 && trimmed.length <= CHAT_CONFIG.MAX_USERNAME_LENGTH) { 
+            setSavedUsername(trimmed); 
+            setIsUsernameSet(true); 
+        }
     }, [username, setSavedUsername, setIsUsernameSet]);
 
-    const handleStreamChange = useCallback((channel: Channel) => { setActiveStream(channel); setStreamError(false); setIsLoading(true); setIframeKey(`iframe-${Date.now()}`); }, []);
-    const handleStreamError = useCallback(() => { setStreamError(true); setIsLoading(false); }, []);
-    const handleRetry = useCallback(() => { setStreamError(false); setIsLoading(true); setIframeKey(`iframe-${Date.now()}`); }, []);
-    const handleStreamLoad = useCallback(() => { setIsLoading(false); }, []);
+    const handleStreamChange = useCallback((channel: Channel) => { 
+        setActiveStream(channel); 
+        setStreamError(false); 
+        setIsLoading(true); 
+        setIframeKey(`iframe-${Date.now()}`); 
+    }, []);
+    
+    const handleStreamError = useCallback(() => { 
+        setStreamError(true); 
+        setIsLoading(false); 
+    }, []);
+    
+    const handleRetry = useCallback(() => { 
+        setStreamError(false); 
+        setIsLoading(true); 
+        setIframeKey(`iframe-${Date.now()}`); 
+    }, []);
+    
+    const handleStreamLoad = useCallback(() => { 
+        setIsLoading(false); 
+    }, []);
 
     const handleFullScreen = useCallback(async () => {
         const container = videoContainerRef.current;
         if (!container) return;
-        try { if (!document.fullscreenElement) { await container.requestFullscreen(); setIsFullScreen(true); } else { await document.exitFullscreen(); setIsFullScreen(false); } }
-        catch { container.classList.toggle('fullscreen-fallback'); setIsFullScreen(!isFullScreen); }
+        try { 
+            if (!document.fullscreenElement) { 
+                await container.requestFullscreen(); 
+                setIsFullScreen(true); 
+            } else { 
+                await document.exitFullscreen(); 
+                setIsFullScreen(false); 
+            }
+        }
+        catch { 
+            container.classList.toggle('fullscreen-fallback'); 
+            setIsFullScreen(!isFullScreen); 
+        }
     }, [isFullScreen]);
 
     const handleShare = useCallback(async () => {
         if (typeof window === 'undefined') return;
-        if (navigator.share) { try { await navigator.share({ title: matchTitle, text: `Watch ${matchTitle} live`, url: window.location.href }); return; } catch { /* cancelled */ } }
+        if (navigator.share) { 
+            try { 
+                await navigator.share({ 
+                    title: matchTitle, 
+                    text: `Watch ${matchTitle} live`, 
+                    url: window.location.href 
+                }); 
+                return; 
+            } catch { /* cancelled */ } 
+        }
         setShowShareOptions(!showShareOptions);
     }, [matchTitle, showShareOptions]);
 
-    const copyToClipboard = useCallback(() => { if (typeof window === 'undefined') return; window.prompt('Copy this match link:', window.location.href); setShowShareOptions(false); }, []);
+    const copyToClipboard = useCallback(() => { 
+        if (typeof window === 'undefined') return; 
+        window.prompt('Copy this match link:', window.location.href); 
+        setShowShareOptions(false); 
+    }, []);
 
     useEffect(() => {
         const handler = () => setIsFullScreen(!!document.fullscreenElement);
-        document.addEventListener('fullscreenchange', handler); document.addEventListener('webkitfullscreenchange', handler);
-        return () => { document.removeEventListener('fullscreenchange', handler); document.removeEventListener('webkitfullscreenchange', handler); };
+        document.addEventListener('fullscreenchange', handler); 
+        document.addEventListener('webkitfullscreenchange', handler);
+        return () => { 
+            document.removeEventListener('fullscreenchange', handler); 
+            document.removeEventListener('webkitfullscreenchange', handler); 
+        };
     }, []);
 
-    const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => { const target = e.target as HTMLImageElement; target.src = '/team-placeholder.svg'; target.onerror = null; };
+    const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => { 
+        const target = e.target as HTMLImageElement; 
+        target.src = '/team-placeholder.svg'; 
+        target.onerror = null; 
+    };
 
     // ========== RENDER ==========
     return (
@@ -809,8 +786,8 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 <ChatIcon className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                                                 <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Live Chat</span>
                                                 <div className="flex items-center gap-1.5 ml-2">
-                                                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></div>
-                                                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{isConnected ? `${onlineUsers} online` : 'Connecting...'}</span>
+                                                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></div>
+                                                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{isConnected ? 'Connected' : 'Connecting...'}</span>
                                                 </div>
                                             </div>
                                             <button
@@ -843,7 +820,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                     {messages.map((msg) => (
                                                         <ChatMessageItem key={msg.id} message={msg} isOwnMessage={msg.username === username} />
                                                     ))}
-                                                    {isTyping && <TypingIndicator />}
                                                     <div ref={messagesEndRef} />
                                                 </ul>
                                             )}
@@ -855,9 +831,8 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                                 ref={inputRef}
                                                 type="text"
                                                 value={newMessage}
-                                                onChange={(e) => { setNewMessage(e.target.value); handleTyping(e.target.value.length > 0); }}
+                                                onChange={(e) => setNewMessage(e.target.value)}
                                                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                                                onBlur={() => handleTyping(false)}
                                                 placeholder="Reply..."
                                                 disabled={!isConnected}
                                                 maxLength={CHAT_CONFIG.MAX_MESSAGE_LENGTH}
@@ -887,7 +862,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         >
                                             <span className="flex items-center gap-1.5">
                                                 <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></div>
-                                                {isConnected ? 'Connected' : reconnectAttempts > 0 ? `Reconnecting (${reconnectAttempts}/${CHAT_CONFIG.MAX_RECONNECT_ATTEMPTS})` : 'Connecting...'}
+                                                {isConnected ? 'Connected' : 'Connecting...'}
                                             </span>
                                             <span>{newMessage.length}/{CHAT_CONFIG.MAX_MESSAGE_LENGTH}</span>
                                         </div>
