@@ -333,8 +333,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     // ===== CONVEX HOOKS (REPLACES WEBSOCKET) =====
     // This auto-subscribes to real-time updates - no WebSocket needed!
     const convexMessages = useQuery(api.messages.getMessages, {
-        matchId: String(match.gameID),
-    });
+    matchId: String(match.gameID),
+    username: isUsernameSet ? username : undefined, // Only pass username if they've joined
+});
 
     const sendConvexMessage = useMutation(api.messages.sendMessage);
 
@@ -454,7 +455,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
 
     const handleShare = useCallback(async () => {
         if (typeof window === 'undefined') return;
-        if (navigator.share) { 
+        if (navigator.share) {
             try { 
                 await navigator.share({ 
                     title: matchTitle, 

@@ -9,6 +9,9 @@ const RATE_LIMIT_MAX = 5;
 
 const ADMIN_USERS = new Set(["admin", "moderator", "system"]);
 
+// WELCOME MESSAGE - Edit this to customize
+const WELCOME_MESSAGE = "👋 Welcome to BraveStream Chat! This is a free community space to share your thoughts, react to the game, and connect with fellow sports fans. Be respectful and enjoy the match! ⚽🔥";
+
 function sanitizeUsername(username: string) {
   const cleaned = username.trim().slice(0, MAX_USERNAME_LENGTH);
   return cleaned.replace(/[^\w\s-]/g, "") || "Anonymous";
@@ -27,6 +30,8 @@ function sanitizeMessage(message: string) {
 export const getMessages = query({
   args: {
     matchId: v.string(),
+    // NEW: Optional username to check for welcome message
+    username: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const messages = await ctx.db
@@ -35,7 +40,36 @@ export const getMessages = query({
       .order("desc")
       .take(50);
 
-    return messages.reverse();
+    const reversedMessages = messages.reverse();
+
+    // If username is provided and this is their first session,
+    // return the welcome message at the top
+    if (args.username) {
+      const userMessages = await ctx.db
+        .query("messages")
+        .withIndex("by_match_user_created", (q) =>
+          q.eq("matchId", args.matchId).eq("username", args.username)
+        )
+        .first();
+
+      // If user has no messages, prepend welcome message
+      if (!userMessages) {
+        const welcomeMsg = {
+          _id: "welcome-" + args.matchId,
+          _creationTime: Date.now(),
+          matchId: args.matchId,
+          username: "BraveStream",
+          message: WELCOME_MESSAGE,
+          color: "#10B981",
+          createdAt: Date.now(),
+          isAdmin: true,
+          isSystem: true,
+        };
+        return [welcomeMsg, ...reversedMessages];
+      }
+    }
+
+    return reversedMessages;
   },
 });
 

@@ -2,13 +2,17 @@
   "name": "football-streams",
   "version": "0.2.0",
   "private": true,
+  
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npx convex deploy && next build", 
     "start": "next start",
     "lint": "eslint",
-    "generate-icons": "node scripts/generate-icons.js"
+    "generate-icons": "node scripts/generate-icons.js",
+    "convex:dev": "npx convex dev",
+    "convex:deploy": "npx convex deploy"
   },
+
   "dependencies": {
     "convex": "^1.39.1",
     "hls.js": "^1.6.15",
