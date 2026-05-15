@@ -342,7 +342,9 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     // Refs
     const videoContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const prevMessageCountRef = useRef(0);
+    const shouldAutoScrollRef = useRef(true);
 
     // Derived
     const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
@@ -372,38 +374,70 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
         if (savedUsername && isMounted) setUsername(savedUsername); 
     }, [savedUsername, isMounted]);
 
-    // Auto-scroll to bottom when new messages arrive
-    useEffect(() => {
-        if (messages.length === 0) return;
+    // Track if user manually scrolled up
+const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    shouldAutoScrollRef.current = distanceFromBottom < 100;
+}, []);
+
+const scrollChatToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    container.scrollTo({
+        top: container.scrollHeight,
+        behavior,
+    });
+}, []);
+
+useEffect(() => {
+    if (messages.length > prevMessageCountRef.current) {
         const lastMessage = messages[messages.length - 1];
-        if (lastMessage.username !== username) {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+        if (lastMessage?.username === username || shouldAutoScrollRef.current) {
+            scrollChatToBottom('smooth');
         }
-    }, [messages, username]);
+    }
+
+    prevMessageCountRef.current = messages.length;
+}, [messages.length, username, scrollChatToBottom]);
+
+    const handleInputFocus = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const { scrollX, scrollY } = window;
+
+    requestAnimationFrame(() => {
+        window.scrollTo(scrollX, scrollY);
+    });
+}, []);
 
     const sendMessage = useCallback(async () => {
-        if (!newMessage.trim() || !isConnected) return;
+    if (!newMessage.trim() || !isConnected) return;
 
-        try {
-            await sendConvexMessage({
-                matchId: String(match.gameID),
-                username,
-                message: sanitizeMessage(newMessage),
-                color: getUserColor(username),
-            });
+    try {
+        await sendConvexMessage({
+            matchId: String(match.gameID),
+            username,
+            message: sanitizeMessage(newMessage),
+            color: getUserColor(username),
+        });
 
-            setNewMessage('');
-            inputRef.current?.focus();
-        } catch (error) {
-            const errorMessage =
-                error instanceof Error
-                    ? error.message
-                    : 'Failed to send message.';
-
-            // Show error as system message
-            console.error('Failed to send message:', errorMessage);
-        }
-    }, [newMessage, isConnected, sendConvexMessage, match.gameID, username]);
+        setNewMessage('');        // Focus back on input WITHOUT scrolling
+        requestAnimationFrame(() => {
+            if (inputRef.current) {
+                inputRef.current?.focus({ preventScroll: true } as FocusOptions);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to send message:', error);
+    }
+}, [newMessage, isConnected, sendConvexMessage, match.gameID, username]);
 
     const saveUsername = useCallback(() => {
         const trimmed = username.trim();
@@ -751,19 +785,26 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                             <div className="w-full max-w-xs">
                                                 <div className="flex gap-2 mb-3">
                                                     <input
-                                                        type="text"
-                                                        value={username}
-                                                        onChange={(e) => setUsername(e.target.value)}
-                                                        onKeyDown={(e) => { if (e.key === 'Enter' && username.trim().length >= 3) saveUsername(); }}
-                                                        placeholder="Choose a username"
-                                                        maxLength={CHAT_CONFIG.MAX_USERNAME_LENGTH}
-                                                        className="flex-1 h-10 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                                                        style={{
-                                                            backgroundColor: 'var(--input-bg)',
-                                                            border: '1px solid var(--input-border)',
-                                                            color: 'var(--input-text)',
-                                                        }}
-                                                    />
+                                                    type="text"
+                                                    value={username}
+                                                    onFocus={handleInputFocus}
+                                                    onChange={(e) => setUsername(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && username.trim().length >= 3) {
+                                                            e.preventDefault();
+                                                            saveUsername();
+                                                        }
+                                                    }}
+                                                    placeholder="Choose a username"
+                                                    maxLength={CHAT_CONFIG.MAX_USERNAME_LENGTH}
+                                                    className="flex-1 h-10 rounded-lg px-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                                    style={{
+                                                        backgroundColor: 'var(--input-bg)',
+                                                        border: '1px solid var(--input-border)',
+                                                        color: 'var(--input-text)',
+                                                        fontSize: '16px',
+                                                    }}
+                                                />
                                                     <button onClick={saveUsername} disabled={username.trim().length < 3} className="px-4 h-10 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                                                         Join
                                                     </button>
@@ -813,36 +854,53 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
                                         </div>
 
                                         {/* Messages */}
-                                        <div className="h-[400px] overflow-y-auto chat-messages-scroll">
+                                        <div ref={messagesContainerRef}
+                                            onScroll={handleScroll}
+                                            className="h-[400px] overflow-y-auto chat-messages-scroll overscroll-contain"
+                                            style={{
+                                                overflowAnchor: 'none',
+                                                overscrollBehavior: 'contain',
+                                            }}
+                                        >
                                             {messages.length === 0 ? (
-                                                <ChatEmptyState />
+                                                <div className="h-full flex items-center justify-center">
+                                                    <ChatEmptyState />
+                                                </div>
                                             ) : (
                                                 <ul className="p-3 pb-6 space-y-3">
-                                                    {messages.map((msg) => (
-                                                        <ChatMessageItem key={msg.id} message={msg} isOwnMessage={msg.username === username} />
-                                                    ))}
-                                                    <div ref={messagesEndRef} />
-                                                </ul>
+                                                {messages.map((msg) => (
+                                                    <ChatMessageItem
+                                                        key={msg.id}
+                                                        message={msg}
+                                                        isOwnMessage={msg.username === username}
+                                                    />
+                                                ))}
+                                            </ul>
                                             )}
                                         </div>
 
                                         {/* Input */}
                                         <div className="relative" style={{ borderTop: '1px solid var(--border-primary)' }}>
                                             <input
-                                                ref={inputRef}
-                                                type="text"
-                                                value={newMessage}
-                                                onChange={(e) => setNewMessage(e.target.value)}
-                                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                                                placeholder="Reply..."
-                                                disabled={!isConnected}
-                                                maxLength={CHAT_CONFIG.MAX_MESSAGE_LENGTH}
-                                                className="h-10 w-full pl-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50"
-                                                style={{
-                                                    backgroundColor: 'var(--surface-secondary)',
-                                                    color: 'var(--text-primary)',
-                                                }}
-                                            />
+                                            ref={inputRef}
+                                            type="text"
+                                            value={newMessage}
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault(); // ADD THIS - stops browser from scrolling
+                                                sendMessage();
+                                            }
+                                        }}
+                                            placeholder="Reply..."
+                                            disabled={!isConnected}
+                                            maxLength={CHAT_CONFIG.MAX_MESSAGE_LENGTH}
+                                            className="h-10 w-full pl-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50"
+                                            style={{
+                                                backgroundColor: 'var(--surface-secondary)',
+                                                color: 'var(--text-primary)',
+                                            }}
+                                        />
                                             <button
                                                 onClick={sendMessage}
                                                 disabled={!isConnected || !newMessage.trim()}
