@@ -5,7 +5,7 @@
   
   "scripts": {
     "dev": "next dev",
-    "build": "npx convex deploy && next build", 
+    "build": "next build",  
     "start": "next start",
     "lint": "eslint",
     "generate-icons": "node scripts/generate-icons.js",
