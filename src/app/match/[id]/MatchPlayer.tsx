@@ -245,6 +245,9 @@ const NoStreamState = ({ channelCount }: NoStreamStateProps) => (
     </div>
 );
 
+
+
+
 interface ShareDropdownProps {
     isOpen: boolean;
     matchTitle: string;
@@ -323,6 +326,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const [showShareOptions, setShowShareOptions] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [iframeKey, setIframeKey] = useState<string>('iframe-initial');
+    const [showStreamNotice, setShowStreamNotice] = useState(false);
 
     // Chat State
     const [newMessage, setNewMessage] = useState('');
@@ -345,6 +349,7 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const prevMessageCountRef = useRef(0);
     const shouldAutoScrollRef = useRef(true);
+    const streamNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Derived
     const matchTitle = `${match.homeTeam} vs ${match.awayTeam}`;
@@ -447,27 +452,55 @@ useEffect(() => {
         }
     }, [username, setSavedUsername, setIsUsernameSet]);
 
-    const handleStreamChange = useCallback((channel: Channel) => { 
-        setActiveStream(channel); 
-        setStreamError(false); 
-        setIsLoading(true); 
-        setIframeKey(`iframe-${Date.now()}`); 
-    }, []);
     
-    const handleStreamError = useCallback(() => { 
-        setStreamError(true); 
-        setIsLoading(false); 
-    }, []);
     
-    const handleRetry = useCallback(() => { 
-        setStreamError(false); 
-        setIsLoading(true); 
-        setIframeKey(`iframe-${Date.now()}`); 
-    }, []);
-    
-    const handleStreamLoad = useCallback(() => { 
-        setIsLoading(false); 
-    }, []);
+    const clearStreamNoticeTimer = useCallback(() => {
+    if (streamNoticeTimerRef.current) {
+        clearTimeout(streamNoticeTimerRef.current);
+        streamNoticeTimerRef.current = null;
+    }
+}, []);
+
+    const handleStreamChange = useCallback((channel: Channel) => {
+        setActiveStream(channel);
+        setStreamError(false);
+        setIsLoading(true);
+        setShowStreamNotice(false);
+
+        clearStreamNoticeTimer();
+
+        setIframeKey(`iframe-${Date.now()}`);
+    }, [clearStreamNoticeTimer]);
+
+    const handleStreamError = useCallback(() => {
+        setStreamError(true);
+        setIsLoading(false);
+        setShowStreamNotice(false);
+
+        clearStreamNoticeTimer();
+    }, [clearStreamNoticeTimer]);
+
+    const handleRetry = useCallback(() => {
+        setStreamError(false);
+        setIsLoading(true);
+        setShowStreamNotice(false);
+
+        clearStreamNoticeTimer();
+
+        setIframeKey(`iframe-${Date.now()}`);
+    }, [clearStreamNoticeTimer]);
+
+    const handleStreamLoad = useCallback(() => {
+        setIsLoading(false);
+        setShowStreamNotice(true);
+
+        clearStreamNoticeTimer();
+
+        streamNoticeTimerRef.current = setTimeout(() => {
+            setShowStreamNotice(false);
+            streamNoticeTimerRef.current = null;
+        }, 15000);
+    }, [clearStreamNoticeTimer]);
 
     const handleFullScreen = useCallback(async () => {
         const container = videoContainerRef.current;
@@ -517,6 +550,13 @@ useEffect(() => {
             document.removeEventListener('webkitfullscreenchange', handler); 
         };
     }, []);
+    useEffect(() => {
+    return () => {
+        if (streamNoticeTimerRef.current) {
+            clearTimeout(streamNoticeTimerRef.current);
+        }
+    };
+}, []);
 
     const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => { 
         const target = e.target as HTMLImageElement; 
@@ -668,6 +708,7 @@ useEffect(() => {
                                                 </div>
                                             </div>
                                         )}
+
                                         <iframe
                                             key={iframeKey}
                                             src={activeStream.url}
@@ -679,6 +720,16 @@ useEffect(() => {
                                             onError={handleStreamError}
                                             style={{ border: 'none' }}
                                         />
+
+                                        {showStreamNotice && !isLoading && (
+                                            <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+                                                <div className="bg-black/75 text-white text-xs sm:text-sm rounded-lg px-3 py-2 backdrop-blur-sm border border-white/10 shadow-lg">
+                                                    <strong>1080p HD stream:</strong>{' '}
+                                                    If buffering occurs, try another server or use a stable connection.
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300 z-30">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3 text-white text-sm">
@@ -686,19 +737,38 @@ useEffect(() => {
                                                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                                                         <span>LIVE</span>
                                                     </div>
-                                                    <div className="flex items-center gap-2"><FaSignal className="w-4 h-4" /><span>HD</span></div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <FaSignal className="w-4 h-4" />
+                                                        <span>HD</span>
+                                                    </div>
+
                                                     {activeStream.viewers > 0 && (
-                                                        <div className="flex items-center gap-2"><FaEye className="w-4 h-4" /><span>{formatViewers(activeStream.viewers)}</span></div>
+                                                        <div className="flex items-center gap-2">
+                                                            <FaEye className="w-4 h-4" />
+                                                            <span>{formatViewers(activeStream.viewers)}</span>
+                                                        </div>
                                                     )}
                                                 </div>
-                                                <button onClick={handleFullScreen} className="p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 transition">
-                                                    {isFullScreen ? <FaCompress className="w-5 h-5 text-white" /> : <FaExpand className="w-5 h-5 text-white" />}
+
+                                                <button
+                                                    onClick={handleFullScreen}
+                                                    className="p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 hover:bg-white/20 transition"
+                                                >
+                                                    {isFullScreen ? (
+                                                        <FaCompress className="w-5 h-5 text-white" />
+                                                    ) : (
+                                                        <FaExpand className="w-5 h-5 text-white" />
+                                                    )}
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 ) : streamError ? (
-                                    <StreamErrorState hasChannels={match.channels.length > 0} onRetry={handleRetry} />
+                                    <StreamErrorState
+                                        hasChannels={match.channels.length > 0}
+                                        onRetry={handleRetry}
+                                    />
                                 ) : (
                                     <NoStreamState channelCount={match.channels.length} />
                                 )}
@@ -711,35 +781,81 @@ useEffect(() => {
                             {match.channels.length > 0 && (
                                 <div className="neumorphic-card">
                                     <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2 neumorphic-button"><FaBroadcastTower className="text-red-500" /></div>
-                                        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Available Streams</h2>
-                                        <span className="neumorphic-badge" style={{ backgroundColor: 'var(--error-bg)', color: 'var(--error-text)' }}>{match.channels.length} SERVERS</span>
+                                        <div className="p-2 neumorphic-button">
+                                            <FaBroadcastTower className="text-red-500" />
+                                        </div>
+                                        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                                            Available Streams
+                                        </h2>
+                                        <span
+                                            className="neumorphic-badge"
+                                            style={{
+                                                backgroundColor: 'var(--error-bg)',
+                                                color: 'var(--error-text)',
+                                            }}
+                                        >
+                                            {match.channels.length} SERVERS
+                                        </span>
                                     </div>
+
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                         {match.channels.map((channel, index) => (
                                             <button
                                                 key={`${channel.channel_code}-${index}`}
                                                 onClick={() => handleStreamChange(channel)}
-                                                className={`neumorphic-server-item ${activeStream?.channel_code === channel.channel_code ? 'neumorphic-server-active' : ''}`}
+                                                className={`neumorphic-server-item ${
+                                                    activeStream?.channel_code === channel.channel_code
+                                                        ? 'neumorphic-server-active'
+                                                        : ''
+                                                }`}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${activeStream?.channel_code === channel.channel_code ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                                                    <div
+                                                        className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                                                            activeStream?.channel_code === channel.channel_code
+                                                                ? 'bg-green-500'
+                                                                : 'bg-gray-400'
+                                                        }`}
+                                                    ></div>
+
                                                     <div className="text-left flex-1 min-w-0">
-                                                        <div className="font-medium" style={{ color: 'var(--text-primary)' }}>Server {index + 1}</div>
-                                                        <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{channel.channel_name}</div>
+                                                        <div
+                                                            className="font-medium"
+                                                            style={{ color: 'var(--text-primary)' }}
+                                                        >
+                                                            Server {index + 1}
+                                                        </div>
+                                                        <div
+                                                            className="text-xs truncate"
+                                                            style={{ color: 'var(--text-muted)' }}
+                                                        >
+                                                            {channel.channel_name}
+                                                        </div>
                                                     </div>
                                                 </div>
+
                                                 <div className="flex items-center gap-2 flex-shrink-0">
                                                     {channel.viewers > 0 && (
-                                                        <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                            <FaEye className="w-3 h-3" />{formatViewers(channel.viewers)}
+                                                        <div
+                                                            className="flex items-center gap-1 text-xs"
+                                                            style={{ color: 'var(--text-muted)' }}
+                                                        >
+                                                            <FaEye className="w-3 h-3" />
+                                                            {formatViewers(channel.viewers)}
                                                         </div>
                                                     )}
+
                                                     <div
                                                         className="text-xs px-2 py-1 rounded"
                                                         style={{
-                                                            backgroundColor: activeStream?.channel_code === channel.channel_code ? 'var(--success-bg)' : 'var(--surface-secondary)',
-                                                            color: activeStream?.channel_code === channel.channel_code ? 'var(--success-text)' : 'var(--text-secondary)',
+                                                            backgroundColor:
+                                                                activeStream?.channel_code === channel.channel_code
+                                                                    ? 'var(--success-bg)'
+                                                                    : 'var(--surface-secondary)',
+                                                            color:
+                                                                activeStream?.channel_code === channel.channel_code
+                                                                    ? 'var(--success-text)'
+                                                                    : 'var(--text-secondary)',
                                                         }}
                                                     >
                                                         {index === 0 ? 'HD' : 'SD'}
@@ -753,11 +869,28 @@ useEffect(() => {
 
                             {/* ===== STREAM QUALITY ===== */}
                             <div className="neumorphic-card">
-                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>Stream Quality</h3>
+                                <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+                                    Stream Quality
+                                </h3>
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    <StreamInfoCard icon={<FaSignal className="w-5 h-5" />} label="Quality" value="1080p HD" iconColor="text-blue-500" />
-                                    <StreamInfoCard icon={<FaWifi className="w-5 h-5" />} label="Bitrate" value="Adaptive" iconColor="text-green-500" />
-                                    <StreamInfoCard icon={<FaDesktop className="w-5 h-5" />} label="Platform" value="Web" iconColor="text-purple-500" />
+                                    <StreamInfoCard
+                                        icon={<FaSignal className="w-5 h-5" />}
+                                        label="Quality"
+                                        value="1080p HD"
+                                        iconColor="text-blue-500"
+                                    />
+                                    <StreamInfoCard
+                                        icon={<FaWifi className="w-5 h-5" />}
+                                        label="Bitrate"
+                                        value="Adaptive"
+                                        iconColor="text-green-500"
+                                    />
+                                    <StreamInfoCard
+                                        icon={<FaDesktop className="w-5 h-5" />}
+                                        label="Platform"
+                                        value="Web"
+                                        iconColor="text-purple-500"
+                                    />
                                 </div>
                             </div>
                         </div>
