@@ -30,7 +30,6 @@ function sanitizeMessage(message: string) {
 export const getMessages = query({
   args: {
     matchId: v.string(),
-    // NEW: Optional username to check for welcome message
     username: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -42,13 +41,12 @@ export const getMessages = query({
 
     const reversedMessages = messages.reverse();
 
-    // If username is provided and this is their first session,
-    // return the welcome message at the top
+    // Only check for welcome message if username is provided
     if (args.username) {
       const userMessages = await ctx.db
         .query("messages")
         .withIndex("by_match_user_created", (q) =>
-          q.eq("matchId", args.matchId).eq("username", args.username)
+          q.eq("matchId", args.matchId).eq("username", args.username!)
         )
         .first();
 
