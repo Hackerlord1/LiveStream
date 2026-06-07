@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Header from "@/components/Header";
-import { useAllChannels } from "@/hooks/use-iptv";
+import { useAction } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+
 import type { IptvChannel } from "@/lib/api/iptv-types";
 import {
   FaPlay,
@@ -28,7 +30,7 @@ export default function IptvPlayerPage() {
   const router = useRouter();
   const id = params?.id as string;
 
-  const { channels, loading } = useAllChannels();
+  const getAllChannelsAction = useAction(api.iptv.getAllChannels);
 
   const [channel, setChannel] = useState<IptvChannel | null>(null);
   const [streamUrl, setStreamUrl] = useState("");
@@ -36,22 +38,38 @@ export default function IptvPlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Find channel by ID
+  // Fetch channels and find by ID
   useEffect(() => {
-    if (!loading && channels.length > 0 && id) {
-      const found = channels.find((ch) => ch.id === id);
-      if (found) {
-        setChannel(found);
-        setStreamUrl(`${STREAM_BASE}/${found.id}`);
-      } else {
-        setError("Channel not found.");
+    const fetchChannel = async () => {
+      try {
+        setLoading(true);
+        const response = await getAllChannelsAction();
+        const data = response as { js?: { data?: unknown[] } };
+        const channels = (data?.js?.data || []) as Array<Record<string, unknown>>;
+        const found = channels.find((ch) => ch.id === id);
+        if (found) {
+          setChannel(found as unknown as IptvChannel);
+          setStreamUrl(`${STREAM_BASE}/${found.id}`);
+        } else {
+          setError("Channel not found.");
+        }
+      } catch (err) {
+        console.error("Failed to fetch channels:", err);
+        setError("Failed to load channels. Please try again.");
+      } finally {
+        setLoading(false);
       }
+    };
+
+    if (id) {
+      fetchChannel();
     }
-  }, [loading, channels, id]);
+  }, [id, getAllChannelsAction]);
 
   // Play/Pause
   const togglePlay = () => {
