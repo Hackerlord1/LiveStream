@@ -16,7 +16,7 @@ const nextConfig = {
       },
       {
         protocol: "https",
-        hostname: "**", // Wildcard for all HTTPS domains (use cautiously)
+        hostname: "**",
       },
     ],
     minimumCacheTTL: 60,
@@ -24,7 +24,6 @@ const nextConfig = {
     unoptimized: process.env.NODE_ENV === 'development',
   },
 
-  // ✅ FIXED: Correct option name for Next.js 16+
   serverExternalPackages: ['sharp'],
 
   async headers() {
@@ -35,6 +34,16 @@ const nextConfig = {
           {
             key: 'Cache-Control',
             value: 'public, max-age=86400, stale-while-revalidate=31536000',
+          },
+        ],
+      },
+      // Allow mixed content for IPTV streams (HTTP on HTTPS site)
+      {
+        source: '/iptv/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; media-src * data: blob:;",
           },
         ],
       },
