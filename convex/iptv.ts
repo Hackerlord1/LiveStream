@@ -153,6 +153,44 @@ export const getOrderedList = action({
   },
 });
 
+export const getChannelById = action({
+  args: { channelId: v.number() },
+  handler: async (ctx: ActionCtx, args) => {
+    try {
+      const token = await getOrRefreshToken(ctx);
+
+      const params = new URLSearchParams({
+        type: "itv",
+        action: "get_all_channels",
+        force_ch_link_check: "",
+        JsHttpRequest: "1-xml",
+        token,
+      });
+
+      const data = (await safeFetch(`${API_BASE}?${params}`)) as any;
+      const channels = data?.js?.data || [];
+
+      const channel = channels.find((item: any) => {
+        return Number(item.id) === args.channelId;
+      });
+
+      return {
+        js: {
+          data: channel || null,
+        },
+      };
+    } catch (err) {
+      console.error("getChannelById error:", err);
+
+      return {
+        js: {
+          data: null,
+        },
+      };
+    }
+  },
+});
+
 export const getGenres = action({
   handler: async (ctx: ActionCtx) => {
     const token = await getOrRefreshToken(ctx);
