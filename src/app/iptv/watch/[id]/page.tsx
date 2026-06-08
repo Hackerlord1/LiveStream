@@ -6,7 +6,7 @@ import Link from "next/link";
 import Header from "@/components/Header";
 
 const HLS_BASE =
-  process.env.NEXT_PUBLIC_HLS_BASE || "http://57.129.106.133:8080";
+  process.env.NEXT_PUBLIC_HLS_BASE || "http://57.129.106.133:3477";
 
 const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
 
