@@ -73,8 +73,18 @@ function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-zinc-200 backdrop-blur">
-      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+    <div
+      className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium"
+      style={{
+        backgroundColor: "var(--success-bg)",
+        color: "var(--success-text)",
+        border: "1px solid var(--border-primary)",
+      }}
+    >
+      <span
+        className="h-2 w-2 animate-pulse rounded-full"
+        style={{ backgroundColor: "var(--brand-green)" }}
+      />
       {status}
     </div>
   );
@@ -84,9 +94,29 @@ function ErrorBanner({ message }: { message: string }) {
   if (!message) return null;
 
   return (
-    <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-950/50 p-4 text-sm text-red-100 shadow-lg shadow-red-950/20">
+    <div
+      className="mb-5 rounded-2xl p-4 text-sm"
+      style={{
+        backgroundColor: "var(--error-bg)",
+        color: "var(--error-text)",
+        border: "1px solid var(--brand-red)",
+      }}
+    >
       <div className="font-semibold">Playback issue</div>
-      <div className="mt-1 text-red-200/90">{message}</div>
+      <div className="mt-1">{message}</div>
+    </div>
+  );
+}
+
+function LoadingOverlay({ status }: { status: string }) {
+  if (!status) return null;
+
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="rounded-2xl border border-white/10 bg-black/80 px-5 py-4 text-center shadow-xl">
+        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-red-500" />
+        <p className="text-sm font-medium text-white">{status}</p>
+      </div>
     </div>
   );
 }
@@ -109,6 +139,7 @@ export default function IptvWatchPage() {
   }, [epgData]);
 
   const currentProgram = programs[0];
+  const channelTitle = channel?.name || `Channel ${channelId}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -303,30 +334,60 @@ export default function IptvWatchPage() {
     };
   }, [loadingInfo, channelId]);
 
-  const channelTitle = channel?.name || `Channel ${channelId}`;
-
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#27272a_0,_#09090b_45%,_#020617_100%)] text-white">
+    <div
+      className="min-h-screen"
+      style={{
+        backgroundColor: "var(--neu-bg-page)",
+        color: "var(--text-primary)",
+      }}
+    >
       <Header />
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
             href="/iptv/channels"
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+            className="inline-flex w-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium"
+            style={{
+              backgroundColor: "var(--neu-bg)",
+              color: "var(--text-secondary)",
+              boxShadow:
+                "4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)",
+            }}
           >
             <span aria-hidden="true">←</span>
             Back to Channels
           </Link>
 
-          <StatusBadge status={!error ? status : ""} />
+          <StatusBadge status={error ? "" : status} />
         </div>
 
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/75 shadow-2xl shadow-black/40 backdrop-blur-xl">
-          <div className="border-b border-white/10 bg-gradient-to-r from-white/10 via-white/[0.04] to-transparent px-5 py-5 sm:px-7">
+        <section
+          className="overflow-hidden rounded-[28px]"
+          style={{
+            backgroundColor: "var(--neu-bg)",
+            color: "var(--text-secondary)",
+            boxShadow:
+              "8px 8px 18px var(--neu-shadow-dark), -8px -8px 18px var(--neu-shadow-light)",
+          }}
+        >
+          <div
+            className="px-5 py-5 sm:px-7"
+            style={{
+              backgroundColor: "var(--surface-primary)",
+              borderBottom: "1px solid var(--border-primary)",
+            }}
+          >
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+                <div
+                  className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl"
+                  style={{
+                    backgroundColor: "var(--surface-secondary)",
+                    border: "1px solid var(--border-primary)",
+                  }}
+                >
                   {channel?.logo ? (
                     <img
                       src={channel.logo}
@@ -343,18 +404,27 @@ export default function IptvWatchPage() {
                 </div>
 
                 <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                  <p
+                    className="mb-1 text-xs font-semibold uppercase tracking-[0.25em]"
+                    style={{ color: "var(--brand-red)" }}
+                  >
                     Live TV
                   </p>
 
-                  <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
+                  <h1
+                    className="text-2xl font-bold tracking-tight sm:text-4xl"
+                    style={{ color: "var(--text-primary)" }}
+                  >
                     {loadingInfo ? "Loading channel..." : channelTitle}
                   </h1>
 
                   {currentProgram && (
-                    <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+                    <p
+                      className="mt-2 max-w-2xl text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
                       Now playing:{" "}
-                      <span className="text-zinc-200">
+                      <span style={{ color: "var(--text-primary)" }}>
                         {currentProgram.name || currentProgram.title}
                       </span>
                     </p>
@@ -364,7 +434,14 @@ export default function IptvWatchPage() {
 
               <div className="flex flex-wrap items-center gap-2">
                 {channel?.number && (
-                  <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 ring-1 ring-white/10">
+                  <span
+                    className="rounded-full px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: "var(--surface-secondary)",
+                      color: "var(--text-secondary)",
+                      border: "1px solid var(--border-primary)",
+                    }}
+                  >
                     Ch. {channel.number}
                   </span>
                 )}
@@ -375,7 +452,14 @@ export default function IptvWatchPage() {
                   </span>
                 )}
 
-                <span className="rounded-full bg-black/30 px-3 py-1.5 text-xs text-zinc-400 ring-1 ring-white/10">
+                <span
+                  className="rounded-full px-3 py-1.5 text-xs"
+                  style={{
+                    backgroundColor: "var(--surface-secondary)",
+                    color: "var(--text-muted)",
+                    border: "1px solid var(--border-primary)",
+                  }}
+                >
                   ID: {channelId}
                 </span>
               </div>
@@ -386,17 +470,14 @@ export default function IptvWatchPage() {
             <div className="p-3 sm:p-5">
               <ErrorBanner message={error} />
 
-              <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black shadow-2xl">
-                {status && !error && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-                    <div className="rounded-2xl border border-white/10 bg-zinc-950/90 px-5 py-4 text-center shadow-xl">
-                      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-red-500" />
-                      <p className="text-sm font-medium text-zinc-200">
-                        {status}
-                      </p>
-                    </div>
-                  </div>
-                )}
+              <div
+                className="relative overflow-hidden rounded-3xl bg-black"
+                style={{
+                  border: "1px solid var(--border-primary)",
+                  boxShadow: "0 15px 35px var(--shadow-color-heavy)",
+                }}
+              >
+                {status && !error && <LoadingOverlay status={status} />}
 
                 <video
                   ref={videoRef}
@@ -410,18 +491,37 @@ export default function IptvWatchPage() {
               </div>
             </div>
 
-            <aside className="border-t border-white/10 bg-white/[0.03] p-5 lg:border-l lg:border-t-0">
+            <aside
+              className="p-5 lg:border-l"
+              style={{
+                backgroundColor: "var(--surface-secondary)",
+                borderColor: "var(--border-primary)",
+              }}
+            >
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">
+                  <h2
+                    className="text-lg font-semibold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
                     Program Guide
                   </h2>
-                  <p className="text-sm text-zinc-400">
+                  <p
+                    className="text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     Current and upcoming shows
                   </p>
                 </div>
 
-                <span className="rounded-full bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300 ring-1 ring-red-500/20">
+                <span
+                  className="rounded-full px-3 py-1 text-xs font-medium"
+                  style={{
+                    backgroundColor: "var(--error-bg)",
+                    color: "var(--error-text)",
+                    border: "1px solid var(--brand-red)",
+                  }}
+                >
                   EPG
                 </span>
               </div>
@@ -436,14 +536,21 @@ export default function IptvWatchPage() {
                     return (
                       <div
                         key={program.id || `${title}-${i}`}
-                        className={`rounded-2xl border p-4 transition ${
-                          isNow
-                            ? "border-red-500/30 bg-red-500/10"
-                            : "border-white/10 bg-black/20 hover:bg-white/[0.06]"
-                        }`}
+                        className="rounded-2xl border p-4 transition hover:scale-[1.01]"
+                        style={{
+                          backgroundColor: isNow
+                            ? "var(--error-bg)"
+                            : "var(--surface-primary)",
+                          borderColor: isNow
+                            ? "var(--brand-red)"
+                            : "var(--border-primary)",
+                        }}
                       >
                         <div className="mb-2 flex items-start justify-between gap-3">
-                          <p className="font-semibold text-zinc-100">
+                          <p
+                            className="font-semibold"
+                            style={{ color: "var(--text-primary)" }}
+                          >
                             {title}
                           </p>
 
@@ -455,14 +562,20 @@ export default function IptvWatchPage() {
                         </div>
 
                         {(program.time || program.time_to) && (
-                          <p className="text-sm text-zinc-400">
+                          <p
+                            className="text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
                             {program.time || "--:--"} –{" "}
                             {program.time_to || "--:--"}
                           </p>
                         )}
 
                         {program.description && (
-                          <p className="mt-2 line-clamp-2 text-sm text-zinc-500">
+                          <p
+                            className="mt-2 line-clamp-2 text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
                             {program.description}
                           </p>
                         )}
@@ -471,7 +584,14 @@ export default function IptvWatchPage() {
                   })}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-6 text-center text-sm text-zinc-400">
+                <div
+                  className="rounded-2xl border border-dashed p-6 text-center text-sm"
+                  style={{
+                    backgroundColor: "var(--surface-primary)",
+                    borderColor: "var(--border-primary)",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   No program guide available for this channel.
                 </div>
               )}
