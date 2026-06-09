@@ -10,45 +10,48 @@ import {
   ChevronRight,
   CirclePlay,
   Clock,
-  Hash,
   Search,
   SlidersHorizontal,
   Trophy,
+  Tv,
   X,
 } from "lucide-react";
 
 const PAGE_SIZE = 300;
+const CACHE_KEY = "iptv-channels-cache-v3";
+
+// ============================================================
+// CHANNEL NAME RESOLVER
+// ============================================================
+function getChannelName(channelId: string): string {
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const channels = JSON.parse(cached);
+      const found = channels.find(
+        (ch: any) => String(ch.id) === String(channelId)
+      );
+      if (found?.name) return found.name;
+    }
+  } catch (e) {}
+  return "";
+}
 
 function getTimeValue(startTime: any) {
   if (!startTime) return Number.MAX_SAFE_INTEGER;
 
   const value = String(startTime).trim();
 
-  /**
-   * Supports full date/time values like:
-   * "2026-06-06 15:30"
-   * "2026-06-06T15:30:00"
-   * "Sat Jun 06 2026 15:30"
-   */
   const parsedDate = new Date(value);
-
   if (!Number.isNaN(parsedDate.getTime())) {
     return parsedDate.getTime();
   }
 
-  /**
-   * Supports time-only values like:
-   * "15:30"
-   * "8:05"
-   * "15:30:00"
-   */
   const timeMatch = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-
   if (timeMatch) {
     const hours = Number(timeMatch[1]);
     const minutes = Number(timeMatch[2]);
     const seconds = Number(timeMatch[3] || 0);
-
     return hours * 60 * 60 + minutes * 60 + seconds;
   }
 
@@ -113,11 +116,13 @@ export default function IptvGamesPage() {
     if (query) {
       games = games.filter((game: any) => {
         const title = String(game.title || "").toLowerCase();
-        const channelId = String(game.channelId || "").toLowerCase();
+        const channelName = getChannelName(game.channelId).toLowerCase();
+        const channelId = String(game.channelId || "");
         const startTime = String(game.startTime || "").toLowerCase();
 
         return (
           title.includes(query) ||
+          channelName.includes(query) ||
           channelId.includes(query) ||
           startTime.includes(query)
         );
@@ -151,17 +156,19 @@ export default function IptvGamesPage() {
     }
 
     if (sortBy === "channel-asc") {
-      games.sort(
-        (a: any, b: any) =>
-          Number(a.channelId || 0) - Number(b.channelId || 0)
-      );
+      games.sort((a: any, b: any) => {
+        const nameA = getChannelName(a.channelId);
+        const nameB = getChannelName(b.channelId);
+        return nameA.localeCompare(nameB);
+      });
     }
 
     if (sortBy === "channel-desc") {
-      games.sort(
-        (a: any, b: any) =>
-          Number(b.channelId || 0) - Number(a.channelId || 0)
-      );
+      games.sort((a: any, b: any) => {
+        const nameB = getChannelName(a.channelId);
+        const nameA = getChannelName(b.channelId);
+        return nameA.localeCompare(nameB);
+      });
     }
 
     return games;
@@ -276,7 +283,7 @@ export default function IptvGamesPage() {
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search by match, time, or channel..."
+                placeholder="Search by match, time, or channel name..."
                 className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-12 pr-4 text-sm outline-none transition placeholder:text-gray-400 focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20"
               />
             </div>
@@ -296,8 +303,8 @@ export default function IptvGamesPage() {
                 <option value="time-desc">Time latest first</option>
                 <option value="title-asc">Title A-Z</option>
                 <option value="title-desc">Title Z-A</option>
-                <option value="channel-asc">Channel low-high</option>
-                <option value="channel-desc">Channel high-low</option>
+                <option value="channel-asc">Channel name A-Z</option>
+                <option value="channel-desc">Channel name Z-A</option>
               </select>
             </div>
 
@@ -322,57 +329,70 @@ export default function IptvGamesPage() {
         {/* Games List */}
         {filteredGames.length > 0 ? (
           <section className="mb-8 space-y-3">
-            {filteredGames.map((game: any, i: number) => (
-              <Link
-                key={`${game.channelId}-${game.startTime}-${i}`}
-                href={`/iptv/watch/${game.channelId}`}
-                className="neumorphic-card relative block overflow-hidden rounded-2xl p-5"
-              >
-                <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
+            {filteredGames.map((game: any, i: number) => {
+              const channelName = getChannelName(game.channelId);
 
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1 pl-2">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600/10 text-red-500">
-                        <CirclePlay className="h-5 w-5" />
-                      </div>
+              return (
+                <Link
+                  key={`${game.channelId}-${game.startTime}-${i}`}
+                  href={`/iptv/watch/${game.channelId}`}
+                  className="neumorphic-card relative block overflow-hidden rounded-2xl p-5"
+                >
+                  <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
 
-                      <div className="min-w-0">
-                        <h2 className="line-clamp-2 text-lg font-bold leading-snug sm:text-xl">
-                          {game.title}
-                        </h2>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1 pl-2">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600/10 text-red-500">
+                          <CirclePlay className="h-5 w-5" />
+                        </div>
 
-                        <div
-                          className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            <Clock className="h-4 w-4" />
-                            {game.startTime || "Time unavailable"}
-                          </span>
+                        <div className="min-w-0">
+                          <h2 className="line-clamp-2 text-lg font-bold leading-snug sm:text-xl">
+                            {game.title}
+                          </h2>
 
-                          <span className="inline-flex items-center gap-1.5">
-                            <Hash className="h-4 w-4" />
-                            Channel {game.channelId}
-                          </span>
+                          <div
+                            className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock className="h-4 w-4" />
+                              {game.startTime || "Time unavailable"}
+                            </span>
+
+                            <span className="inline-flex items-center gap-1.5">
+                              <Tv className="h-4 w-4" />
+                              {channelName || `Channel ${game.channelId}`}
+                            </span>
+                          </div>
+
+                          {game.description && (
+                            <p
+                              className="mt-2 line-clamp-1 text-xs"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {game.description}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center justify-between gap-3 sm:justify-end">
-                    <span className="rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-500">
-                      Live
-                    </span>
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <span className="rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-500">
+                        Live
+                      </span>
 
-                    <span className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20">
-                      Watch
-                      <ChevronRight className="h-4 w-4" />
-                    </span>
+                      <span className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20">
+                        Watch
+                        <ChevronRight className="h-4 w-4" />
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </section>
         ) : (
           <section className="neumorphic-card mb-8 rounded-3xl p-10 text-center">

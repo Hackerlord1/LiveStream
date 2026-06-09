@@ -30,9 +30,7 @@ type EpgProgram = {
 };
 
 type EpgResponse = {
-  js?: {
-    data?: EpgProgram[];
-  };
+  js?: EpgProgram[] | { data?: EpgProgram[] };
 };
 
 async function callWrapper(path: string, args: Record<string, unknown> = {}) {
@@ -135,8 +133,11 @@ export default function IptvWatchPage() {
   const [status, setStatus] = useState("Loading channel...");
 
   const programs = useMemo(() => {
-    return epgData?.js?.data || [];
-  }, [epgData]);
+  if (!epgData) return [];
+  // The response has programs directly in js array
+  const data = epgData.js;
+  return Array.isArray(data) ? data : data?.data || [];
+}, [epgData]);
 
   const currentProgram = programs[0];
   const channelTitle = channel?.name || `Channel ${channelId}`;
@@ -492,110 +493,75 @@ export default function IptvWatchPage() {
             </div>
 
             <aside
-              className="p-5 lg:border-l"
-              style={{
-                backgroundColor: "var(--surface-secondary)",
-                borderColor: "var(--border-primary)",
-              }}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2
-                    className="text-lg font-semibold"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    Program Guide
-                  </h2>
-                  <p
-                    className="text-sm"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Current and upcoming shows
-                  </p>
-                </div>
+  className="p-4 lg:border-l"
+  style={{
+    backgroundColor: "var(--surface-secondary)",
+    borderColor: "var(--border-primary)",
+  }}
+>
+  <div className="mb-3 flex items-center justify-between">
+    <div>
+      <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+        Program Guide
+      </h2>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        Current and upcoming
+      </p>
+    </div>
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+      style={{ backgroundColor: "var(--error-bg)", color: "var(--error-text)", border: "1px solid var(--brand-red)" }}>
+      EPG
+    </span>
+  </div>
 
-                <span
-                  className="rounded-full px-3 py-1 text-xs font-medium"
-                  style={{
-                    backgroundColor: "var(--error-bg)",
-                    color: "var(--error-text)",
-                    border: "1px solid var(--brand-red)",
-                  }}
-                >
-                  EPG
+  {programs.length > 0 ? (
+    <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+      {programs.map((program, i) => {
+        const title = program.name || program.title || "Untitled";
+        const isNow = i === 0;
+
+        return (
+          <div
+            key={program.id || `${title}-${i}`}
+            className="rounded-xl border p-2.5 transition hover:scale-[1.01]"
+            style={{
+              backgroundColor: isNow ? "var(--error-bg)" : "var(--surface-primary)",
+              borderColor: isNow ? "var(--brand-red)" : "var(--border-primary)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-semibold line-clamp-2" style={{ color: "var(--text-primary)" }}>
+                {title}
+              </p>
+              {isNow && (
+                <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white flex-shrink-0">
+                  On Air
                 </span>
-              </div>
-
-              {programs.length > 0 ? (
-                <div className="space-y-3">
-                  {programs.map((program, i) => {
-                    const title =
-                      program.name || program.title || "Untitled program";
-                    const isNow = i === 0;
-
-                    return (
-                      <div
-                        key={program.id || `${title}-${i}`}
-                        className="rounded-2xl border p-4 transition hover:scale-[1.01]"
-                        style={{
-                          backgroundColor: isNow
-                            ? "var(--error-bg)"
-                            : "var(--surface-primary)",
-                          borderColor: isNow
-                            ? "var(--brand-red)"
-                            : "var(--border-primary)",
-                        }}
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-3">
-                          <p
-                            className="font-semibold"
-                            style={{ color: "var(--text-primary)" }}
-                          >
-                            {title}
-                          </p>
-
-                          {isNow && (
-                            <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                              Live
-                            </span>
-                          )}
-                        </div>
-
-                        {(program.time || program.time_to) && (
-                          <p
-                            className="text-sm"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            {program.time || "--:--"} –{" "}
-                            {program.time_to || "--:--"}
-                          </p>
-                        )}
-
-                        {program.description && (
-                          <p
-                            className="mt-2 line-clamp-2 text-sm"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            {program.description}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div
-                  className="rounded-2xl border border-dashed p-6 text-center text-sm"
-                  style={{
-                    backgroundColor: "var(--surface-primary)",
-                    borderColor: "var(--border-primary)",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  No program guide available for this channel.
-                </div>
               )}
-            </aside>
+            </div>
+
+            {(program.time || program.time_to) && (
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                {program.time || "--:--"} – {program.time_to || "--:--"}
+              </p>
+            )}
+
+            {program.description && (
+              <p className="mt-1 line-clamp-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                {program.description}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  ) : (
+    <div className="rounded-xl border border-dashed p-4 text-center text-xs"
+      style={{ backgroundColor: "var(--surface-primary)", borderColor: "var(--border-primary)", color: "var(--text-muted)" }}>
+      No program guide available.
+    </div>
+  )}
+</aside>
           </div>
         </section>
       </main>
