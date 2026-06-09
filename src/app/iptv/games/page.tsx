@@ -79,7 +79,8 @@ export default function IptvGamesPage() {
         setData(result);
 
         const games = result?.games || [];
-        const ids = Array.from(
+
+        const channelIds = Array.from(
           new Set(
             games
               .map((game: any) => Number(game.channelId))
@@ -87,10 +88,10 @@ export default function IptvGamesPage() {
           )
         );
 
-        if (ids.length > 0) {
+        if (channelIds.length > 0) {
           try {
             const channelResult = await callWrapper("iptv:getChannelsByIds", {
-              channelIds: ids,
+              channelIds,
             });
 
             if (!mounted) return;
@@ -98,7 +99,7 @@ export default function IptvGamesPage() {
             const channels = channelResult?.js?.data || [];
             setChannelMap(buildChannelMap(channels));
           } catch (channelError) {
-            console.error("Failed to fetch channel names:", channelError);
+            console.error("Failed to load channel names:", channelError);
             setChannelMap({});
           }
         } else {
@@ -143,7 +144,7 @@ export default function IptvGamesPage() {
         const title = String(game.title || "").toLowerCase();
         const channelId = String(game.channelId || "").toLowerCase();
         const startTime = String(game.startTime || "").toLowerCase();
-        const epgChannelName = String(game.channelName || "").toLowerCase();
+        const apiChannelName = String(game.channelName || "").toLowerCase();
         const mappedChannelName = String(
           channelMap[String(game.channelId)]?.name || ""
         ).toLowerCase();
@@ -152,7 +153,7 @@ export default function IptvGamesPage() {
           title.includes(query) ||
           channelId.includes(query) ||
           startTime.includes(query) ||
-          epgChannelName.includes(query) ||
+          apiChannelName.includes(query) ||
           mappedChannelName.includes(query)
         );
       });
@@ -224,28 +225,6 @@ export default function IptvGamesPage() {
       channelMap[String(game.channelId)]?.name ||
       `Channel ${game.channelId}`
     );
-  }
-
-  function getWatchUrl(game: any) {
-    const channelId = game.channelId;
-    const channel = channelMap[String(channelId)];
-    const base = `/iptv/watch/${channelId}`;
-
-    const params = new URLSearchParams();
-
-    if (game.channelName) {
-      params.set("name", game.channelName);
-    } else if (channel?.name) {
-      params.set("name", channel.name);
-    }
-
-    if (channel?.logo) params.set("logo", channel.logo);
-    if (channel?.number) params.set("number", String(channel.number));
-    if (channel?.hd !== undefined) params.set("hd", String(channel.hd));
-
-    const query = params.toString();
-
-    return query ? `${base}?${query}` : base;
   }
 
   if (loading) {
@@ -385,7 +364,7 @@ export default function IptvGamesPage() {
             {filteredGames.map((game: any, i: number) => (
               <Link
                 key={`${game.channelId}-${game.startTime}-${i}`}
-                href={getWatchUrl(game)}
+                href={`/iptv/watch/${game.channelId}`}
                 className="neumorphic-card relative block overflow-hidden rounded-2xl p-5"
               >
                 <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />

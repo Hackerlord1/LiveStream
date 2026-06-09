@@ -30,11 +30,20 @@ const HEADERS: Record<string, string> = {
 };
 
 // ============================================================
-// SAFE FETCH HELPER
+// SAFE FETCH
 // ============================================================
-async function safeFetch(url: string): Promise<any> {
+async function safeFetch(
+  url: string,
+  extraHeaders: Record<string, string> = {}
+): Promise<any> {
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, {
+      headers: {
+        ...HEADERS,
+        ...extraHeaders,
+      },
+    });
+
     const text = await res.text();
 
     if (!text || text.trim() === "") {
@@ -126,10 +135,7 @@ async function getOrRefreshToken(ctx: ActionCtx): Promise<string> {
     JsHttpRequest: "1-xml",
   });
 
-  const data = (await safeFetch(`${API_BASE}?${params}`)) as {
-    js?: { token?: string };
-  };
-
+  const data = await safeFetch(`${API_BASE}?${params}`);
   const token = data?.js?.token;
 
   if (!token) {
@@ -229,9 +235,8 @@ export const getChannelById = action({
         token,
       });
 
-      const allChannelsResult = await safeFetch(`${API_BASE}?${allParams}`);
-      const allChannels =
-        allChannelsResult?.js?.data || allChannelsResult?.js || [];
+      const allResult = await safeFetch(`${API_BASE}?${allParams}`);
+      const allChannels = allResult?.js?.data || allResult?.js || [];
 
       if (Array.isArray(allChannels)) {
         const found = allChannels.find((channel: any) => {
@@ -268,34 +273,35 @@ export const getChannelById = action({
       const firstPage = await fetchOrderedPage(0);
       const firstChannels = firstPage?.js?.data || [];
 
-      const firstMatch = firstChannels.find((channel: any) => {
+      const firstFound = firstChannels.find((channel: any) => {
         return Number(channel.id) === targetId;
       });
 
-      if (firstMatch) {
+      if (firstFound) {
         return {
           js: {
-            data: firstMatch,
+            data: firstFound,
           },
         };
       }
 
       const totalItems = Number(firstPage?.js?.total_items || 0);
       const pageSize = firstChannels.length || 14;
-      const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 300;
+      const totalPages =
+        totalItems > 0 ? Math.ceil(totalItems / pageSize) : 300;
 
       for (let page = 1; page < totalPages; page++) {
         const pageResult = await fetchOrderedPage(page);
         const channels = pageResult?.js?.data || [];
 
-        const match = channels.find((channel: any) => {
+        const found = channels.find((channel: any) => {
           return Number(channel.id) === targetId;
         });
 
-        if (match) {
+        if (found) {
           return {
             js: {
-              data: match,
+              data: found,
             },
           };
         }
@@ -356,9 +362,8 @@ export const getChannelsByIds = action({
         token,
       });
 
-      const allChannelsResult = await safeFetch(`${API_BASE}?${allParams}`);
-      const allChannels =
-        allChannelsResult?.js?.data || allChannelsResult?.js || [];
+      const allResult = await safeFetch(`${API_BASE}?${allParams}`);
+      const allChannels = allResult?.js?.data || allResult?.js || [];
 
       if (Array.isArray(allChannels)) {
         for (const channel of allChannels) {
@@ -417,7 +422,8 @@ export const getChannelsByIds = action({
 
       const totalItems = Number(firstPage?.js?.total_items || 0);
       const pageSize = firstChannels.length || 14;
-      const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 300;
+      const totalPages =
+        totalItems > 0 ? Math.ceil(totalItems / pageSize) : 300;
 
       for (let page = 1; page < totalPages; page++) {
         const pageResult = await fetchOrderedPage(page);
@@ -531,7 +537,7 @@ export const getShortEpg = action({
 });
 
 // ============================================================
-// LIVE GAMES / SPORTS
+// LIVE GAMES
 // ============================================================
 export const getLiveGames = action({
   args: {
@@ -542,8 +548,7 @@ export const getLiveGames = action({
   handler: async (ctx: ActionCtx, args) => {
     const token = await getOrRefreshToken(ctx);
 
-    const headers = {
-      ...HEADERS,
+    const authHeaders = {
       Authorization: `Bearer ${token}`,
     };
 
@@ -552,55 +557,31 @@ export const getLiveGames = action({
     const pageSize = args.pageSize || 20;
 
     try {
-      console.log("Priming session for live games...");
+      const localizationParams = new URLSearchParams({
+        type: "stb",
+        action: "get_localization",
+        JsHttpRequest: "1-xml",
+      });
 
-      await fetch(
-        `${API_BASE}?type=stb&action=get_localization&JsHttpRequest=1-xml`,
-        { headers }
-      );
+      await safeFetch(`${API_BASE}?${localizationParams}`, authHeaders);
 
-      await fetch(
-        `${API_BASE}?type=itv&action=get_fav_ids&force_ch_link_check=&JsHttpRequest=1-xml`,
-        { headers }
-      );
+      const favParams = new URLSearchParams({
+        type: "itv",
+        action: "get_fav_ids",
+        force_ch_link_check: "",
+        JsHttpRequest: "1-xml",
+      });
 
-      console.log("Fetching EPG for live games...");
+      await safeFetch(`${API_BASE}?${favParams}`, authHeaders);
 
-      const epgUrl = `${API_BASE}?type=itv&action=get_epg_info&period=${period}&JsHttpRequest=1-xml`;
-      const res = await fetch(epgUrl, { headers });
-      const text = await res.text();
+      const epgParams = new URLSearchParams({
+        type: "itv",
+        action: "get_epg_info",
+        period: String(period),
+        JsHttpRequest: "1-xml",
+      });
 
-      console.log("Live games EPG response length:", text.length);
-
-      if (!text || text.trim() === "") {
-        return {
-          status: "empty",
-          games: [],
-          total: 0,
-          page,
-          pageSize,
-          totalPages: 1,
-        };
-      }
-
-      let data: any;
-
-      try {
-        data = JSON.parse(text);
-      } catch (parseError) {
-        console.error("Live games EPG parse error:", parseError);
-        console.error("Response starts with:", text.substring(0, 300));
-
-        return {
-          status: "parse_error",
-          games: [],
-          total: 0,
-          page,
-          pageSize,
-          totalPages: 1,
-        };
-      }
-
+      const data = await safeFetch(`${API_BASE}?${epgParams}`, authHeaders);
       const channels = data?.js?.data || {};
 
       const sportsKeywords = [
@@ -674,7 +655,7 @@ export const getLiveGames = action({
               startTime: program.time || program.start_timestamp || "",
               endTime: program.time_to || program.stop_timestamp || "",
               channelId: String(chId),
-              channelName: program.ch_name || "",
+              channelName: program.ch_name || program.channel_name || "",
               duration: Number(program.duration || 0),
             });
           }
@@ -691,10 +672,6 @@ export const getLiveGames = action({
       const end = start + pageSize;
       const paginatedGames = allGames.slice(start, end);
 
-      console.log(
-        `Found ${allGames.length} live games, returning ${paginatedGames.length}`
-      );
-
       return {
         status: "success",
         total: allGames.length,
@@ -703,8 +680,8 @@ export const getLiveGames = action({
         totalPages: Math.ceil(allGames.length / pageSize),
         games: paginatedGames,
       };
-    } catch (error) {
-      console.error("getLiveGames error:", error);
+    } catch (err) {
+      console.error("getLiveGames error:", err);
 
       return {
         status: "error",

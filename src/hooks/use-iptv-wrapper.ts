@@ -2,7 +2,9 @@
 
 import { useCallback } from "react";
 
-const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
+const WRAPPER_URL =
+  process.env.NEXT_PUBLIC_IPTV_CONVEX_ACTION_URL ||
+  "https://neighborly-perch-272.convex.cloud/api/action";
 
 export async function callWrapper(
   path: string,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import { callWrapper } from "@/hooks/use-iptv-wrapper";
@@ -32,23 +32,6 @@ type EpgResponse = {
     data?: EpgProgram[];
   };
 };
-
-function getChannelFromParams(
-  channelId: number,
-  searchParams: URLSearchParams
-): Channel | null {
-  const name = searchParams.get("name");
-
-  if (!name) return null;
-
-  return {
-    id: channelId,
-    name,
-    logo: searchParams.get("logo") || undefined,
-    number: searchParams.get("number") || undefined,
-    hd: searchParams.get("hd") ? Number(searchParams.get("hd")) : undefined,
-  };
-}
 
 function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
@@ -102,10 +85,8 @@ function LoadingOverlay({ status }: { status: string }) {
   );
 }
 
-function WatchPageContent() {
+export default function IptvWatchPage() {
   const params = useParams();
-  const searchParams = useSearchParams();
-
   const channelId = Number(params.id);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -140,16 +121,8 @@ function WatchPageContent() {
         setStatus("Loading channel...");
         setError("");
 
-        const paramChannel = getChannelFromParams(channelId, searchParams);
-
-        if (paramChannel) {
-          setChannel(paramChannel);
-        }
-
         const [channelResult, epgResult] = await Promise.allSettled([
-          paramChannel
-            ? Promise.resolve(null)
-            : callWrapper("iptv:getChannelById", { channelId }),
+          callWrapper("iptv:getChannelById", { channelId }),
           callWrapper("iptv:getShortEpg", {
             channelId,
             size: 8,
@@ -158,12 +131,22 @@ function WatchPageContent() {
 
         if (cancelled) return;
 
-        if (channelResult.status === "fulfilled" && channelResult.value) {
+        if (channelResult.status === "fulfilled") {
           const remoteChannel = channelResult.value?.js?.data;
 
           if (remoteChannel) {
             setChannel(remoteChannel);
+          } else {
+            setChannel({
+              id: channelId,
+              name: `Channel ${channelId}`,
+            });
           }
+        } else {
+          setChannel({
+            id: channelId,
+            name: `Channel ${channelId}`,
+          });
         }
 
         if (epgResult.status === "fulfilled") {
@@ -171,6 +154,13 @@ function WatchPageContent() {
         }
       } catch (e) {
         console.error("Failed to load channel information:", e);
+
+        if (!cancelled) {
+          setChannel({
+            id: channelId,
+            name: `Channel ${channelId}`,
+          });
+        }
       } finally {
         if (!cancelled) {
           setLoadingInfo(false);
@@ -184,7 +174,7 @@ function WatchPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [channelId, searchParams]);
+  }, [channelId]);
 
   useEffect(() => {
     if (loadingInfo || !videoRef.current || Number.isNaN(channelId)) return;
@@ -569,22 +559,5 @@ function WatchPageContent() {
         </section>
       </main>
     </div>
-  );
-}
-
-export default function IptvWatchPage() {
-  return (
-    <Suspense
-      fallback={
-        <div
-          className="flex min-h-screen items-center justify-center"
-          style={{ backgroundColor: "var(--neu-bg-page)" }}
-        >
-          <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-t-2 border-red-600" />
-        </div>
-      }
-    >
-      <WatchPageContent />
-    </Suspense>
   );
 }
