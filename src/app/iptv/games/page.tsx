@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import { callWrapper, useLiveGames } from "@/hooks/use-iptv-wrapper";
+import { useLiveGames } from "@/hooks/use-iptv-wrapper";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -23,12 +23,25 @@ function getTimeValue(startTime: any) {
   if (!startTime) return Number.MAX_SAFE_INTEGER;
 
   const value = String(startTime).trim();
+
+  /**
+   * Supports full date/time values like:
+   * "2026-06-06 15:30"
+   * "2026-06-06T15:30:00"
+   * "Sat Jun 06 2026 15:30"
+   */
   const parsedDate = new Date(value);
 
   if (!Number.isNaN(parsedDate.getTime())) {
     return parsedDate.getTime();
   }
 
+  /**
+   * Supports time-only values like:
+   * "15:30"
+   * "8:05"
+   * "15:30:00"
+   */
   const timeMatch = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
 
   if (timeMatch) {
@@ -42,18 +55,6 @@ function getTimeValue(startTime: any) {
   return Number.MAX_SAFE_INTEGER;
 }
 
-function buildChannelMap(channels: any[]) {
-  const map: Record<string, any> = {};
-
-  for (const channel of channels) {
-    if (channel?.id) {
-      map[String(channel.id)] = channel;
-    }
-  }
-
-  return map;
-}
-
 export default function IptvGamesPage() {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<any>(null);
@@ -61,7 +62,6 @@ export default function IptvGamesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("time-asc");
-  const [channelMap, setChannelMap] = useState<Record<string, any>>({});
 
   const { fetch: fetchGames } = useLiveGames(1, page, PAGE_SIZE);
 
@@ -74,36 +74,8 @@ export default function IptvGamesPage() {
       try {
         const result = await fetchGames();
 
-        if (!mounted) return;
-
-        setData(result);
-
-        const games = result?.games || [];
-
-        const channelIds = Array.from(
-          new Set(
-            games
-              .map((game: any) => Number(game.channelId))
-              .filter((id: number) => !Number.isNaN(id))
-          )
-        );
-
-        if (channelIds.length > 0) {
-          try {
-            const channelResult = await callWrapper("iptv:getChannelsByIds", {
-              channelIds,
-            });
-
-            if (!mounted) return;
-
-            const channels = channelResult?.js?.data || [];
-            setChannelMap(buildChannelMap(channels));
-          } catch (channelError) {
-            console.error("Failed to load channel names:", channelError);
-            setChannelMap({});
-          }
-        } else {
-          setChannelMap({});
+        if (mounted) {
+          setData(result);
         }
       } catch (error) {
         console.error("Failed to fetch live games:", error);
@@ -114,7 +86,6 @@ export default function IptvGamesPage() {
             total: 0,
             totalPages: 1,
           });
-          setChannelMap({});
         }
       } finally {
         if (mounted) {
@@ -128,7 +99,7 @@ export default function IptvGamesPage() {
     return () => {
       mounted = false;
     };
-  }, [page, fetchGames]);
+  }, [page]);
 
   const gameData = data?.games || [];
   const total = data?.total || 0;
@@ -144,17 +115,11 @@ export default function IptvGamesPage() {
         const title = String(game.title || "").toLowerCase();
         const channelId = String(game.channelId || "").toLowerCase();
         const startTime = String(game.startTime || "").toLowerCase();
-        const apiChannelName = String(game.channelName || "").toLowerCase();
-        const mappedChannelName = String(
-          channelMap[String(game.channelId)]?.name || ""
-        ).toLowerCase();
 
         return (
           title.includes(query) ||
           channelId.includes(query) ||
-          startTime.includes(query) ||
-          apiChannelName.includes(query) ||
-          mappedChannelName.includes(query)
+          startTime.includes(query)
         );
       });
     }
@@ -200,9 +165,10 @@ export default function IptvGamesPage() {
     }
 
     return games;
-  }, [gameData, searchQuery, sortBy, channelMap]);
+  }, [gameData, searchQuery, sortBy]);
 
-  const hasActiveFilters = searchQuery.trim() !== "" || sortBy !== "time-asc";
+  const hasActiveFilters =
+    searchQuery.trim() !== "" || sortBy !== "time-asc";
 
   function clearFilters() {
     setSearchQuery("");
@@ -217,14 +183,6 @@ export default function IptvGamesPage() {
   function goToNextPage() {
     setPage((currentPage) => Math.min(totalPages - 1, currentPage + 1));
     clearFilters();
-  }
-
-  function getChannelName(game: any) {
-    return (
-      game.channelName ||
-      channelMap[String(game.channelId)]?.name ||
-      `Channel ${game.channelId}`
-    );
   }
 
   if (loading) {
@@ -266,6 +224,7 @@ export default function IptvGamesPage() {
       <Header />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Header */}
         <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Link
@@ -305,6 +264,7 @@ export default function IptvGamesPage() {
           </div>
         </div>
 
+        {/* Search and Sort */}
         <section className="neumorphic-card mb-6 rounded-3xl p-4 sm:p-5">
           <div className="grid gap-4 md:grid-cols-[1fr_240px_auto]">
             <div className="relative">
@@ -359,6 +319,7 @@ export default function IptvGamesPage() {
           </div>
         </section>
 
+        {/* Games List */}
         {filteredGames.length > 0 ? (
           <section className="mb-8 space-y-3">
             {filteredGames.map((game: any, i: number) => (
@@ -392,7 +353,7 @@ export default function IptvGamesPage() {
 
                           <span className="inline-flex items-center gap-1.5">
                             <Hash className="h-4 w-4" />
-                            {getChannelName(game)}
+                            Channel {game.channelId}
                           </span>
                         </div>
                       </div>
@@ -441,6 +402,7 @@ export default function IptvGamesPage() {
           </section>
         )}
 
+        {/* Pagination */}
         <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur sm:flex-row">
           <button
             type="button"

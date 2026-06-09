@@ -4,10 +4,12 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import { callWrapper } from "@/hooks/use-iptv-wrapper";
 
 const HLS_BASE =
   process.env.NEXT_PUBLIC_HLS_BASE || "https://hls.bravestream.live";
+
+const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
+const CHANNELS_CACHE_KEY = "iptv-channels-cache-v2";
 
 type Channel = {
   id: number;
@@ -32,6 +34,40 @@ type EpgResponse = {
     data?: EpgProgram[];
   };
 };
+
+async function callWrapper(path: string, args: Record<string, unknown> = {}) {
+  const res = await fetch(WRAPPER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, args }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Wrapper request failed: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.value;
+}
+
+function getCachedChannel(channelId: number): Channel | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const stored = sessionStorage.getItem(CHANNELS_CACHE_KEY);
+    if (!stored) return null;
+
+    const channels = JSON.parse(stored);
+    if (!Array.isArray(channels)) return null;
+
+    return (
+      channels.find((channel: Channel) => Number(channel.id) === channelId) ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
 
 function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
@@ -112,7 +148,6 @@ export default function IptvWatchPage() {
       if (Number.isNaN(channelId)) {
         setError("Invalid channel selected.");
         setLoadingInfo(false);
-        setStatus("");
         return;
       }
 
@@ -120,6 +155,12 @@ export default function IptvWatchPage() {
         setLoadingInfo(true);
         setStatus("Loading channel...");
         setError("");
+
+        const cachedChannel = getCachedChannel(channelId);
+
+        if (cachedChannel) {
+          setChannel(cachedChannel);
+        }
 
         const [channelResult, epgResult] = await Promise.allSettled([
           callWrapper("iptv:getChannelById", { channelId }),
@@ -136,13 +177,13 @@ export default function IptvWatchPage() {
 
           if (remoteChannel) {
             setChannel(remoteChannel);
-          } else {
+          } else if (!cachedChannel) {
             setChannel({
               id: channelId,
               name: `Channel ${channelId}`,
             });
           }
-        } else {
+        } else if (!cachedChannel) {
           setChannel({
             id: channelId,
             name: `Channel ${channelId}`,
@@ -374,9 +415,7 @@ export default function IptvWatchPage() {
                     className="text-2xl font-bold tracking-tight sm:text-4xl"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    {loadingInfo && !channel
-                      ? "Loading channel..."
-                      : channelTitle}
+                    {loadingInfo ? "Loading channel..." : channelTitle}
                   </h1>
 
                   {currentProgram && (
@@ -467,8 +506,10 @@ export default function IptvWatchPage() {
                   >
                     Program Guide
                   </h2>
-
-                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  <p
+                    className="text-sm"
+                    style={{ color: "var(--text-muted)" }}
+                  >
                     Current and upcoming shows
                   </p>
                 </div>
