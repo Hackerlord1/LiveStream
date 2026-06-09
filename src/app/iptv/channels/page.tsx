@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 
-const VPS_URL = "http://129.106.133.57:3499";
+const res = await fetch(`/api/channels-all`);
 
 export default function IptvChannelsPage() {
   const [channels, setChannels] = useState<any[]>([]);
@@ -19,7 +19,7 @@ export default function IptvChannelsPage() {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(`${VPS_URL}/api/channels/all`);
+        const res = await fetch(`/api/channels-all`);
         const data = await res.json();
 
         if (data.channels && data.channels.length > 0) {
