@@ -146,70 +146,53 @@ export default function IptvWatchPage() {
     let cancelled = false;
 
     async function loadChannelInfo() {
-      if (Number.isNaN(channelId)) {
-        setError("Invalid channel selected.");
-        setLoadingInfo(false);
-        return;
-      }
+  if (Number.isNaN(channelId)) {
+    setError("Invalid channel selected.");
+    setLoadingInfo(false);
+    return;
+  }
 
-      try {
-        setLoadingInfo(true);
-        setStatus("Loading channel...");
-        setError("");
+  try {
+    setLoadingInfo(true);
+    setStatus("Loading channel...");
+    setError("");
 
-        const cachedChannel = getCachedChannel(channelId);
+    const cachedChannel = getCachedChannel(channelId);
 
-        if (cachedChannel) {
-          setChannel(cachedChannel);
-        }
-
-        const [channelResult, epgResult] = await Promise.allSettled([
-          callWrapper("iptv:getChannelById", { channelId }),
-          callWrapper("iptv:getShortEpg", {
-            channelId,
-            size: 8,
-          }),
-        ]);
-
-        if (cancelled) return;
-
-        if (channelResult.status === "fulfilled") {
-          const remoteChannel = channelResult.value?.js?.data;
-
-          if (remoteChannel) {
-            setChannel(remoteChannel);
-          } else if (!cachedChannel) {
-            setChannel({
-              id: channelId,
-              name: `Channel ${channelId}`,
-            });
-          }
-        } else if (!cachedChannel) {
-          setChannel({
-            id: channelId,
-            name: `Channel ${channelId}`,
-          });
-        }
-
-        if (epgResult.status === "fulfilled") {
-          setEpgData(epgResult.value as EpgResponse);
-        }
-      } catch (e) {
-        console.error("Failed to load channel information:", e);
-
-        if (!cancelled) {
-          setChannel({
-            id: channelId,
-            name: `Channel ${channelId}`,
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingInfo(false);
-          setStatus("");
-        }
-      }
+    if (cachedChannel) {
+      setChannel(cachedChannel);
+    } else {
+      setChannel({
+        id: channelId,
+        name: `Channel ${channelId}`,
+      });
     }
+
+    const [epgResult] = await Promise.allSettled([
+      callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
+    ]);
+
+    if (cancelled) return;
+
+    if (epgResult.status === "fulfilled") {
+      setEpgData(epgResult.value as EpgResponse);
+    }
+  } catch (e) {
+    console.error("Failed to load channel information:", e);
+
+    if (!cancelled) {
+      setChannel({
+        id: channelId,
+        name: `Channel ${channelId}`,
+      });
+    }
+  } finally {
+    if (!cancelled) {
+      setLoadingInfo(false);
+      setStatus("");
+    }
+  }
+}
 
     loadChannelInfo();
 
