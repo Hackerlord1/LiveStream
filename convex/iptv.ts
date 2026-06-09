@@ -540,40 +540,67 @@ export const getLiveGames = action({
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx: ActionCtx, args) => {
+    const token = await getOrRefreshToken(ctx);
+
+    const headers = {
+      ...HEADERS,
+      Authorization: `Bearer ${token}`,
+    };
+
+    const period = args.period || 1;
+    const page = args.page || 0;
+    const pageSize = args.pageSize || 20;
+
     try {
-      const token = await getOrRefreshToken(ctx);
-      const period = args.period || 1;
-      const page = args.page || 0;
-      const pageSize = args.pageSize || 20;
+      console.log("Priming session for live games...");
 
-      const localizationParams = new URLSearchParams({
-        type: "stb",
-        action: "get_localization",
-        JsHttpRequest: "1-xml",
-        token,
-      });
+      await fetch(
+        `${API_BASE}?type=stb&action=get_localization&JsHttpRequest=1-xml`,
+        { headers }
+      );
 
-      await safeFetch(`${API_BASE}?${localizationParams}`);
+      await fetch(
+        `${API_BASE}?type=itv&action=get_fav_ids&force_ch_link_check=&JsHttpRequest=1-xml`,
+        { headers }
+      );
 
-      const favParams = new URLSearchParams({
-        type: "itv",
-        action: "get_fav_ids",
-        force_ch_link_check: "",
-        JsHttpRequest: "1-xml",
-        token,
-      });
+      console.log("Fetching EPG for live games...");
 
-      await safeFetch(`${API_BASE}?${favParams}`);
+      const epgUrl = `${API_BASE}?type=itv&action=get_epg_info&period=${period}&JsHttpRequest=1-xml`;
+      const res = await fetch(epgUrl, { headers });
+      const text = await res.text();
 
-      const epgParams = new URLSearchParams({
-        type: "itv",
-        action: "get_epg_info",
-        period: String(period),
-        JsHttpRequest: "1-xml",
-        token,
-      });
+      console.log("Live games EPG response length:", text.length);
 
-      const data = await safeFetch(`${API_BASE}?${epgParams}`);
+      if (!text || text.trim() === "") {
+        return {
+          status: "empty",
+          games: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 1,
+        };
+      }
+
+      let data: any;
+
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error("Live games EPG parse error:", parseError);
+        console.error("Response starts with:", text.substring(0, 300));
+
+        return {
+          status: "parse_error",
+          games: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 1,
+        };
+      }
+
       const channels = data?.js?.data || {};
 
       const sportsKeywords = [
@@ -632,13 +659,13 @@ export const getLiveGames = action({
           const descr = program.descr || "";
           const combined = `${title} ${descr}`.toLowerCase();
 
-          const isMatch = sportsKeywords.some((keyword) => {
-            return combined.includes(keyword.toLowerCase());
-          });
+          const isMatch = sportsKeywords.some((keyword) =>
+            combined.includes(keyword.toLowerCase())
+          );
 
-          const isExcluded = excludeKeywords.some((keyword) => {
-            return combined.includes(keyword.toLowerCase());
-          });
+          const isExcluded = excludeKeywords.some((keyword) =>
+            combined.includes(keyword.toLowerCase())
+          );
 
           if (isMatch && !isExcluded) {
             allGames.push({
@@ -664,6 +691,10 @@ export const getLiveGames = action({
       const end = start + pageSize;
       const paginatedGames = allGames.slice(start, end);
 
+      console.log(
+        `Found ${allGames.length} live games, returning ${paginatedGames.length}`
+      );
+
       return {
         status: "success",
         total: allGames.length,
@@ -672,15 +703,15 @@ export const getLiveGames = action({
         totalPages: Math.ceil(allGames.length / pageSize),
         games: paginatedGames,
       };
-    } catch (err) {
-      console.error("getLiveGames error:", err);
+    } catch (error) {
+      console.error("getLiveGames error:", error);
 
       return {
         status: "error",
         games: [],
         total: 0,
-        page: args.page || 0,
-        pageSize: args.pageSize || 20,
+        page,
+        pageSize,
         totalPages: 1,
       };
     }
