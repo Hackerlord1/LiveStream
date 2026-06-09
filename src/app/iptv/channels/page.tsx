@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 
-const res = await fetch(`/api/channels-all`);
-
 export default function IptvChannelsPage() {
   const [channels, setChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,8 +14,15 @@ export default function IptvChannelsPage() {
 
   useEffect(() => {
     async function load() {
+      // Only run on client side
+      if (typeof window === "undefined") {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError("");
+
       try {
         const res = await fetch(`/api/channels-all`);
         const data = await res.json();
@@ -31,7 +36,6 @@ export default function IptvChannelsPage() {
           setError("Server is still caching channels. Please wait a moment and refresh.");
           setCacheStatus("First-time setup in progress...");
         } else {
-          // Fallback to Convex
           setError("Trying backup source...");
           try {
             const convexRes = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
@@ -48,7 +52,6 @@ export default function IptvChannelsPage() {
           }
         }
       } catch (e) {
-        // Fallback: try sessionStorage
         try {
           const stored = sessionStorage.getItem("iptv-channels-cache-v3");
           if (stored) {
@@ -66,7 +69,6 @@ export default function IptvChannelsPage() {
     load();
   }, []);
 
-  // Save to sessionStorage when channels load
   useEffect(() => {
     if (channels.length > 100) {
       try {
