@@ -4,12 +4,12 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
+import { useChannelMap } from "@/hooks/use-iptv-wrapper";
 
 const HLS_BASE =
   process.env.NEXT_PUBLIC_HLS_BASE || "https://hls.bravestream.live";
 
 const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
-const CHANNELS_CACHE_KEY = "iptv-channels-cache-v2";
 
 type Channel = {
   id: number;
@@ -48,25 +48,6 @@ async function callWrapper(path: string, args: Record<string, unknown> = {}) {
 
   const data = await res.json();
   return data.value;
-}
-
-function getCachedChannel(channelId: number): Channel | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const stored = sessionStorage.getItem(CHANNELS_CACHE_KEY);
-    if (!stored) return null;
-
-    const channels = JSON.parse(stored);
-    if (!Array.isArray(channels)) return null;
-
-    return (
-      channels.find((channel: Channel) => Number(channel.id) === channelId) ||
-      null
-    );
-  } catch {
-    return null;
-  }
 }
 
 function getChannelFromParams(
@@ -153,6 +134,8 @@ function WatchPageContent() {
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [status, setStatus] = useState("Loading channel...");
 
+  const { channelMap, loaded: channelMapLoaded } = useChannelMap();
+
   const programs = useMemo(() => {
     return epgData?.js?.data || [];
   }, [epgData]);
@@ -160,7 +143,23 @@ function WatchPageContent() {
   const currentProgram = programs[0];
   const channelTitle = channel?.name || `Channel ${channelId}`;
 
-  // ── Load channel info ──
+  // Resolve channel from channelMap when it loads
+  useEffect(() => {
+    if (!channelMapLoaded || channel) return;
+
+    const mapped = channelMap[String(channelId)];
+    if (mapped) {
+      setChannel({
+        id: channelId,
+        name: mapped.name,
+        logo: mapped.logo,
+        number: mapped.number,
+        hd: mapped.hd,
+      });
+    }
+  }, [channelMapLoaded, channelMap, channelId, channel]);
+
+  // Load channel info
   useEffect(() => {
     let cancelled = false;
 
@@ -182,45 +181,33 @@ function WatchPageContent() {
           setChannel(paramChannel);
         }
 
-        // Priority 2: Session storage cache
-        const cachedChannel = !paramChannel
-          ? getCachedChannel(channelId)
-          : null;
-        if (cachedChannel) {
-          setChannel(cachedChannel);
+        // Priority 2: Channel map (from cache or API via hook)
+        if (!paramChannel) {
+          const mapped = channelMap[String(channelId)];
+          if (mapped) {
+            setChannel({
+              id: channelId,
+              name: mapped.name,
+              logo: mapped.logo,
+              number: mapped.number,
+              hd: mapped.hd,
+            });
+          }
         }
 
-        const alreadyResolved = paramChannel || cachedChannel;
-
-        // Priority 3: API call (only if we don't have info yet)
-        const [channelResult, epgResult] = await Promise.allSettled([
-          alreadyResolved
-            ? Promise.resolve(null)
-            : callWrapper("iptv:getChannelById", { channelId }),
-          callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
-        ]);
+        // Fetch EPG data
+        const epgResult = await callWrapper("iptv:getShortEpg", {
+          channelId,
+          size: 8,
+        }).catch(() => null);
 
         if (cancelled) return;
 
-        if (channelResult.status === "fulfilled" && channelResult.value) {
-          const remoteChannel = channelResult.value?.js?.data;
-          if (remoteChannel) {
-            setChannel(remoteChannel);
-          } else if (!alreadyResolved) {
-            setChannel({ id: channelId, name: `Channel ${channelId}` });
-          }
-        } else if (!alreadyResolved) {
-          setChannel({ id: channelId, name: `Channel ${channelId}` });
-        }
-
-        if (epgResult.status === "fulfilled") {
-          setEpgData(epgResult.value as EpgResponse);
+        if (epgResult) {
+          setEpgData(epgResult as EpgResponse);
         }
       } catch (e) {
         console.error("Failed to load channel information:", e);
-        if (!cancelled && !channel) {
-          setChannel({ id: channelId, name: `Channel ${channelId}` });
-        }
       } finally {
         if (!cancelled) {
           setLoadingInfo(false);
@@ -234,9 +221,9 @@ function WatchPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [channelId, searchParams]);
+  }, [channelId, searchParams, channelMap]);
 
-  // ── Start HLS playback ──
+  // Start HLS playback
   useEffect(() => {
     if (loadingInfo || !videoRef.current || Number.isNaN(channelId)) return;
 
@@ -351,7 +338,6 @@ function WatchPageContent() {
     };
   }, [loadingInfo, channelId]);
 
-  // ── Render ──
   return (
     <div
       className="min-h-screen"

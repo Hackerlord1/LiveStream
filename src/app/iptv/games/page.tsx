@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import { useLiveGames } from "@/hooks/use-iptv-wrapper";
+import { useLiveGames, useChannelMap } from "@/hooks/use-iptv-wrapper";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -50,28 +50,9 @@ export default function IptvGamesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("time-asc");
-  const [channelMap, setChannelMap] = useState<Record<string, any>>({});
 
+  const { channelMap } = useChannelMap();
   const { fetch: fetchGames } = useLiveGames(1, page, PAGE_SIZE);
-
-  // Build channel lookup from sessionStorage cache
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("iptv-channels-cache-v2");
-      if (!stored) return;
-
-      const channels = JSON.parse(stored);
-      if (!Array.isArray(channels)) return;
-
-      const map: Record<string, any> = {};
-      for (const ch of channels) {
-        if (ch.id) map[String(ch.id)] = ch;
-      }
-      setChannelMap(map);
-    } catch {
-      // Cache not available
-    }
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -196,7 +177,6 @@ export default function IptvGamesPage() {
     clearFilters();
   }
 
-  // Helper to build watch page URL with channel info
   function getWatchUrl(channelId: string | number) {
     const ch = channelMap[String(channelId)];
     const base = `/iptv/watch/${channelId}`;
@@ -211,6 +191,10 @@ export default function IptvGamesPage() {
 
     const qs = params.toString();
     return qs ? `${base}?${qs}` : base;
+  }
+
+  function getChannelName(channelId: string | number) {
+    return channelMap[String(channelId)]?.name || `Channel ${channelId}`;
   }
 
   if (loading) {
@@ -307,7 +291,7 @@ export default function IptvGamesPage() {
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search by match, time, or channel..."
+                placeholder="Search by match, time, or channel name..."
                 className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-12 pr-4 text-sm outline-none transition placeholder:text-gray-400 focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20"
               />
             </div>
@@ -387,8 +371,7 @@ export default function IptvGamesPage() {
 
                           <span className="inline-flex items-center gap-1.5">
                             <Hash className="h-4 w-4" />
-                            {channelMap[String(game.channelId)]?.name ||
-                              `Channel ${game.channelId}`}
+                            {getChannelName(game.channelId)}
                           </span>
                         </div>
                       </div>
@@ -454,10 +437,7 @@ export default function IptvGamesPage() {
               Page {page + 1} of {totalPages}
             </p>
 
-            <p
-              className="text-xs"
-              style={{ color: "var(--text-muted)" }}
-            >
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               {PAGE_SIZE} matches per page
             </p>
           </div>
