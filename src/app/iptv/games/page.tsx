@@ -24,24 +24,12 @@ function getTimeValue(startTime: any) {
 
   const value = String(startTime).trim();
 
-  /**
-   * Supports full date/time values like:
-   * "2026-06-06 15:30"
-   * "2026-06-06T15:30:00"
-   * "Sat Jun 06 2026 15:30"
-   */
   const parsedDate = new Date(value);
 
   if (!Number.isNaN(parsedDate.getTime())) {
     return parsedDate.getTime();
   }
 
-  /**
-   * Supports time-only values like:
-   * "15:30"
-   * "8:05"
-   * "15:30:00"
-   */
   const timeMatch = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
 
   if (timeMatch) {
@@ -62,8 +50,28 @@ export default function IptvGamesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("time-asc");
+  const [channelMap, setChannelMap] = useState<Record<string, any>>({});
 
   const { fetch: fetchGames } = useLiveGames(1, page, PAGE_SIZE);
+
+  // Build channel lookup from sessionStorage cache
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("iptv-channels-cache-v2");
+      if (!stored) return;
+
+      const channels = JSON.parse(stored);
+      if (!Array.isArray(channels)) return;
+
+      const map: Record<string, any> = {};
+      for (const ch of channels) {
+        if (ch.id) map[String(ch.id)] = ch;
+      }
+      setChannelMap(map);
+    } catch {
+      // Cache not available
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -115,11 +123,15 @@ export default function IptvGamesPage() {
         const title = String(game.title || "").toLowerCase();
         const channelId = String(game.channelId || "").toLowerCase();
         const startTime = String(game.startTime || "").toLowerCase();
+        const channelName = String(
+          channelMap[String(game.channelId)]?.name || ""
+        ).toLowerCase();
 
         return (
           title.includes(query) ||
           channelId.includes(query) ||
-          startTime.includes(query)
+          startTime.includes(query) ||
+          channelName.includes(query)
         );
       });
     }
@@ -165,10 +177,9 @@ export default function IptvGamesPage() {
     }
 
     return games;
-  }, [gameData, searchQuery, sortBy]);
+  }, [gameData, searchQuery, sortBy, channelMap]);
 
-  const hasActiveFilters =
-    searchQuery.trim() !== "" || sortBy !== "time-asc";
+  const hasActiveFilters = searchQuery.trim() !== "" || sortBy !== "time-asc";
 
   function clearFilters() {
     setSearchQuery("");
@@ -183,6 +194,23 @@ export default function IptvGamesPage() {
   function goToNextPage() {
     setPage((currentPage) => Math.min(totalPages - 1, currentPage + 1));
     clearFilters();
+  }
+
+  // Helper to build watch page URL with channel info
+  function getWatchUrl(channelId: string | number) {
+    const ch = channelMap[String(channelId)];
+    const base = `/iptv/watch/${channelId}`;
+
+    if (!ch) return base;
+
+    const params = new URLSearchParams();
+    if (ch.name) params.set("name", ch.name);
+    if (ch.logo) params.set("logo", ch.logo);
+    if (ch.number) params.set("number", String(ch.number));
+    if (ch.hd !== undefined) params.set("hd", String(ch.hd));
+
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
   }
 
   if (loading) {
@@ -204,7 +232,10 @@ export default function IptvGamesPage() {
               Loading live games...
             </h2>
 
-            <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="mt-2 text-sm"
+              style={{ color: "var(--text-muted)" }}
+            >
               Please wait while we fetch the latest {PAGE_SIZE} Live Events.
             </p>
           </div>
@@ -313,7 +344,10 @@ export default function IptvGamesPage() {
             )}
           </div>
 
-          <div className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="mt-4 text-sm"
+            style={{ color: "var(--text-muted)" }}
+          >
             Showing {filteredGames.length} of {gameData.length} loaded matches
             on this page.
           </div>
@@ -325,7 +359,7 @@ export default function IptvGamesPage() {
             {filteredGames.map((game: any, i: number) => (
               <Link
                 key={`${game.channelId}-${game.startTime}-${i}`}
-                href={`/iptv/watch/${game.channelId}`}
+                href={getWatchUrl(game.channelId)}
                 className="neumorphic-card relative block overflow-hidden rounded-2xl p-5"
               >
                 <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
@@ -353,7 +387,8 @@ export default function IptvGamesPage() {
 
                           <span className="inline-flex items-center gap-1.5">
                             <Hash className="h-4 w-4" />
-                            Channel {game.channelId}
+                            {channelMap[String(game.channelId)]?.name ||
+                              `Channel ${game.channelId}`}
                           </span>
                         </div>
                       </div>
@@ -419,7 +454,10 @@ export default function IptvGamesPage() {
               Page {page + 1} of {totalPages}
             </p>
 
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            <p
+              className="text-xs"
+              style={{ color: "var(--text-muted)" }}
+            >
               {PAGE_SIZE} matches per page
             </p>
           </div>
