@@ -12,21 +12,40 @@ export default function IptvChannelsPage() {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
   const [error, setError] = useState("");
+  const [cacheStatus, setCacheStatus] = useState("");
 
-  // Load all channels from VPS once
   useEffect(() => {
     async function load() {
       setLoading(true);
       setError("");
       try {
-        const res = await fetch(`${VPS_URL}/api/channels/range?start=0&end=99999`);
+        const res = await fetch(`${VPS_URL}/api/channels/all`);
         const data = await res.json();
+
         if (data.channels && data.channels.length > 0) {
           setChannels(data.channels);
+          if (!data.ready) {
+            setCacheStatus(`Loading from server... ${data.total?.toLocaleString()} loaded so far`);
+          }
         } else if (data.loading) {
-          setError("Server is still loading channels. Please refresh in a minute.");
+          setError("Server is still caching channels. Please wait a moment and refresh.");
+          setCacheStatus("First-time setup in progress...");
         } else {
-          setError("No channels available");
+          // Fallback to Convex
+          setError("Trying backup source...");
+          try {
+            const convexRes = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: "iptv:getOrderedList", args: { page: 0, genre: "*", sortby: "number" } }),
+            });
+            const convexData = await convexRes.json();
+            const initialChannels = convexData.value?.js?.data || [];
+            setChannels(initialChannels);
+            setError("");
+          } catch (e2) {
+            setError("Failed to load channels. Please try again.");
+          }
         }
       } catch (e) {
         // Fallback: try sessionStorage
@@ -36,17 +55,26 @@ export default function IptvChannelsPage() {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed) && parsed.length > 100) {
               setChannels(parsed);
+              setError("");
             }
           }
         } catch (e2) {}
-        if (channels.length === 0) setError("Failed to load channels");
+        if (channels.length === 0) setError("Failed to load channels. Please try again.");
       }
       setLoading(false);
     }
     load();
   }, []);
 
-  // Instant search
+  // Save to sessionStorage when channels load
+  useEffect(() => {
+    if (channels.length > 100) {
+      try {
+        sessionStorage.setItem("iptv-channels-cache-v3", JSON.stringify(channels));
+      } catch (e) {}
+    }
+  }, [channels]);
+
   const performSearch = useCallback((query: string) => {
     if (!query.trim()) {
       setSearchResults(null);
@@ -75,9 +103,18 @@ export default function IptvChannelsPage() {
           </span>
         </div>
 
+        {cacheStatus && (
+          <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-primary)', border: '1px solid var(--border-primary)' }}>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>📥 {cacheStatus}</p>
+          </div>
+        )}
+
         {error && (
           <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: 'var(--error-bg)', border: '1px solid var(--brand-red)', color: 'var(--error-text)' }}>
-            {error}
+            <p>{error}</p>
+            <button onClick={() => window.location.reload()} className="mt-2 text-sm underline hover:no-underline">
+              Refresh Page
+            </button>
           </div>
         )}
 
