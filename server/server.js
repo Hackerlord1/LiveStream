@@ -7,10 +7,8 @@ const PORT = 8080;
 const HLS_DIR = path.join(__dirname, "hls");
 const STREAM_BASE = "http://seatv.xyz/B2X4MX4S65WNTPY/bc65CNzbec";
 
-// Ensure HLS directory exists
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
-// Track running streams
 const streams = {};
 
 function startStream(channelId) {
@@ -29,6 +27,7 @@ function startStream(channelId) {
     "-hls_time", "4",
     "-hls_list_size", "6",
     "-hls_flags", "delete_segments",
+    "-hls_segment_filename", path.join(HLS_DIR, `${channelId}_%03d.ts`),
     m3u8Path,
   ]);
 
@@ -54,18 +53,46 @@ function stopStream(channelId) {
   if (streams[channelId]) {
     streams[channelId].kill();
     delete streams[channelId];
-    // Clean up files
-    const files = fs.readdirSync(HLS_DIR);
-    files.forEach(f => {
-      if (f.startsWith(`${channelId}`)) {
-        fs.unlinkSync(path.join(HLS_DIR, f));
-      }
-    });
+    try {
+      const files = fs.readdirSync(HLS_DIR);
+      files.forEach(f => {
+        if (f.startsWith(`${channelId}`) ) {
+          try {
+            fs.unlinkSync(path.join(HLS_DIR, f));
+          } catch (e) { /* file already gone */ }
+        }
+      });
+    } catch (e) { /* directory read error */ }
   }
 }
 
+// ═══════════════════════════════════════════════════
+// ✅ Cleanup interval — OUTSIDE the request handler
+// ═══════════════════════════════════════════════════
+setInterval(() => {
+  try {
+    const files = fs.readdirSync(HLS_DIR);
+    const now = Date.now();
+    files.forEach(f => {
+      const filePath = path.join(HLS_DIR, f);
+      try {
+        const stats = fs.statSync(filePath);
+        // Extract channel ID: everything before the first '_' or '.'
+        const channelId = f.split(/[_.]/)[0];
+        if (now - stats.mtimeMs > 120000 && !streams[channelId]) {
+          fs.unlinkSync(filePath);
+          console.log(`Cleaned up: ${f}`);
+        }
+      } catch (e) {
+        // File was deleted between readdir and stat — safe to ignore
+      }
+    });
+  } catch (e) {
+    console.error("Cleanup error:", e.message);
+  }
+}, 60000);
+
 const server = http.createServer((req, res) => {
-  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
@@ -78,14 +105,12 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", streams: Object.keys(streams) }));
     return;
   }
 
-  // Start a stream
   if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/start") && req.method === "POST") {
     const channelId = url.pathname.split("/")[2];
     startStream(channelId);
@@ -94,22 +119,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Cleanup old segments every 60 seconds
-setInterval(() => {
-  const files = fs.readdirSync(HLS_DIR);
-  const now = Date.now();
-  files.forEach(f => {
-    const filePath = path.join(HLS_DIR, f);
-    const stats = fs.statSync(filePath);
-    // Delete files older than 2 minutes if no active stream for that channel
-    const channelId = f.split('.')[0].replace(/\d+$/, '');
-    if (now - stats.mtimeMs > 120000 && !streams[channelId]) {
-      fs.unlinkSync(filePath);
-    }
-  });
-}, 60000);
-
-  // Stop a stream
   if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/stop") && req.method === "POST") {
     const channelId = url.pathname.split("/")[2];
     stopStream(channelId);
@@ -118,7 +127,6 @@ setInterval(() => {
     return;
   }
 
-  // Serve HLS files
   if (url.pathname.startsWith("/hls/")) {
     const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
     if (fs.existsSync(filePath)) {
@@ -139,7 +147,4 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`HLS Service running at http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Start stream: POST http://localhost:${PORT}/streams/{id}/start`);
-  console.log(`Play HLS: http://localhost:${PORT}/hls/{id}.m3u8`);
 });

@@ -270,32 +270,41 @@ export default function IptvChannelsPage() {
         )}
 
         {!loading && displayChannels.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-            {displayChannels.map((channel: any) => (
-              <Link key={`${channel.id}_${channel.number}`} href={`/iptv/watch/${channel.id}`}
-                className="neumorphic-card p-3 rounded-xl hover:shadow-lg transition-all text-center group" title={channel.name}>
-                <div className="w-full h-20 flex items-center justify-center mb-2 relative">
-                  {channel.logo ? (
-                    <img src={channel.logo} alt={channel.name} className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform" loading="lazy"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const fallback = target.parentElement?.querySelector('.logo-fallback');
-                        if (fallback) (fallback as HTMLElement).style.display = 'flex';
-                      }} />
-                  ) : null}
-                  <span className="logo-fallback text-3xl" style={{ display: channel.logo ? 'none' : 'flex' }}>📺</span>
-                </div>
-                <p className="font-semibold text-xs leading-tight group-hover:text-red-600 transition-colors line-clamp-2">{channel.name}</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
-                <div className="flex justify-center gap-1 mt-1.5">
-                  {channel.hd === 1 && <span className="text-xs px-1.5 py-0.5 bg-red-600 text-white rounded">HD</span>}
-                  {channel.censored === 0 && <span className="text-xs px-1.5 py-0.5 bg-green-600 text-white rounded">LIVE</span>}
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
+  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+    {displayChannels.map((channel: any) => (
+      <Link
+        key={`${channel.id}_${channel.number}`}
+        href={`/iptv/watch/${channel.id}?name=${encodeURIComponent(channel.name || '')}&logo=${encodeURIComponent(channel.logo || '')}&number=${channel.number || ''}&hd=${channel.hd || 0}`}
+        className="neumorphic-card p-3 rounded-xl hover:shadow-lg transition-all text-center group"
+        title={channel.name}
+      >
+        <div className="w-full h-20 flex items-center justify-center mb-2 relative">
+          {channel.logo ? (
+            <img
+              src={channel.logo}
+              alt={channel.name}
+              className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform"
+              loading="lazy"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const fallback = target.parentElement?.querySelector('.logo-fallback');
+                if (fallback) (fallback as HTMLElement).style.display = 'flex';
+              }}
+            />
+          ) : null}
+          <span className="logo-fallback text-3xl" style={{ display: channel.logo ? 'none' : 'flex' }}>📺</span>
+        </div>
+        <p className="font-semibold text-xs leading-tight group-hover:text-red-600 transition-colors line-clamp-2">{channel.name}</p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
+        <div className="flex justify-center gap-1 mt-1.5">
+          {channel.hd === 1 && <span className="text-xs px-1.5 py-0.5 bg-red-600 text-white rounded">HD</span>}
+          {channel.censored === 0 && <span className="text-xs px-1.5 py-0.5 bg-green-600 text-white rounded">LIVE</span>}
+        </div>
+      </Link>
+    ))}
+  </div>
+)}
 
         {!loading && displayChannels.length === 0 && (
           <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 
@@ -69,6 +69,24 @@ function getCachedChannel(channelId: number): Channel | null {
   }
 }
 
+function getChannelFromParams(
+  channelId: number,
+  searchParams: URLSearchParams
+): Channel | null {
+  const name = searchParams.get("name");
+  if (!name) return null;
+
+  return {
+    id: channelId,
+    name: decodeURIComponent(name),
+    logo: searchParams.get("logo")
+      ? decodeURIComponent(searchParams.get("logo")!)
+      : undefined,
+    number: searchParams.get("number") || undefined,
+    hd: searchParams.get("hd") ? Number(searchParams.get("hd")) : undefined,
+  };
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
 
@@ -121,8 +139,9 @@ function LoadingOverlay({ status }: { status: string }) {
   );
 }
 
-export default function IptvWatchPage() {
+function WatchPageContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const channelId = Number(params.id);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -141,6 +160,7 @@ export default function IptvWatchPage() {
   const currentProgram = programs[0];
   const channelTitle = channel?.name || `Channel ${channelId}`;
 
+  // ── Load channel info ──
   useEffect(() => {
     let cancelled = false;
 
@@ -156,38 +176,41 @@ export default function IptvWatchPage() {
         setStatus("Loading channel...");
         setError("");
 
-        const cachedChannel = getCachedChannel(channelId);
+        // Priority 1: URL search params (instant)
+        const paramChannel = getChannelFromParams(channelId, searchParams);
+        if (paramChannel) {
+          setChannel(paramChannel);
+        }
 
+        // Priority 2: Session storage cache
+        const cachedChannel = !paramChannel
+          ? getCachedChannel(channelId)
+          : null;
         if (cachedChannel) {
           setChannel(cachedChannel);
         }
 
+        const alreadyResolved = paramChannel || cachedChannel;
+
+        // Priority 3: API call (only if we don't have info yet)
         const [channelResult, epgResult] = await Promise.allSettled([
-          callWrapper("iptv:getChannelById", { channelId }),
-          callWrapper("iptv:getShortEpg", {
-            channelId,
-            size: 8,
-          }),
+          alreadyResolved
+            ? Promise.resolve(null)
+            : callWrapper("iptv:getChannelById", { channelId }),
+          callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
         ]);
 
         if (cancelled) return;
 
-        if (channelResult.status === "fulfilled") {
+        if (channelResult.status === "fulfilled" && channelResult.value) {
           const remoteChannel = channelResult.value?.js?.data;
-
           if (remoteChannel) {
             setChannel(remoteChannel);
-          } else if (!cachedChannel) {
-            setChannel({
-              id: channelId,
-              name: `Channel ${channelId}`,
-            });
+          } else if (!alreadyResolved) {
+            setChannel({ id: channelId, name: `Channel ${channelId}` });
           }
-        } else if (!cachedChannel) {
-          setChannel({
-            id: channelId,
-            name: `Channel ${channelId}`,
-          });
+        } else if (!alreadyResolved) {
+          setChannel({ id: channelId, name: `Channel ${channelId}` });
         }
 
         if (epgResult.status === "fulfilled") {
@@ -195,12 +218,8 @@ export default function IptvWatchPage() {
         }
       } catch (e) {
         console.error("Failed to load channel information:", e);
-
-        if (!cancelled) {
-          setChannel({
-            id: channelId,
-            name: `Channel ${channelId}`,
-          });
+        if (!cancelled && !channel) {
+          setChannel({ id: channelId, name: `Channel ${channelId}` });
         }
       } finally {
         if (!cancelled) {
@@ -215,8 +234,9 @@ export default function IptvWatchPage() {
     return () => {
       cancelled = true;
     };
-  }, [channelId]);
+  }, [channelId, searchParams]);
 
+  // ── Start HLS playback ──
   useEffect(() => {
     if (loadingInfo || !videoRef.current || Number.isNaN(channelId)) return;
 
@@ -228,9 +248,10 @@ export default function IptvWatchPage() {
         setError("");
         setStatus("Starting stream...");
 
-        const startRes = await fetch(`${HLS_BASE}/streams/${channelId}/start`, {
-          method: "POST",
-        });
+        const startRes = await fetch(
+          `${HLS_BASE}/streams/${channelId}/start`,
+          { method: "POST" }
+        );
 
         if (!startRes.ok) {
           throw new Error(`Failed to start stream: ${startRes.status}`);
@@ -274,7 +295,6 @@ export default function IptvWatchPage() {
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             setStatus("");
             setError("");
-
             video.play().catch((err) => {
               console.warn("Autoplay blocked or failed:", err);
             });
@@ -292,7 +312,6 @@ export default function IptvWatchPage() {
                 hls.recoverMediaError();
               } else {
                 hls.destroy();
-
                 setTimeout(() => {
                   if (!cancelled && videoRef.current) {
                     setError("");
@@ -307,7 +326,6 @@ export default function IptvWatchPage() {
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = hlsUrl;
           setStatus("");
-
           video.play().catch((err) => {
             console.warn("Autoplay blocked or failed:", err);
           });
@@ -326,7 +344,6 @@ export default function IptvWatchPage() {
 
     return () => {
       cancelled = true;
-
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -334,6 +351,7 @@ export default function IptvWatchPage() {
     };
   }, [loadingInfo, channelId]);
 
+  // ── Render ──
   return (
     <div
       className="min-h-screen"
@@ -345,6 +363,7 @@ export default function IptvWatchPage() {
       <Header />
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Top bar */}
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
             href="/iptv/channels"
@@ -363,6 +382,7 @@ export default function IptvWatchPage() {
           <StatusBadge status={error ? "" : status} />
         </div>
 
+        {/* Main card */}
         <section
           className="overflow-hidden rounded-[28px]"
           style={{
@@ -372,6 +392,7 @@ export default function IptvWatchPage() {
               "8px 8px 18px var(--neu-shadow-dark), -8px -8px 18px var(--neu-shadow-light)",
           }}
         >
+          {/* Channel header */}
           <div
             className="px-5 py-5 sm:px-7"
             style={{
@@ -415,7 +436,9 @@ export default function IptvWatchPage() {
                     className="text-2xl font-bold tracking-tight sm:text-4xl"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    {loadingInfo ? "Loading channel..." : channelTitle}
+                    {loadingInfo && !channel
+                      ? "Loading channel..."
+                      : channelTitle}
                   </h1>
 
                   {currentProgram && (
@@ -466,7 +489,9 @@ export default function IptvWatchPage() {
             </div>
           </div>
 
+          {/* Video + EPG grid */}
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+            {/* Video player */}
             <div className="p-3 sm:p-5">
               <ErrorBanner message={error} />
 
@@ -491,6 +516,7 @@ export default function IptvWatchPage() {
               </div>
             </div>
 
+            {/* EPG sidebar */}
             <aside
               className="p-5 lg:border-l"
               style={{
@@ -600,5 +626,22 @@ export default function IptvWatchPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+export default function IptvWatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="flex min-h-screen items-center justify-center"
+          style={{ backgroundColor: "var(--neu-bg-page)" }}
+        >
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600" />
+        </div>
+      }
+    >
+      <WatchPageContent />
+    </Suspense>
   );
 }
