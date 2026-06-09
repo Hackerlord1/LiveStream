@@ -31,9 +31,7 @@ function startStream(channelId) {
     m3u8Path,
   ]);
 
-  ffmpeg.stderr.on("data", (data) => {
-    // Uncomment for debug: console.log(data.toString());
-  });
+  ffmpeg.stderr.on("data", () => {});
 
   ffmpeg.on("close", (code) => {
     console.log(`Stream ${channelId} stopped (code ${code})`);
@@ -56,19 +54,17 @@ function stopStream(channelId) {
     try {
       const files = fs.readdirSync(HLS_DIR);
       files.forEach(f => {
-        if (f.startsWith(`${channelId}`) ) {
+        if (f.startsWith(`${channelId}`)) {
           try {
             fs.unlinkSync(path.join(HLS_DIR, f));
-          } catch (e) { /* file already gone */ }
+          } catch (e) {}
         }
       });
-    } catch (e) { /* directory read error */ }
+    } catch (e) {}
   }
 }
 
-// ═══════════════════════════════════════════════════
-// ✅ Cleanup interval — OUTSIDE the request handler
-// ═══════════════════════════════════════════════════
+// Cleanup old segments every 60 seconds
 setInterval(() => {
   try {
     const files = fs.readdirSync(HLS_DIR);
@@ -77,15 +73,12 @@ setInterval(() => {
       const filePath = path.join(HLS_DIR, f);
       try {
         const stats = fs.statSync(filePath);
-        // Extract channel ID: everything before the first '_' or '.'
         const channelId = f.split(/[_.]/)[0];
         if (now - stats.mtimeMs > 120000 && !streams[channelId]) {
           fs.unlinkSync(filePath);
           console.log(`Cleaned up: ${f}`);
         }
-      } catch (e) {
-        // File was deleted between readdir and stat — safe to ignore
-      }
+      } catch (e) {}
     });
   } catch (e) {
     console.error("Cleanup error:", e.message);
@@ -105,12 +98,64 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", streams: Object.keys(streams) }));
     return;
   }
 
+  // API: Get channels by range
+  if (url.pathname === "/api/channels/range") {
+    const start = parseInt(url.searchParams.get("start")) || 0;
+    const end = parseInt(url.searchParams.get("end")) || 140;
+
+    const fetchChannels = async () => {
+      const channels = [];
+      const seen = new Set();
+
+      for (let p = 0; p < 15; p++) {
+        try {
+          const pageUrl = `http://seatv.xyz/portalott.php?type=itv&action=get_ordered_list&genre=*&force_ch_link_check=&fav=0&sortby=number&hd=0&p=${p}&JsHttpRequest=1-xml`;
+          const response = await fetch(pageUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
+              "Cookie": "mac=00%3A1A%3A79%3A55%3A16%3A06; stb_lang=en; timezone=Africa%2FNairobi; adid=d8ca283c25e451f8e3bef2d6a441f2c3",
+              "Accept": "*/*",
+            },
+          });
+          const data = await response.json();
+          if (data?.js?.data) {
+            for (const ch of data.js.data) {
+              const num = parseInt(ch.number);
+              if (num >= start && num <= end) {
+                const key = `${ch.id}_${ch.number}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  channels.push({
+                    id: ch.id,
+                    name: ch.name,
+                    number: ch.number,
+                    logo: ch.logo || "",
+                  });
+                }
+              }
+              if (channels.length >= end - start + 1) break;
+            }
+          }
+        } catch (e) {}
+        if (channels.length >= end - start + 1) break;
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ channels }));
+    };
+
+    fetchChannels();
+    return;
+  }
+
+  // Start a stream
   if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/start") && req.method === "POST") {
     const channelId = url.pathname.split("/")[2];
     startStream(channelId);
@@ -119,6 +164,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Stop a stream
   if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/stop") && req.method === "POST") {
     const channelId = url.pathname.split("/")[2];
     stopStream(channelId);
@@ -127,6 +173,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Serve HLS files
   if (url.pathname.startsWith("/hls/")) {
     const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
     if (fs.existsSync(filePath)) {
@@ -147,4 +194,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`HLS Service running at http://localhost:${PORT}`);
+  console.log(`Health: http://localhost:${PORT}/health`);
+  console.log(`Channels range: http://localhost:${PORT}/api/channels/range?start=1&end=140`);
+  console.log(`Start stream: POST http://localhost:${PORT}/streams/{id}/start`);
+  console.log(`Play HLS: http://localhost:${PORT}/hls/{id}.m3u8`);
 });
