@@ -1,15 +1,13 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import { useChannelMap } from "@/hooks/use-iptv-wrapper";
+import { callWrapper } from "@/hooks/use-iptv-wrapper";
 
 const HLS_BASE =
   process.env.NEXT_PUBLIC_HLS_BASE || "https://hls.bravestream.live";
-
-const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
 
 type Channel = {
   id: number;
@@ -35,34 +33,18 @@ type EpgResponse = {
   };
 };
 
-async function callWrapper(path: string, args: Record<string, unknown> = {}) {
-  const res = await fetch(WRAPPER_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, args }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Wrapper request failed: ${res.status}`);
-  }
-
-  const data = await res.json();
-  return data.value;
-}
-
 function getChannelFromParams(
   channelId: number,
   searchParams: URLSearchParams
 ): Channel | null {
   const name = searchParams.get("name");
+
   if (!name) return null;
 
   return {
     id: channelId,
-    name: decodeURIComponent(name),
-    logo: searchParams.get("logo")
-      ? decodeURIComponent(searchParams.get("logo")!)
-      : undefined,
+    name,
+    logo: searchParams.get("logo") || undefined,
     number: searchParams.get("number") || undefined,
     hd: searchParams.get("hd") ? Number(searchParams.get("hd")) : undefined,
   };
@@ -123,6 +105,7 @@ function LoadingOverlay({ status }: { status: string }) {
 function WatchPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+
   const channelId = Number(params.id);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -134,8 +117,6 @@ function WatchPageContent() {
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [status, setStatus] = useState("Loading channel...");
 
-  const { channelMap, loaded: channelMapLoaded } = useChannelMap();
-
   const programs = useMemo(() => {
     return epgData?.js?.data || [];
   }, [epgData]);
@@ -143,23 +124,6 @@ function WatchPageContent() {
   const currentProgram = programs[0];
   const channelTitle = channel?.name || `Channel ${channelId}`;
 
-  // Resolve channel from channelMap when it loads
-  useEffect(() => {
-    if (!channelMapLoaded || channel) return;
-
-    const mapped = channelMap[String(channelId)];
-    if (mapped) {
-      setChannel({
-        id: channelId,
-        name: mapped.name,
-        logo: mapped.logo,
-        number: mapped.number,
-        hd: mapped.hd,
-      });
-    }
-  }, [channelMapLoaded, channelMap, channelId, channel]);
-
-  // Load channel info
   useEffect(() => {
     let cancelled = false;
 
@@ -167,6 +131,7 @@ function WatchPageContent() {
       if (Number.isNaN(channelId)) {
         setError("Invalid channel selected.");
         setLoadingInfo(false);
+        setStatus("");
         return;
       }
 
@@ -175,36 +140,34 @@ function WatchPageContent() {
         setStatus("Loading channel...");
         setError("");
 
-        // Priority 1: URL search params (instant)
         const paramChannel = getChannelFromParams(channelId, searchParams);
+
         if (paramChannel) {
           setChannel(paramChannel);
         }
 
-        // Priority 2: Channel map (from cache or API via hook)
-        if (!paramChannel) {
-          const mapped = channelMap[String(channelId)];
-          if (mapped) {
-            setChannel({
-              id: channelId,
-              name: mapped.name,
-              logo: mapped.logo,
-              number: mapped.number,
-              hd: mapped.hd,
-            });
-          }
-        }
-
-        // Fetch EPG data
-        const epgResult = await callWrapper("iptv:getShortEpg", {
-          channelId,
-          size: 8,
-        }).catch(() => null);
+        const [channelResult, epgResult] = await Promise.allSettled([
+          paramChannel
+            ? Promise.resolve(null)
+            : callWrapper("iptv:getChannelById", { channelId }),
+          callWrapper("iptv:getShortEpg", {
+            channelId,
+            size: 8,
+          }),
+        ]);
 
         if (cancelled) return;
 
-        if (epgResult) {
-          setEpgData(epgResult as EpgResponse);
+        if (channelResult.status === "fulfilled" && channelResult.value) {
+          const remoteChannel = channelResult.value?.js?.data;
+
+          if (remoteChannel) {
+            setChannel(remoteChannel);
+          }
+        }
+
+        if (epgResult.status === "fulfilled") {
+          setEpgData(epgResult.value as EpgResponse);
         }
       } catch (e) {
         console.error("Failed to load channel information:", e);
@@ -221,9 +184,8 @@ function WatchPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [channelId, searchParams, channelMap]);
+  }, [channelId, searchParams]);
 
-  // Start HLS playback
   useEffect(() => {
     if (loadingInfo || !videoRef.current || Number.isNaN(channelId)) return;
 
@@ -235,10 +197,9 @@ function WatchPageContent() {
         setError("");
         setStatus("Starting stream...");
 
-        const startRes = await fetch(
-          `${HLS_BASE}/streams/${channelId}/start`,
-          { method: "POST" }
-        );
+        const startRes = await fetch(`${HLS_BASE}/streams/${channelId}/start`, {
+          method: "POST",
+        });
 
         if (!startRes.ok) {
           throw new Error(`Failed to start stream: ${startRes.status}`);
@@ -282,6 +243,7 @@ function WatchPageContent() {
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             setStatus("");
             setError("");
+
             video.play().catch((err) => {
               console.warn("Autoplay blocked or failed:", err);
             });
@@ -299,6 +261,7 @@ function WatchPageContent() {
                 hls.recoverMediaError();
               } else {
                 hls.destroy();
+
                 setTimeout(() => {
                   if (!cancelled && videoRef.current) {
                     setError("");
@@ -313,6 +276,7 @@ function WatchPageContent() {
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = hlsUrl;
           setStatus("");
+
           video.play().catch((err) => {
             console.warn("Autoplay blocked or failed:", err);
           });
@@ -331,6 +295,7 @@ function WatchPageContent() {
 
     return () => {
       cancelled = true;
+
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -349,7 +314,6 @@ function WatchPageContent() {
       <Header />
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Top bar */}
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
             href="/iptv/channels"
@@ -368,7 +332,6 @@ function WatchPageContent() {
           <StatusBadge status={error ? "" : status} />
         </div>
 
-        {/* Main card */}
         <section
           className="overflow-hidden rounded-[28px]"
           style={{
@@ -378,7 +341,6 @@ function WatchPageContent() {
               "8px 8px 18px var(--neu-shadow-dark), -8px -8px 18px var(--neu-shadow-light)",
           }}
         >
-          {/* Channel header */}
           <div
             className="px-5 py-5 sm:px-7"
             style={{
@@ -475,9 +437,7 @@ function WatchPageContent() {
             </div>
           </div>
 
-          {/* Video + EPG grid */}
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
-            {/* Video player */}
             <div className="p-3 sm:p-5">
               <ErrorBanner message={error} />
 
@@ -502,7 +462,6 @@ function WatchPageContent() {
               </div>
             </div>
 
-            {/* EPG sidebar */}
             <aside
               className="p-5 lg:border-l"
               style={{
@@ -518,10 +477,8 @@ function WatchPageContent() {
                   >
                     Program Guide
                   </h2>
-                  <p
-                    className="text-sm"
-                    style={{ color: "var(--text-muted)" }}
-                  >
+
+                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                     Current and upcoming shows
                   </p>
                 </div>
@@ -623,7 +580,7 @@ export default function IptvWatchPage() {
           className="flex min-h-screen items-center justify-center"
           style={{ backgroundColor: "var(--neu-bg-page)" }}
         >
-          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-t-2 border-red-600" />
         </div>
       }
     >
