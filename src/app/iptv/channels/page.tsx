@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 
+const VPS_URL = "https://hls.bravestream.live";
+
 export default function IptvChannelsPage() {
   const [channels, setChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,7 +16,6 @@ export default function IptvChannelsPage() {
 
   useEffect(() => {
     async function load() {
-      // Only run on client side
       if (typeof window === "undefined") {
         setLoading(false);
         return;
@@ -24,7 +25,7 @@ export default function IptvChannelsPage() {
       setError("");
 
       try {
-        const res = await fetch(`/api/channels-all`);
+        const res = await fetch(`${VPS_URL}/api/channels/all`);
         const data = await res.json();
 
         if (data.channels && data.channels.length > 0) {
