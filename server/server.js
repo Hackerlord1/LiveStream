@@ -32,18 +32,14 @@ function startStream(channelId) {
   ]);
 
   ffmpeg.stderr.on("data", () => {});
-  ffmpeg.on("close", (code) => { console.log(`Stream ${channelId} stopped`); delete streams[channelId]; });
-  ffmpeg.on("error", (err) => { console.error(`Stream ${channelId} error:`, err.message); delete streams[channelId]; });
+  ffmpeg.on("close", () => { delete streams[channelId]; });
+  ffmpeg.on("error", () => { delete streams[channelId]; });
   streams[channelId] = ffmpeg;
   return ffmpeg;
 }
 
 function stopStream(channelId) {
-  if (streams[channelId]) {
-    streams[channelId].kill();
-    delete streams[channelId];
-    try { const files = fs.readdirSync(HLS_DIR); files.forEach(f => { if (f.startsWith(`${channelId}`)) try { fs.unlinkSync(path.join(HLS_DIR, f)); } catch (e) {} }); } catch (e) {}
-  }
+  if (streams[channelId]) { streams[channelId].kill(); delete streams[channelId]; }
 }
 
 setInterval(() => {
@@ -51,7 +47,7 @@ setInterval(() => {
     const files = fs.readdirSync(HLS_DIR);
     const now = Date.now();
     files.forEach(f => {
-      try { const stats = fs.statSync(path.join(HLS_DIR, f)); const channelId = f.split(/[_.]/)[0]; if (now - stats.mtimeMs > 120000 && !streams[channelId]) fs.unlinkSync(path.join(HLS_DIR, f)); } catch (e) {}
+      try { const s = fs.statSync(path.join(HLS_DIR, f)); const cid = f.split(/[_.]/)[0]; if (now - s.mtimeMs > 120000 && !streams[cid]) fs.unlinkSync(path.join(HLS_DIR, f)); } catch (e) {}
     });
   } catch (e) {}
 }, 60000);
@@ -67,21 +63,25 @@ if (fs.existsSync(CACHE_FILE)) { fs.unlinkSync(CACHE_FILE); console.log("🗑️
 function saveCacheToDisk() { try { fs.writeFileSync(CACHE_FILE, JSON.stringify(allChannelsCache)); } catch (e) {} }
 
 // ============================================================
-// CONVEX FETCH HELPER
+// CONVEX FETCH WITH RETRY
 // ============================================================
-async function fetchConvex(path, args = {}) {
-  try {
-    const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, args }),
-    });
-    const data = await res.json();
-    return data.value;
-  } catch (e) { return null; }
+async function fetchConvex(path, args = {}, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, args }),
+      });
+      const data = await res.json();
+      if (data.value) return data.value;
+    } catch (e) {}
+    if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+  }
+  return null;
 }
 
 // ============================================================
-// CHANNEL LOADING
+// CHANNEL LOADING (unchanged)
 // ============================================================
 async function loadAllChannels() {
   console.log("\n🔄 ===== CHANNELS =====");
@@ -105,50 +105,41 @@ async function loadAllChannels() {
 
   let lastMilestone = 0;
   const milestones = [2000, 5000, 10000, 15000, 20000, 25000, 28000];
-  const BATCH_SIZE = 5;
+  let consecutiveFailures = 0;
 
-  for (let p = 1; p < totalPages; p += BATCH_SIZE) {
-    const batch = [];
-    for (let i = 0; i < BATCH_SIZE && p + i < totalPages; i++) batch.push(fetchConvex("iptv:getOrderedList", { page: p + i, genre: "*", sortby: "number" }));
-    let results = [];
-    try { results = await Promise.all(batch); } catch (e) { for (const pp of batch) { try { results.push(await pp); } catch (e2) { results.push(null); } } }
-
-    for (const data of results) {
-      if (data?.js?.data) {
-        for (const ch of data.js.data) {
-          const key = `${ch.id}_${ch.number}`;
-          if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); }
-        }
+  for (let p = 1; p < totalPages; p++) {
+    const data = await fetchConvex("iptv:getOrderedList", { page: p, genre: "*", sortby: "number" }, 2);
+    if (data?.js?.data && data.js.data.length > 0) {
+      for (const ch of data.js.data) {
+        const key = `${ch.id}_${ch.number}`;
+        if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); }
       }
-    }
+      consecutiveFailures = 0;
+    } else { consecutiveFailures++; }
+    if (consecutiveFailures > 30) { console.log(`⚠️ Pausing at page ${p}...`); await new Promise(r => setTimeout(r, 30000)); consecutiveFailures = 0; }
 
     const count = tempCache.length;
     for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 MILESTONE: ${m.toLocaleString()} channels`); lastMilestone = m; } }
-
     if (p % 200 === 0 && p > 0) {
-      const percent = Math.round((p / totalPages) * 100);
-      channelsProgress = { loaded: count, total: totalItems, percent };
-      console.log(`⏳ ${count.toLocaleString()} channels (${percent}%)`);
-      allChannelsCache = [...tempCache];
-      saveCacheToDisk();
+      channelsProgress = { loaded: count, total: totalItems, percent: Math.round((p / totalPages) * 100) };
+      console.log(`⏳ ${count.toLocaleString()} channels (${channelsProgress.percent}%)`);
+      allChannelsCache = [...tempCache]; saveCacheToDisk();
     }
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 30));
   }
 
-  allChannelsCache = tempCache;
-  channelsReady = true;
+  allChannelsCache = tempCache; channelsReady = true;
   channelsProgress = { loaded: allChannelsCache.length, total: allChannelsCache.length, percent: 100 };
   saveCacheToDisk();
   console.log(`✅ CHANNELS COMPLETE: ${allChannelsCache.length.toLocaleString()} loaded!\n`);
 }
 
 // ============================================================
-// VOD LOADING
+// VOD LOADING — ALL movies
 // ============================================================
 async function loadAllVod() {
   console.log("🎬 ===== VOD =====");
   vodReady = false;
-  vodProgress = { loaded: 0, total: 0, percent: 0 };
 
   try {
     const catData = await fetchConvex("iptv:getVodCategories", {});
@@ -157,33 +148,45 @@ async function loadAllVod() {
 
     const seen = new Set();
     allVodCache = [];
+    let p = 1, consecutiveFailures = 0, lastMilestone = 0;
+    const milestones = [5000, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000];
 
-    for (let p = 1; p < 100; p++) {
-      const data = await fetchConvex("iptv:getVodList", { page: p });
+    while (true) {
+      const data = await fetchConvex("iptv:getVodList", { page: p }, 2);
       const movies = data?.js?.data || [];
-      if (movies.length === 0) break;
+      const totalItems = data?.js?.total_items || 0;
+
+      if (movies.length === 0) { consecutiveFailures++; if (consecutiveFailures > 5) break; await new Promise(r => setTimeout(r, 5000)); continue; }
+
+      consecutiveFailures = 0;
       for (const m of movies) { if (!seen.has(String(m.id))) { seen.add(String(m.id)); allVodCache.push(m); } }
-      if (p % 5 === 0 || movies.length < 14) {
-        const total = data?.js?.total_items || allVodCache.length;
-        vodProgress = { loaded: allVodCache.length, total, percent: Math.round((allVodCache.length / Math.max(total, 1)) * 100) };
-        console.log(`⏳ VOD: ${allVodCache.length.toLocaleString()} / ${total.toLocaleString()} movies (${vodProgress.percent}%)`);
+
+      const count = allVodCache.length;
+      for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 VOD: ${m.toLocaleString()} movies`); lastMilestone = m; } }
+
+      if (p % 50 === 0) {
+        const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0;
+        vodProgress = { loaded: count, total: totalItems, percent };
+        console.log(`⏳ VOD: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`);
       }
-      await new Promise(r => setTimeout(r, 200));
+
+      p++;
+      if (totalItems > 0 && count >= totalItems) break;
+      await new Promise(r => setTimeout(r, 100));
     }
 
     vodReady = true;
     vodProgress = { loaded: allVodCache.length, total: allVodCache.length, percent: 100 };
     console.log(`✅ VOD COMPLETE: ${allVodCache.length.toLocaleString()} movies loaded!\n`);
-  } catch (e) { console.log("❌ VOD failed, retrying in 60s..."); setTimeout(loadAllVod, 60000); }
+  } catch (e) { console.log("❌ VOD failed, retrying..."); setTimeout(loadAllVod, 60000); }
 }
 
 // ============================================================
-// SERIES LOADING
+// SERIES LOADING — ALL series
 // ============================================================
 async function loadAllSeries() {
   console.log("📺 ===== SERIES =====");
   seriesReady = false;
-  seriesProgress = { loaded: 0, total: 0, percent: 0 };
 
   try {
     const catData = await fetchConvex("iptv:getSeriesCategories", {});
@@ -192,39 +195,50 @@ async function loadAllSeries() {
 
     const seen = new Set();
     allSeriesCache = [];
+    let p = 1, consecutiveFailures = 0, lastMilestone = 0;
+    const milestones = [5000, 10000, 15000, 20000, 25000, 27000];
 
-    for (let p = 1; p < 100; p++) {
-      const data = await fetchConvex("iptv:getSeriesList", { page: p });
+    while (true) {
+      const data = await fetchConvex("iptv:getSeriesList", { page: p }, 2);
       const series = data?.js?.data || [];
-      if (series.length === 0) break;
+      const totalItems = data?.js?.total_items || 0;
+
+      if (series.length === 0) { consecutiveFailures++; if (consecutiveFailures > 5) break; await new Promise(r => setTimeout(r, 5000)); continue; }
+
+      consecutiveFailures = 0;
       for (const s of series) { if (!seen.has(String(s.id))) { seen.add(String(s.id)); allSeriesCache.push(s); } }
-      if (p % 5 === 0 || series.length < 14) {
-        const total = data?.js?.total_items || allSeriesCache.length;
-        seriesProgress = { loaded: allSeriesCache.length, total, percent: Math.round((allSeriesCache.length / Math.max(total, 1)) * 100) };
-        console.log(`⏳ Series: ${allSeriesCache.length.toLocaleString()} / ${total.toLocaleString()} (${seriesProgress.percent}%)`);
+
+      const count = allSeriesCache.length;
+      for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 Series: ${m.toLocaleString()} series`); lastMilestone = m; } }
+
+      if (p % 50 === 0) {
+        const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0;
+        seriesProgress = { loaded: count, total: totalItems, percent };
+        console.log(`⏳ Series: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`);
       }
-      await new Promise(r => setTimeout(r, 200));
+
+      p++;
+      if (totalItems > 0 && count >= totalItems) break;
+      await new Promise(r => setTimeout(r, 100));
     }
 
     seriesReady = true;
     seriesProgress = { loaded: allSeriesCache.length, total: allSeriesCache.length, percent: 100 };
     console.log(`✅ SERIES COMPLETE: ${allSeriesCache.length.toLocaleString()} series loaded!\n`);
-  } catch (e) { console.log("❌ Series failed, retrying in 60s..."); setTimeout(loadAllSeries, 60000); }
+  } catch (e) { console.log("❌ Series failed, retrying..."); setTimeout(loadAllSeries, 60000); }
 }
 
 // ============================================================
-// SEQUENTIAL STARTUP
+// SEQUENTIAL STARTUP — Channels first, then VOD + Series in parallel
 // ============================================================
 async function loadAll() {
   console.log("📡 ===== STARTING DATA LOAD =====");
   await loadAllChannels();
-  await loadAllVod();
-  await loadAllSeries();
+  await Promise.all([loadAllVod(), loadAllSeries()]);
   console.log("🎉 ===== ALL DATA LOADED =====");
 }
 loadAll();
 
-// Refresh every 3 hours
 setInterval(async () => { await loadAll(); }, 3 * 60 * 60 * 1000);
 
 // ============================================================
