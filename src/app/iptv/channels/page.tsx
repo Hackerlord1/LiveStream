@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -13,6 +13,23 @@ export default function IptvChannelsPage() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(7);
+
+  // Responsive columns
+  useEffect(() => {
+    function updateColumns() {
+      const w = window.innerWidth;
+      if (w < 400) setColumns(2);
+      else if (w < 640) setColumns(3);
+      else if (w < 768) setColumns(4);
+      else if (w < 1024) setColumns(5);
+      else if (w < 1280) setColumns(6);
+      else setColumns(7);
+    }
+    updateColumns();
+    window.addEventListener("resize", updateColumns);
+    return () => window.removeEventListener("resize", updateColumns);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -47,18 +64,18 @@ export default function IptvChannelsPage() {
     });
   }, [allChannels, search]);
 
-  const totalRows = Math.ceil(filteredChannels.length / 7);
+  const totalRows = Math.ceil(filteredChannels.length / columns);
 
   const rowVirtualizer = useVirtualizer({
     count: totalRows,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 130,
+    estimateSize: () => columns <= 3 ? 120 : 130,
     overscan: 5,
   });
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--neu-bg-page)' }}>
+      <div className="h-screen flex flex-col" style={{ backgroundColor: 'var(--neu-bg-page)' }}>
         <Header />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -72,23 +89,19 @@ export default function IptvChannelsPage() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-primary)' }}>
-      <Header />      {/* Search Bar - Fixed */}
-      <div className="px-4 py-3 flex-shrink-0">
+      <Header />
+      <div className="px-3 sm:px-4 py-3 flex-shrink-0">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-4 mb-3">
+          <div className="flex items-center gap-3 mb-3">
             <Link href="/iptv" className="text-sm hover:underline flex-shrink-0" style={{ color: 'var(--text-muted)' }}>← Back</Link>
-            <h1 className="text-2xl font-bold flex-shrink-0">📺 Channels</h1>
-            <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+            <h1 className="text-xl sm:text-2xl font-bold flex-shrink-0">📺 Channels</h1>
+            <span className="text-xs sm:text-sm flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
               ({filteredChannels.length.toLocaleString()})
             </span>
           </div>
-
           {error && (
-            <div className="mb-2 p-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--error-bg)', color: 'var(--error-text)' }}>
-              {error}
-            </div>
+            <div className="mb-2 p-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--error-bg)', color: 'var(--error-text)' }}>{error}</div>
           )}
-
           <input
             type="text"
             placeholder="Search channels..."
@@ -100,60 +113,31 @@ export default function IptvChannelsPage() {
         </div>
       </div>
 
-      {/* Virtual Channel Grid - Fills remaining space */}
-      <div className="flex-1 overflow-hidden px-4 pb-4">
+      <div className="flex-1 overflow-hidden px-2 sm:px-4 pb-4">
         <div className="max-w-7xl mx-auto h-full">
-          <div
-            ref={parentRef}
-            className="h-full overflow-auto rounded-xl"
-            style={{
-              scrollbarWidth: 'thin',
-              scrollbarColor: 'var(--border-primary) transparent',
-            }}
-          >
-            <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                width: '100%',
-                position: 'relative',
-              }}
-            >
+          <div ref={parentRef} className="h-full overflow-auto rounded-xl" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-primary) transparent' }}>
+            <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const start = virtualRow.index * 7;
-                const rowChannels = filteredChannels.slice(start, start + 7);
-
+                const start = virtualRow.index * columns;
+                const rowChannels = filteredChannels.slice(start, start + columns);
                 return (
-                  <div
-                    key={virtualRow.key}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <div className="grid grid-cols-7 gap-3 px-1">
+                  <div key={virtualRow.key} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}>
+                    <div className={`grid gap-2 sm:gap-3 px-1`} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
                       {rowChannels.map((channel: any) => (
-                        <Link
-                          key={`${channel.id}_${channel.number}`}
-                          href={`/iptv/watch/${channel.id}`}
-                          className="neumorphic-card p-2.5 rounded-xl hover:shadow-lg transition-all text-center group"
-                          title={channel.name}
-                        >
-                          <div className="w-full h-14 flex items-center justify-center mb-1">
+                        <Link key={`${channel.id}_${channel.number}`} href={`/iptv/watch/${channel.id}`}
+                          className="neumorphic-card p-2 sm:p-2.5 rounded-xl hover:shadow-lg transition-all text-center group" title={channel.name}>
+                          <div className="w-full h-10 sm:h-14 flex items-center justify-center mb-1">
                             {channel.logo ? (
                               <img src={channel.logo} alt="" className="max-h-full max-w-full object-contain" loading="lazy"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                             ) : (
-                              <span className="text-xl">📺</span>
+                              <span className="text-lg sm:text-xl">📺</span>
                             )}
                           </div>
-                          <p className="font-semibold text-[10px] leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">
+                          <p className="font-semibold text-[9px] sm:text-[10px] leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">
                             {channel.name}
                           </p>
-                          <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
+                          <p className="text-[9px] sm:text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
                         </Link>
                       ))}
                     </div>
