@@ -3,9 +3,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
-import { ArrowLeft, Clock, Search, Trophy, Tv, X } from "lucide-react";
+import { useLiveGames } from "@/hooks/use-iptv-wrapper";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { ArrowLeft, CirclePlay, Clock, Search, Trophy, Tv, X } from "lucide-react";
 
-const VPS_URL = "https://hls.bravestream.live";
 const CACHE_KEY = "iptv-channels-cache-v3";
 
 function getChannelName(channelId: string): string {
@@ -25,17 +26,19 @@ export default function IptvGamesPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
-  const [visibleCount, setVisibleCount] = useState(50);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
 
-  // Load from VPS cache
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`${VPS_URL}/api/games/all`);
+        const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: "iptv:getLiveGames", args: { period: 1, page: 0, pageSize: 5000 } }),
+        });
         const data = await res.json();
-        setAllGames(data.games || []);
+        setAllGames(data.value?.games || []);
       } catch (e) {
         setError("Failed to load games");
       }
@@ -44,7 +47,7 @@ export default function IptvGamesPage() {
     load();
   }, []);
 
-  // Instant search
+  // Memoized search — runs instantly
   const filteredGames = useMemo(() => {
     if (!searchQuery.trim()) return allGames;
     const q = searchQuery.toLowerCase();
@@ -55,30 +58,13 @@ export default function IptvGamesPage() {
     });
   }, [allGames, searchQuery]);
 
-  // Lazy load: show 50 at a time
-  const visibleGames = useMemo(() => {
-    return filteredGames.slice(0, visibleCount);
-  }, [filteredGames, visibleCount]);
-
-  // Load more on scroll
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
-        if (visibleCount < filteredGames.length) {
-          setVisibleCount(prev => Math.min(prev + 50, filteredGames.length));
-        }
-      }
-    };
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [visibleCount, filteredGames.length]);
-
-  // Reset visible count on search
-  useEffect(() => {
-    setVisibleCount(50);
-  }, [searchQuery]);
+  // FIX: Larger estimateSize and more overscan to prevent blank scroll
+  const rowVirtualizer = useVirtualizer({
+    count: filteredGames.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 90,
+    overscan: 10, // Increased from 5 to prevent blank areas
+  });
 
   if (loading) {
     return (
@@ -98,7 +84,7 @@ export default function IptvGamesPage() {
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-primary)' }}>
       <Header />
       <div className="px-4 py-3 flex-shrink-0">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-4 mb-3">
             <Link href="/iptv" className="text-sm hover:underline flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
               <ArrowLeft className="h-4 w-4 inline mr-1" />Back
@@ -131,8 +117,8 @@ export default function IptvGamesPage() {
       </div>
 
       <div className="flex-1 overflow-hidden px-4 pb-4">
-        <div className="max-w-3xl mx-auto h-full">
-          <div ref={scrollRef} className="h-full overflow-auto rounded-xl" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-primary) transparent' }}>
+        <div className="max-w-7xl mx-auto h-full">
+          <div ref={parentRef} className="h-full overflow-auto rounded-xl" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-primary) transparent' }}>
             {filteredGames.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
@@ -141,25 +127,29 @@ export default function IptvGamesPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                {visibleGames.map((game: any, i: number) => {
+              <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const game = filteredGames[virtualRow.index];
                   const channelName = getChannelName(game.channelId);
                   return (
-                    <Link
-                      key={`${game.channelId}-${i}`}
-                      href={`/iptv/watch/${game.channelId}`}
-                      className="flex items-center gap-3 p-3 rounded-xl hover:shadow-md transition-all"
-                      style={{ backgroundColor: 'var(--surface-primary)', border: '1px solid var(--border-primary)' }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{game.title}</p>
-                        <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{game.startTime || "TBD"}</span>
-                          <span className="flex items-center gap-1"><Tv className="h-3 w-3" />{channelName || `Ch ${game.channelId}`}</span>
+                    <div key={virtualRow.key} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}>
+                      <Link href={`/iptv/watch/${game.channelId}`} className="neumorphic-card mx-1 relative block overflow-hidden rounded-2xl p-4 hover:shadow-lg transition-all">
+                        <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
+                        <div className="flex items-center justify-between pl-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <CirclePlay className="h-4 w-4 text-red-500 flex-shrink-0" />
+                              <h2 className="text-sm font-bold truncate">{game.title}</h2>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{game.startTime || "TBD"}</span>
+                              <span className="flex items-center gap-1"><Tv className="h-3 w-3" />{channelName || `Ch ${game.channelId}`}</span>
+                            </div>
+                          </div>
+                          <span className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg font-bold flex-shrink-0 ml-3">WATCH</span>
                         </div>
-                      </div>
-                      <span className="text-xs px-2.5 py-1 bg-red-600 text-white rounded-lg font-bold flex-shrink-0">WATCH</span>
-                    </Link>
+                      </Link>
+                    </div>
                   );
                 })}
               </div>
