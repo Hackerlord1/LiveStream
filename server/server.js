@@ -7,6 +7,7 @@ const PORT = 8080;
 const HLS_DIR = path.join(__dirname, "hls");
 const STREAM_BASE = "http://seatv.xyz/B2X4MX4S65WNTPY/bc65CNzbec";
 const CACHE_FILE = path.join(__dirname, "channels_cache.json");
+const TOTAL_CHANNELS_ESTIMATE = 28400;
 
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
@@ -66,7 +67,6 @@ function stopStream(channelId) {
   }
 }
 
-// Cleanup old segments every 60 seconds
 setInterval(() => {
   try {
     const files = fs.readdirSync(HLS_DIR);
@@ -85,34 +85,21 @@ setInterval(() => {
 }, 60000);
 
 // ============================================================
-// CHANNEL CACHE
+// CHANNEL CACHE — Fresh load on every restart
 // ============================================================
 let allChannelsCache = [];
 let channelsReady = false;
 
+// Delete old cache on startup
+if (fs.existsSync(CACHE_FILE)) {
+  fs.unlinkSync(CACHE_FILE);
+  console.log("🗑️ Old cache deleted — starting fresh");
+}
+
 function saveCacheToDisk() {
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(allChannelsCache));
-    console.log(`💾 Cache saved: ${allChannelsCache.length} channels`);
-  } catch (e) {
-    console.error("Save error:", e.message);
-  }
-}
-
-function loadCacheFromDisk() {
-  try {
-    if (fs.existsSync(CACHE_FILE)) {
-      const data = fs.readFileSync(CACHE_FILE, "utf8");
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 1000) {
-        allChannelsCache = parsed;
-        channelsReady = true;
-        console.log(`📂 Loaded from disk: ${allChannelsCache.length} channels`);
-        return true;
-      }
-    }
   } catch (e) {}
-  return false;
 }
 
 async function fetchPortalPage(page) {
@@ -120,7 +107,10 @@ async function fetchPortalPage(page) {
     const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "iptv:getOrderedList", args: { page, genre: "*", sortby: "number" } }),
+      body: JSON.stringify({
+        path: "iptv:getOrderedList",
+        args: { page, genre: "*", sortby: "number" },
+      }),
     });
     const data = await res.json();
     return data.value;
@@ -129,20 +119,30 @@ async function fetchPortalPage(page) {
   }
 }
 
+async function fetchPortalPageWithRetry(page, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    const result = await fetchPortalPage(page);
+    if (result?.js?.data) return result;
+    if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
+  }
+  return null;
+}
+
 async function loadAllChannels() {
-  console.log("🔄 Loading channels...");
+  console.log("🔄 Starting channel load...");
   const seen = new Set();
   const tempCache = [];
 
   const firstPage = await fetchPortalPage(0);
   if (!firstPage?.js?.total_items) {
-    console.log("❌ Failed, retrying in 30s...");
+    console.log("❌ Failed to load first page, retrying in 30s...");
     setTimeout(loadAllChannels, 30000);
     return;
   }
 
   const totalPages = Math.ceil(firstPage.js.total_items / 14);
-  console.log(`📄 Pages: ${totalPages}`);
+  console.log(`📄 Total pages: ${totalPages.toLocaleString()}`);
+  console.log(`🎯 Target: ~${TOTAL_CHANNELS_ESTIMATE.toLocaleString()} channels`);
 
   if (firstPage.js.data) {
     for (const ch of firstPage.js.data) {
@@ -154,7 +154,10 @@ async function loadAllChannels() {
     }
   }
 
-  const BATCH_SIZE = 3;
+  let lastMilestone = 0;
+  const milestones = [2000, 5000, 10000, 15000, 20000, 25000, 28000];
+
+  const BATCH_SIZE = 1;
   for (let p = 1; p < totalPages; p += BATCH_SIZE) {
     const batch = [];
     for (let i = 0; i < BATCH_SIZE && p + i < totalPages; i++) {
@@ -182,31 +185,38 @@ async function loadAllChannels() {
       }
     }
 
-    if (p % 500 === 0) console.log(`⏳ ${tempCache.length} channels...`);
-    await new Promise(r => setTimeout(r, 100));
+    const count = tempCache.length;
+
+    // Milestone markers
+    for (const milestone of milestones) {
+      if (count >= milestone && lastMilestone < milestone) {
+        console.log(`🎯 MILESTONE: ${milestone.toLocaleString()} channels loaded!`);
+        lastMilestone = milestone;
+      }
+    }
+
+    // Progress every 200 pages
+    if (p % 200 === 0 && p > 0) {
+      const percent = Math.round((p / totalPages) * 100);
+      console.log(`⏳ ${count.toLocaleString()} channels (${percent}%)`);
+      allChannelsCache = [...tempCache];
+      saveCacheToDisk();
+    }
+
+    await new Promise(r => setTimeout(r, 50));
   }
 
   allChannelsCache = tempCache;
   channelsReady = true;
   saveCacheToDisk();
-  console.log(`✅ ${allChannelsCache.length} channels loaded!`);
+  console.log(`✅ COMPLETE: All ${allChannelsCache.length.toLocaleString()} channels loaded!`);
 }
 
 // ============================================================
 // STARTUP
 // ============================================================
-if (!loadCacheFromDisk()) {
-  console.log("📡 Loading from network...");
-  loadAllChannels();
-} else {
-  console.log("🔄 Background refresh in 60s...");
-  setTimeout(loadAllChannels, 60000);
-}
-
-setInterval(() => {
-  console.log("🔄 Scheduled refresh...");
-  loadAllChannels();
-}, 6 * 60 * 60 * 1000);
+console.log("📡 Starting server and loading channels...");
+loadAllChannels();
 
 // ============================================================
 // HTTP SERVER
@@ -224,6 +234,19 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  // Progress
+  if (url.pathname === "/progress") {
+    const percent = channelsReady ? 100 : Math.round((allChannelsCache.length / TOTAL_CHANNELS_ESTIMATE) * 100);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      loaded: allChannelsCache.length,
+      total: channelsReady ? allChannelsCache.length : TOTAL_CHANNELS_ESTIMATE,
+      percent: Math.min(percent, 99),
+      ready: channelsReady,
+    }));
+    return;
+  }
+
   // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -238,7 +261,7 @@ const server = http.createServer((req, res) => {
 
   // Get ALL channels
   if (url.pathname === "/api/channels/all") {
-    if (!channelsReady && allChannelsCache.length === 0) {
+    if (allChannelsCache.length === 0) {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ loading: true, channels: [], message: "Still loading..." }));
       return;
@@ -263,11 +286,7 @@ const server = http.createServer((req, res) => {
     });
 
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      channels: filtered,
-      total: allChannelsCache.length,
-      ready: channelsReady,
-    }));
+    res.end(JSON.stringify({ channels: filtered, total: allChannelsCache.length, ready: channelsReady }));
     return;
   }
 
@@ -310,6 +329,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`   Progress: /progress`);
   console.log(`   Health: /health`);
   console.log(`   All channels: /api/channels/all`);
   console.log(`   Range: /api/channels/range?start=1&end=140`);

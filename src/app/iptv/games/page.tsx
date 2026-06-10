@@ -1,460 +1,317 @@
-"use client";
+const http = require("http");
+const { spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
-import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
-import Header from "@/components/Header";
-import { useLiveGames } from "@/hooks/use-iptv-wrapper";
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  CirclePlay,
-  Clock,
-  Search,
-  SlidersHorizontal,
-  Trophy,
-  Tv,
-  X,
-} from "lucide-react";
+const PORT = 8080;
+const HLS_DIR = path.join(__dirname, "hls");
+const STREAM_BASE = "http://seatv.xyz/B2X4MX4S65WNTPY/bc65CNzbec";
+const CACHE_FILE = path.join(__dirname, "channels_cache.json");
+const TOTAL_CHANNELS_ESTIMATE = 28400;
 
-const PAGE_SIZE = 300;
-const CACHE_KEY = "iptv-channels-cache-v3";
+if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
+
+const streams = {};
 
 // ============================================================
-// CHANNEL NAME RESOLVER
+// STREAM FUNCTIONS
 // ============================================================
-function getChannelName(channelId: string): string {
+function startStream(channelId) {
+  if (streams[channelId]) return streams[channelId];
+
+  const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
+  const streamUrl = `${STREAM_BASE}/${channelId}`;
+
+  console.log(`Starting stream for channel ${channelId}...`);
+
+  const ffmpeg = spawn("ffmpeg", [
+    "-i", streamUrl,
+    "-headers", "User-Agent: Lavf53.32.100\r\nIcy-MetaData: 1",
+    "-c", "copy",
+    "-f", "hls",
+    "-hls_time", "4",
+    "-hls_list_size", "6",
+    "-hls_flags", "delete_segments",
+    "-hls_segment_filename", path.join(HLS_DIR, `${channelId}_%03d.ts`),
+    m3u8Path,
+  ]);
+
+  ffmpeg.stderr.on("data", () => {});
+
+  ffmpeg.on("close", (code) => {
+    console.log(`Stream ${channelId} stopped (code ${code})`);
+    delete streams[channelId];
+  });
+
+  ffmpeg.on("error", (err) => {
+    console.error(`Stream ${channelId} error:`, err.message);
+    delete streams[channelId];
+  });
+
+  streams[channelId] = ffmpeg;
+  return ffmpeg;
+}
+
+function stopStream(channelId) {
+  if (streams[channelId]) {
+    streams[channelId].kill();
+    delete streams[channelId];
+    try {
+      const files = fs.readdirSync(HLS_DIR);
+      files.forEach(f => {
+        if (f.startsWith(`${channelId}`)) {
+          try { fs.unlinkSync(path.join(HLS_DIR, f)); } catch (e) {}
+        }
+      });
+    } catch (e) {}
+  }
+}
+
+setInterval(() => {
   try {
-    const cached = sessionStorage.getItem(CACHE_KEY);
-    if (cached) {
-      const channels = JSON.parse(cached);
-      const found = channels.find(
-        (ch: any) => String(ch.id) === String(channelId)
-      );
-      if (found?.name) return found.name;
-    }
-  } catch (e) {}
-  return "";
-}
-
-function getTimeValue(startTime: any) {
-  if (!startTime) return Number.MAX_SAFE_INTEGER;
-
-  const value = String(startTime).trim();
-
-  const parsedDate = new Date(value);
-  if (!Number.isNaN(parsedDate.getTime())) {
-    return parsedDate.getTime();
-  }
-
-  const timeMatch = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (timeMatch) {
-    const hours = Number(timeMatch[1]);
-    const minutes = Number(timeMatch[2]);
-    const seconds = Number(timeMatch[3] || 0);
-    return hours * 60 * 60 + minutes * 60 + seconds;
-  }
-
-  return Number.MAX_SAFE_INTEGER;
-}
-
-export default function IptvGamesPage() {
-  const [page, setPage] = useState(0);
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("time-asc");
-
-  const { fetch: fetchGames } = useLiveGames(1, page, PAGE_SIZE);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadGames() {
-      setLoading(true);
-
+    const files = fs.readdirSync(HLS_DIR);
+    const now = Date.now();
+    files.forEach(f => {
+      const filePath = path.join(HLS_DIR, f);
       try {
-        const result = await fetchGames();
-
-        if (mounted) {
-          setData(result);
+        const stats = fs.statSync(filePath);
+        const channelId = f.split(/[_.]/)[0];
+        if (now - stats.mtimeMs > 120000 && !streams[channelId]) {
+          fs.unlinkSync(filePath);
         }
-      } catch (error) {
-        console.error("Failed to fetch live games:", error);
+      } catch (e) {}
+    });
+  } catch (e) {}
+}, 60000);
 
-        if (mounted) {
-          setData({
-            games: [],
-            total: 0,
-            totalPages: 1,
-          });
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
+// ============================================================
+// CHANNEL CACHE — Fresh load on every restart
+// ============================================================
+let allChannelsCache = [];
+let channelsReady = false;
+
+// Delete old cache on startup
+if (fs.existsSync(CACHE_FILE)) {
+  fs.unlinkSync(CACHE_FILE);
+  console.log("🗑️ Old cache deleted — starting fresh");
+}
+
+function saveCacheToDisk() {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(allChannelsCache));
+    console.log(`💾 Cache saved: ${allChannelsCache.length.toLocaleString()} channels`);
+  } catch (e) {
+    console.error("Save error:", e.message);
+  }
+}
+
+async function fetchPortalPage(page) {
+  try {
+    const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "iptv:getOrderedList",
+        args: { page, genre: "*", sortby: "number" },
+      }),
+    });
+    const data = await res.json();
+    return data.value;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function loadAllChannels() {
+  console.log("🔄 Loading channels...");
+  const seen = new Set();
+  const tempCache = [];
+
+  const firstPage = await fetchPortalPage(0);
+  if (!firstPage?.js?.total_items) {
+    console.log("❌ Failed, retrying in 30s...");
+    setTimeout(loadAllChannels, 30000);
+    return;
+  }
+
+  const totalPages = Math.ceil(firstPage.js.total_items / 14);
+  console.log(`📄 Total pages: ${totalPages.toLocaleString()}`);
+
+  if (firstPage.js.data) {
+    for (const ch of firstPage.js.data) {
+      const key = `${ch.id}_${ch.number}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" });
+      }
+    }
+  }
+
+  const BATCH_SIZE = 5;
+  for (let p = 1; p < totalPages; p += BATCH_SIZE) {
+    const batch = [];
+    for (let i = 0; i < BATCH_SIZE && p + i < totalPages; i++) {
+      batch.push(fetchPortalPage(p + i));
+    }
+
+    let results = [];
+    try {
+      results = await Promise.all(batch);
+    } catch (e) {
+      for (const pagePromise of batch) {
+        try { results.push(await pagePromise); } catch (e2) { results.push(null); }
+      }
+    }
+
+    for (const data of results) {
+      if (data?.js?.data) {
+        for (const ch of data.js.data) {
+          const key = `${ch.id}_${ch.number}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" });
+          }
         }
       }
     }
 
-    loadGames();
-
-    return () => {
-      mounted = false;
-    };
-  }, [page]);
-
-  const gameData = data?.games || [];
-  const total = data?.total || 0;
-  const totalPages = data?.totalPages || 1;
-
-  const filteredGames = useMemo(() => {
-    let games = [...gameData];
-
-    const query = searchQuery.trim().toLowerCase();
-
-    if (query) {
-      games = games.filter((game: any) => {
-        const title = String(game.title || "").toLowerCase();
-        const channelName = getChannelName(game.channelId).toLowerCase();
-        const channelId = String(game.channelId || "");
-        const startTime = String(game.startTime || "").toLowerCase();
-
-        return (
-          title.includes(query) ||
-          channelName.includes(query) ||
-          channelId.includes(query) ||
-          startTime.includes(query)
-        );
-      });
+    // Log progress every 100 pages with percentage
+    if (p % 100 === 0) {
+      const percent = Math.round((p / totalPages) * 100);
+      console.log(`⏳ ${tempCache.length.toLocaleString()} channels (${percent}%)`);
+      allChannelsCache = [...tempCache];
+      saveCacheToDisk();
     }
 
-    if (sortBy === "time-asc") {
-      games.sort(
-        (a: any, b: any) =>
-          getTimeValue(a.startTime) - getTimeValue(b.startTime)
-      );
-    }
-
-    if (sortBy === "time-desc") {
-      games.sort(
-        (a: any, b: any) =>
-          getTimeValue(b.startTime) - getTimeValue(a.startTime)
-      );
-    }
-
-    if (sortBy === "title-asc") {
-      games.sort((a: any, b: any) =>
-        String(a.title || "").localeCompare(String(b.title || ""))
-      );
-    }
-
-    if (sortBy === "title-desc") {
-      games.sort((a: any, b: any) =>
-        String(b.title || "").localeCompare(String(a.title || ""))
-      );
-    }
-
-    if (sortBy === "channel-asc") {
-      games.sort((a: any, b: any) => {
-        const nameA = getChannelName(a.channelId);
-        const nameB = getChannelName(b.channelId);
-        return nameA.localeCompare(nameB);
-      });
-    }
-
-    if (sortBy === "channel-desc") {
-      games.sort((a: any, b: any) => {
-        const nameB = getChannelName(a.channelId);
-        const nameA = getChannelName(b.channelId);
-        return nameA.localeCompare(nameB);
-      });
-    }
-
-    return games;
-  }, [gameData, searchQuery, sortBy]);
-
-  const hasActiveFilters =
-    searchQuery.trim() !== "" || sortBy !== "time-asc";
-
-  function clearFilters() {
-    setSearchQuery("");
-    setSortBy("time-asc");
+    await new Promise(r => setTimeout(r, 50));
   }
 
-  function goToPreviousPage() {
-    setPage((currentPage) => Math.max(0, currentPage - 1));
-    clearFilters();
-  }
-
-  function goToNextPage() {
-    setPage((currentPage) => Math.min(totalPages - 1, currentPage + 1));
-    clearFilters();
-  }
-
-  if (loading) {
-    return (
-      <div
-        className="min-h-screen"
-        style={{ backgroundColor: "var(--neu-bg-page)" }}
-      >
-        <Header />
-
-        <main className="mx-auto flex min-h-[70vh] max-w-7xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
-          <div className="neumorphic-card rounded-3xl p-8 text-center">
-            <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-4 border-red-600/20 border-t-red-600" />
-
-            <h2
-              className="text-2xl font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Loading live games...
-            </h2>
-
-            <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
-              Please wait while we fetch the latest {PAGE_SIZE} Live Events.
-            </p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="min-h-screen"
-      style={{
-        backgroundColor: "var(--neu-bg-page)",
-        color: "var(--text-primary)",
-      }}
-    >
-      <Header />
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Link
-              href="/iptv"
-              className="mb-4 inline-flex items-center gap-2 text-sm font-medium transition-opacity hover:opacity-80"
-              style={{ color: "var(--text-muted)" }}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to IPTV
-            </Link>
-
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 text-white shadow-lg">
-                <Trophy className="h-6 w-6" />
-              </div>
-
-              <div>
-                <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  Live Games
-                </h1>
-
-                <p
-                  className="mt-1 text-sm sm:text-base"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Matches are sorted by time, earliest first.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="inline-flex w-fit items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 shadow-sm backdrop-blur">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)]" />
-            <span className="text-sm font-semibold">
-              {total.toLocaleString()} matches
-            </span>
-          </div>
-        </div>
-
-        {/* Search and Sort */}
-        <section className="neumorphic-card mb-6 rounded-3xl p-4 sm:p-5">
-          <div className="grid gap-4 md:grid-cols-[1fr_240px_auto]">
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
-                style={{ color: "var(--text-muted)" }}
-              />
-
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search by match, time, or channel name..."
-                className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-12 pr-4 text-sm outline-none transition placeholder:text-gray-400 focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20"
-              />
-            </div>
-
-            <div className="relative">
-              <SlidersHorizontal
-                className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
-                style={{ color: "var(--text-muted)" }}
-              />
-
-              <select
-                value={sortBy}
-                onChange={(event) => setSortBy(event.target.value)}
-                className="w-full appearance-none rounded-2xl border border-white/10 bg-white/10 py-3 pl-12 pr-4 text-sm outline-none transition focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20"
-              >
-                <option value="time-asc">Time earliest first</option>
-                <option value="time-desc">Time latest first</option>
-                <option value="title-asc">Title A-Z</option>
-                <option value="title-desc">Title Z-A</option>
-                <option value="channel-asc">Channel name A-Z</option>
-                <option value="channel-desc">Channel name Z-A</option>
-              </select>
-            </div>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-bold transition hover:bg-white/15"
-              >
-                <X className="h-4 w-4" />
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
-            Showing {filteredGames.length} of {gameData.length} loaded matches
-            on this page.
-          </div>
-        </section>
-
-        {/* Games List */}
-        {filteredGames.length > 0 ? (
-          <section className="mb-8 space-y-3">
-            {filteredGames.map((game: any, i: number) => {
-              const channelName = getChannelName(game.channelId);
-
-              return (
-                <Link
-                  key={`${game.channelId}-${game.startTime}-${i}`}
-                  href={`/iptv/watch/${game.channelId}`}
-                  className="neumorphic-card relative block overflow-hidden rounded-2xl p-5"
-                >
-                  <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
-
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0 flex-1 pl-2">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600/10 text-red-500">
-                          <CirclePlay className="h-5 w-5" />
-                        </div>
-
-                        <div className="min-w-0">
-                          <h2 className="line-clamp-2 text-lg font-bold leading-snug sm:text-xl">
-                            {game.title}
-                          </h2>
-
-                          <div
-                            className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
-                            style={{ color: "var(--text-muted)" }}
-                          >
-                            <span className="inline-flex items-center gap-1.5">
-                              <Clock className="h-4 w-4" />
-                              {game.startTime || "Time unavailable"}
-                            </span>
-
-                            <span className="inline-flex items-center gap-1.5">
-                              <Tv className="h-4 w-4" />
-                              {channelName || `Channel ${game.channelId}`}
-                            </span>
-                          </div>
-
-                          {game.description && (
-                            <p
-                              className="mt-2 line-clamp-1 text-xs"
-                              style={{ color: "var(--text-muted)" }}
-                            >
-                              {game.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 sm:justify-end">
-                      <span className="rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-500">
-                        Live
-                      </span>
-
-                      <span className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-red-600/20">
-                        Watch
-                        <ChevronRight className="h-4 w-4" />
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </section>
-        ) : (
-          <section className="neumorphic-card mb-8 rounded-3xl p-10 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-600/10 text-red-500">
-              <Search className="h-8 w-8" />
-            </div>
-
-            <h2 className="text-2xl font-bold">No games found</h2>
-
-            <p
-              className="mx-auto mt-2 max-w-md"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Try another search term or clear the filters.
-            </p>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700"
-              >
-                <X className="h-4 w-4" />
-                Clear filters
-              </button>
-            )}
-          </section>
-        )}
-
-        {/* Pagination */}
-        <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur sm:flex-row">
-          <button
-            type="button"
-            onClick={goToPreviousPage}
-            disabled={page === 0}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </button>
-
-          <div className="text-center">
-            <p className="text-sm font-semibold">
-              Page {page + 1} of {totalPages}
-            </p>
-
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {PAGE_SIZE} matches per page
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={goToNextPage}
-            disabled={page >= totalPages - 1}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </main>
-    </div>
-  );
+  allChannelsCache = tempCache;
+  channelsReady = true;
+  saveCacheToDisk();
+  console.log(`✅ All ${allChannelsCache.length.toLocaleString()} channels loaded!`);
 }
+
+// ============================================================
+// STARTUP
+// ============================================================
+console.log("📡 Loading from network...");
+loadAllChannels();
+
+// ============================================================
+// HTTP SERVER
+// ============================================================
+const server = http.createServer((req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  // Progress
+  if (url.pathname === "/progress") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      loaded: allChannelsCache.length,
+      total: channelsReady ? allChannelsCache.length : TOTAL_CHANNELS_ESTIMATE,
+      percent: channelsReady ? 100 : Math.round((allChannelsCache.length / TOTAL_CHANNELS_ESTIMATE) * 100),
+      ready: channelsReady,
+    }));
+    return;
+  }
+
+  // Health check
+  if (url.pathname === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      status: "ok",
+      streams: Object.keys(streams),
+      channelsCached: allChannelsCache.length,
+      channelsReady,
+    }));
+    return;
+  }
+
+  // Get ALL channels
+  if (url.pathname === "/api/channels/all") {
+    if (allChannelsCache.length === 0) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ loading: true, channels: [], message: "Still loading..." }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      channels: allChannelsCache,
+      total: allChannelsCache.length,
+      ready: channelsReady,
+    }));
+    return;
+  }
+
+  // Get channels by range
+  if (url.pathname === "/api/channels/range") {
+    const start = parseInt(url.searchParams.get("start")) || 0;
+    const end = parseInt(url.searchParams.get("end")) || 140;
+
+    const filtered = allChannelsCache.filter(ch => {
+      const num = parseInt(ch.number);
+      return num >= start && num <= end;
+    });
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ channels: filtered, total: allChannelsCache.length, ready: channelsReady }));
+    return;
+  }
+
+  // Start a stream
+  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/start") && req.method === "POST") {
+    const channelId = url.pathname.split("/")[2];
+    startStream(channelId);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "started", channelId }));
+    return;
+  }
+
+  // Stop a stream
+  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/stop") && req.method === "POST") {
+    const channelId = url.pathname.split("/")[2];
+    stopStream(channelId);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "stopped", channelId }));
+    return;
+  }
+
+  // Serve HLS files
+  if (url.pathname.startsWith("/hls/")) {
+    const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filePath);
+      const contentType = ext === ".m3u8" ? "application/vnd.apple.mpegurl" : "video/mp2t";
+      res.writeHead(200, { "Content-Type": contentType });
+      fs.createReadStream(filePath).pipe(res);
+    } else {
+      res.writeHead(404);
+      res.end("File not found");
+    }
+    return;
+  }
+
+  res.writeHead(404);
+  res.end("Not found");
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`   Health: /health`);
+  console.log(`   Progress: /progress`);
+  console.log(`   All channels: /api/channels/all`);
+  console.log(`   Range: /api/channels/range?start=1&end=140`);
+  console.log(`   Stream: POST /streams/{id}/start`);
+  console.log(`   HLS: /hls/{id}.m3u8`);
+});

@@ -1,98 +1,78 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const VPS_URL = "https://hls.bravestream.live";
 
 export default function IptvChannelsPage() {
-  const [channels, setChannels] = useState<any[]>([]);
+  const [allChannels, setAllChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<any[] | null>(null);
   const [error, setError] = useState("");
-  const [cacheStatus, setCacheStatus] = useState("");
+  const parentRef = useRef<HTMLDivElement>(null);
 
+  // Load channels once
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     async function load() {
-      if (typeof window === "undefined") {
-        setLoading(false);
-        return;
-      }
-
       setLoading(true);
-      setError("");
-
       try {
         const res = await fetch(`${VPS_URL}/api/channels/all`);
         const data = await res.json();
 
-        if (data.channels && data.channels.length > 0) {
-          setChannels(data.channels);
-          if (!data.ready) {
-            setCacheStatus(`Loading from server... ${data.total?.toLocaleString()} loaded so far`);
-          }
+        if (data.channels?.length > 0) {
+          setAllChannels(data.channels);
+          sessionStorage.setItem("iptv-channels-cache-v3", JSON.stringify(data.channels));
         } else if (data.loading) {
-          setError("Server is still caching channels. Please wait a moment and refresh.");
-          setCacheStatus("First-time setup in progress...");
-        } else {
-          setError("Trying backup source...");
-          try {
-            const convexRes = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: "iptv:getOrderedList", args: { page: 0, genre: "*", sortby: "number" } }),
-            });
-            const convexData = await convexRes.json();
-            const initialChannels = convexData.value?.js?.data || [];
-            setChannels(initialChannels);
-            setError("");
-          } catch (e2) {
-            setError("Failed to load channels. Please try again.");
-          }
+          setError("Server still loading channels. Please refresh.");
         }
       } catch (e) {
-        try {
-          const stored = sessionStorage.getItem("iptv-channels-cache-v3");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && parsed.length > 100) {
-              setChannels(parsed);
-              setError("");
-            }
-          }
-        } catch (e2) {}
-        if (channels.length === 0) setError("Failed to load channels. Please try again.");
+        // Fallback to sessionStorage
+        const stored = sessionStorage.getItem("iptv-channels-cache-v3");
+        if (stored) setAllChannels(JSON.parse(stored));
+        else setError("Failed to load channels");
       }
       setLoading(false);
     }
     load();
   }, []);
 
-  useEffect(() => {
-    if (channels.length > 100) {
-      try {
-        sessionStorage.setItem("iptv-channels-cache-v3", JSON.stringify(channels));
-      } catch (e) {}
-    }
-  }, [channels]);
-
-  const performSearch = useCallback((query: string) => {
-    if (!query.trim()) {
-      setSearchResults(null);
-      return;
-    }
-    const q = query.toLowerCase();
-    const results = channels.filter((ch: any) => {
+  // Filter channels for search — memoized, doesn't block rendering
+  const filteredChannels = useMemo(() => {
+    if (!search.trim()) return allChannels;
+    const q = search.toLowerCase();
+    return allChannels.filter((ch: any) => {
       const name = (ch.name || "").toLowerCase();
       const number = (ch.number || "").toString();
       return name.includes(q) || number === q;
-    }).slice(0, 50);
-    setSearchResults(results);
-  }, [channels]);
+    });
+  }, [allChannels, search]);
 
-  const displayChannels = searchResults !== null ? searchResults : channels;
+  // Virtual list — only renders visible rows
+  const rowVirtualizer = useVirtualizer({
+    count: Math.ceil(filteredChannels.length / 7), // 7 columns per row
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 140,
+    overscan: 3,
+  });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)' }}>
+        <Header />
+        <main className="flex items-center justify-center min-h-[70vh]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
+            <p style={{ color: 'var(--text-muted)' }}>Loading channels...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--neu-bg-page)', color: 'var(--text-primary)' }}>
@@ -102,93 +82,83 @@ export default function IptvChannelsPage() {
           <Link href="/iptv" className="text-sm hover:underline" style={{ color: 'var(--text-muted)' }}>← Back</Link>
           <h1 className="text-3xl font-bold">📺 Live Channels</h1>
           <span style={{ color: 'var(--text-muted)' }}>
-            ({channels.length > 0 ? channels.length.toLocaleString() : "..."} channels)
+            ({filteredChannels.length.toLocaleString()} channels)
           </span>
         </div>
 
-        {cacheStatus && (
-          <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-primary)', border: '1px solid var(--border-primary)' }}>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>📥 {cacheStatus}</p>
-          </div>
-        )}
-
         {error && (
-          <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: 'var(--error-bg)', border: '1px solid var(--brand-red)', color: 'var(--error-text)' }}>
-            <p>{error}</p>
-            <button onClick={() => window.location.reload()} className="mt-2 text-sm underline hover:no-underline">
-              Refresh Page
-            </button>
+          <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: 'var(--error-bg)', color: 'var(--error-text)' }}>
+            {error}
           </div>
         )}
 
+        {/* Search */}
         <div className="mb-6">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder={channels.length > 100 ? "Instant search across all channels..." : "Loading channels..."}
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  e.target.value.trim() ? performSearch(e.target.value) : setSearchResults(null);
-                }}
-                className="w-full px-5 py-3 rounded-xl text-sm"
-                style={{ backgroundColor: 'var(--surface-primary)', border: '2px solid var(--border-primary)', color: 'var(--text-primary)' }}
-              />
-            </div>
-            {searchResults !== null && (
-              <button onClick={() => { setSearch(""); setSearchResults(null); }} className="px-4 py-3 rounded-xl font-medium"
-                style={{ backgroundColor: 'var(--surface-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)' }}>
-                Clear
-              </button>
-            )}
-          </div>
-          {searchResults !== null && (
-            <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>Found {searchResults.length} channel{searchResults.length !== 1 ? 's' : ''}</p>
-          )}
+          <input
+            type="text"
+            placeholder="Search channels..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full px-5 py-3 rounded-xl text-sm"
+            style={{ backgroundColor: 'var(--surface-primary)', border: '2px solid var(--border-primary)', color: 'var(--text-primary)' }}
+          />
         </div>
 
-        {loading && (
-          <div className="flex justify-center py-20">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
-              <p style={{ color: 'var(--text-muted)' }}>Loading all channels...</p>
-            </div>
-          </div>
-        )}
+        {/* Virtual Channel Grid */}
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ height: 'calc(100vh - 250px)' }}
+        >
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const start = virtualRow.index * 7;
+              const rowChannels = filteredChannels.slice(start, start + 7);
 
-        {!loading && displayChannels.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-            {displayChannels.map((channel: any) => (
-              <Link
-                key={`${channel.id}_${channel.number}`}
-                href={`/iptv/watch/${channel.id}`}
-                className="neumorphic-card p-3 rounded-xl hover:shadow-lg transition-all text-center group"
-                title={channel.name}
-              >
-                <div className="w-full h-20 flex items-center justify-center mb-2 relative">
-                  {channel.logo ? (
-                    <img src={channel.logo} alt={channel.name} className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform" loading="lazy"
-                      onError={(e) => { const t = e.target as HTMLImageElement; t.style.display = 'none'; (t.parentElement?.querySelector('.logo-fallback') as HTMLElement).style.display = 'flex'; }} />
-                  ) : null}
-                  <span className="logo-fallback text-3xl" style={{ display: channel.logo ? 'none' : 'flex' }}>📺</span>
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className="grid grid-cols-7 gap-3">
+                    {rowChannels.map((channel: any) => (
+                      <Link
+                        key={`${channel.id}_${channel.number}`}
+                        href={`/iptv/watch/${channel.id}`}
+                        className="neumorphic-card p-3 rounded-xl hover:shadow-lg transition-all text-center group"
+                        title={channel.name}
+                      >
+                        <div className="w-full h-16 flex items-center justify-center mb-1">
+                          {channel.logo ? (
+                            <img src={channel.logo} alt="" className="max-h-full max-w-full object-contain" loading="lazy"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <span className="text-2xl">📺</span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-[10px] leading-tight line-clamp-2">{channel.name}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-                <p className="font-semibold text-xs leading-tight group-hover:text-red-600 transition-colors line-clamp-2">{channel.name}</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Ch. {channel.number}</p>
-                <div className="flex justify-center gap-1 mt-1.5">
-                  {channel.hd === 1 && <span className="text-xs px-1.5 py-0.5 bg-red-600 text-white rounded">HD</span>}
-                </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
-        )}
-
-        {!loading && displayChannels.length === 0 && !error && (
-          <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
-            <span className="text-6xl mb-4 block">🔍</span>
-            <p className="text-xl">No channels found</p>
-          </div>
-        )}
+        </div>
       </main>
     </div>
   );
