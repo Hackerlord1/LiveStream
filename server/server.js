@@ -85,12 +85,11 @@ setInterval(() => {
 }, 60000);
 
 // ============================================================
-// CHANNEL CACHE — Fresh load on every restart
+// CHANNEL CACHE
 // ============================================================
 let allChannelsCache = [];
 let channelsReady = false;
 
-// Delete old cache on startup
 if (fs.existsSync(CACHE_FILE)) {
   fs.unlinkSync(CACHE_FILE);
   console.log("🗑️ Old cache deleted — starting fresh");
@@ -107,10 +106,7 @@ async function fetchPortalPage(page) {
     const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: "iptv:getOrderedList",
-        args: { page, genre: "*", sortby: "number" },
-      }),
+      body: JSON.stringify({ path: "iptv:getOrderedList", args: { page, genre: "*", sortby: "number" } }),
     });
     const data = await res.json();
     return data.value;
@@ -119,30 +115,20 @@ async function fetchPortalPage(page) {
   }
 }
 
-async function fetchPortalPageWithRetry(page, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    const result = await fetchPortalPage(page);
-    if (result?.js?.data) return result;
-    if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
-  }
-  return null;
-}
-
 async function loadAllChannels() {
-  console.log("🔄 Starting channel load...");
+  console.log("🔄 Loading channels...");
   const seen = new Set();
   const tempCache = [];
 
   const firstPage = await fetchPortalPage(0);
   if (!firstPage?.js?.total_items) {
-    console.log("❌ Failed to load first page, retrying in 30s...");
+    console.log("❌ Failed, retrying in 30s...");
     setTimeout(loadAllChannels, 30000);
     return;
   }
 
   const totalPages = Math.ceil(firstPage.js.total_items / 14);
   console.log(`📄 Total pages: ${totalPages.toLocaleString()}`);
-  console.log(`🎯 Target: ~${TOTAL_CHANNELS_ESTIMATE.toLocaleString()} channels`);
 
   if (firstPage.js.data) {
     for (const ch of firstPage.js.data) {
@@ -154,10 +140,7 @@ async function loadAllChannels() {
     }
   }
 
-  let lastMilestone = 0;
-  const milestones = [2000, 5000, 10000, 15000, 20000, 25000, 28000];
-
-  const BATCH_SIZE = 1;
+  const BATCH_SIZE = 5;
   for (let p = 1; p < totalPages; p += BATCH_SIZE) {
     const batch = [];
     for (let i = 0; i < BATCH_SIZE && p + i < totalPages; i++) {
@@ -165,9 +148,7 @@ async function loadAllChannels() {
     }
 
     let results = [];
-    try {
-      results = await Promise.all(batch);
-    } catch (e) {
+    try { results = await Promise.all(batch); } catch (e) {
       for (const pagePromise of batch) {
         try { results.push(await pagePromise); } catch (e2) { results.push(null); }
       }
@@ -177,28 +158,14 @@ async function loadAllChannels() {
       if (data?.js?.data) {
         for (const ch of data.js.data) {
           const key = `${ch.id}_${ch.number}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" });
-          }
+          if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); }
         }
       }
     }
 
-    const count = tempCache.length;
-
-    // Milestone markers
-    for (const milestone of milestones) {
-      if (count >= milestone && lastMilestone < milestone) {
-        console.log(`🎯 MILESTONE: ${milestone.toLocaleString()} channels loaded!`);
-        lastMilestone = milestone;
-      }
-    }
-
-    // Progress every 200 pages
     if (p % 200 === 0 && p > 0) {
       const percent = Math.round((p / totalPages) * 100);
-      console.log(`⏳ ${count.toLocaleString()} channels (${percent}%)`);
+      console.log(`⏳ ${tempCache.length.toLocaleString()} channels (${percent}%)`);
       allChannelsCache = [...tempCache];
       saveCacheToDisk();
     }
@@ -209,14 +176,43 @@ async function loadAllChannels() {
   allChannelsCache = tempCache;
   channelsReady = true;
   saveCacheToDisk();
-  console.log(`✅ COMPLETE: All ${allChannelsCache.length.toLocaleString()} channels loaded!`);
+  console.log(`✅ All ${allChannelsCache.length.toLocaleString()} channels loaded!`);
+}
+
+// ============================================================
+// GAMES CACHE
+// ============================================================
+let allGamesCache = [];
+let gamesReady = false;
+
+async function loadAllGames() {
+  console.log("⚽ Loading games...");
+  try {
+    const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "iptv:getLiveGames", args: { period: 1, page: 0, pageSize: 5000 } }),
+    });
+    const data = await res.json();
+    allGamesCache = data.value?.games || [];
+    gamesReady = true;
+    console.log(`✅ ${allGamesCache.length} games loaded!`);
+  } catch (e) {
+    console.log("❌ Games load failed, retrying in 60s...");
+    setTimeout(loadAllGames, 60000);
+  }
 }
 
 // ============================================================
 // STARTUP
 // ============================================================
-console.log("📡 Starting server and loading channels...");
+console.log("📡 Loading from network...");
 loadAllChannels();
+setTimeout(loadAllGames, 10000);
+
+// Refresh every 3 hours
+setInterval(loadAllChannels, 3 * 60 * 60 * 1000);
+setInterval(loadAllGames, 3 * 60 * 60 * 1000);
 
 // ============================================================
 // HTTP SERVER
@@ -236,13 +232,10 @@ const server = http.createServer((req, res) => {
 
   // Progress
   if (url.pathname === "/progress") {
-    const percent = channelsReady ? 100 : Math.round((allChannelsCache.length / TOTAL_CHANNELS_ESTIMATE) * 100);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
-      loaded: allChannelsCache.length,
-      total: channelsReady ? allChannelsCache.length : TOTAL_CHANNELS_ESTIMATE,
-      percent: Math.min(percent, 99),
-      ready: channelsReady,
+      channels: { loaded: allChannelsCache.length, total: TOTAL_CHANNELS_ESTIMATE, ready: channelsReady },
+      games: { loaded: allGamesCache.length, ready: gamesReady },
     }));
     return;
   }
@@ -255,23 +248,16 @@ const server = http.createServer((req, res) => {
       streams: Object.keys(streams),
       channelsCached: allChannelsCache.length,
       channelsReady,
+      gamesCached: allGamesCache.length,
+      gamesReady,
     }));
     return;
   }
 
   // Get ALL channels
   if (url.pathname === "/api/channels/all") {
-    if (allChannelsCache.length === 0) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ loading: true, channels: [], message: "Still loading..." }));
-      return;
-    }
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      channels: allChannelsCache,
-      total: allChannelsCache.length,
-      ready: channelsReady,
-    }));
+    res.end(JSON.stringify({ channels: allChannelsCache, total: allChannelsCache.length, ready: channelsReady }));
     return;
   }
 
@@ -279,14 +265,16 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/channels/range") {
     const start = parseInt(url.searchParams.get("start")) || 0;
     const end = parseInt(url.searchParams.get("end")) || 140;
-
-    const filtered = allChannelsCache.filter(ch => {
-      const num = parseInt(ch.number);
-      return num >= start && num <= end;
-    });
-
+    const filtered = allChannelsCache.filter(ch => { const num = parseInt(ch.number); return num >= start && num <= end; });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ channels: filtered, total: allChannelsCache.length, ready: channelsReady }));
+    return;
+  }
+
+  // Get ALL games
+  if (url.pathname === "/api/games/all") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ games: allGamesCache, total: allGamesCache.length, ready: gamesReady }));
     return;
   }
 
@@ -329,10 +317,11 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
-  console.log(`   Progress: /progress`);
   console.log(`   Health: /health`);
+  console.log(`   Progress: /progress`);
   console.log(`   All channels: /api/channels/all`);
   console.log(`   Range: /api/channels/range?start=1&end=140`);
+  console.log(`   All games: /api/games/all`);
   console.log(`   Stream: POST /streams/{id}/start`);
   console.log(`   HLS: /hls/{id}.m3u8`);
 });

@@ -5,6 +5,7 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import { ArrowLeft, Clock, Search, Trophy, Tv, X } from "lucide-react";
 
+const VPS_URL = "https://hls.bravestream.live";
 const CACHE_KEY = "iptv-channels-cache-v3";
 
 function getChannelName(channelId: string): string {
@@ -27,17 +28,14 @@ export default function IptvGamesPage() {
   const [visibleCount, setVisibleCount] = useState(50);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Load from VPS cache
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: "iptv:getLiveGames", args: { period: 1, page: 0, pageSize: 5000 } }),
-        });
+        const res = await fetch(`${VPS_URL}/api/games/all`);
         const data = await res.json();
-        setAllGames(data.value?.games || []);
+        setAllGames(data.games || []);
       } catch (e) {
         setError("Failed to load games");
       }
@@ -46,6 +44,7 @@ export default function IptvGamesPage() {
     load();
   }, []);
 
+  // Instant search
   const filteredGames = useMemo(() => {
     if (!searchQuery.trim()) return allGames;
     const q = searchQuery.toLowerCase();
@@ -56,7 +55,7 @@ export default function IptvGamesPage() {
     });
   }, [allGames, searchQuery]);
 
-  // Lazy load: show 50, then 50 more on scroll
+  // Lazy load: show 50 at a time
   const visibleGames = useMemo(() => {
     return filteredGames.slice(0, visibleCount);
   }, [filteredGames, visibleCount]);
