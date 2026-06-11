@@ -46,7 +46,7 @@ async function callWrapper(path: string, args: Record<string, unknown> = {}) {
 }
 
 // ============================================================
-// CHANNEL NAME FROM VPS (NEW - everything else unchanged)
+// CHANNEL NAME FROM VPS
 // ============================================================
 let channelNameCache: Record<string, { name: string; number?: string; logo?: string; hd?: number }> | null = null;
 
@@ -95,7 +95,7 @@ async function safePlay(video: HTMLVideoElement) {
     return true;
   } catch (error) {
     if (isPlayInterruptedError(error)) {
-      console.warn("Play request was interrupted during channel switch. This is safe to ignore.", error);
+      console.warn("Play request was interrupted during channel switch.", error);
       return false;
     }
     throw error;
@@ -125,9 +125,8 @@ async function waitForPlaylistReady(playlistUrl: string, options?: { retries?: n
         const playlistText = await playlistRes.text();
         const hasM3uHeader = playlistText.includes("#EXTM3U");
         const segmentLines = getSegmentLinesFromPlaylist(playlistText);
-        if (hasM3uHeader && segmentLines.length > 0) {
-          return cacheBustedPlaylistUrl;
-        } else if (hasM3uHeader) { lastError = "Playlist exists but has no media segment URLs yet."; }
+        if (hasM3uHeader && segmentLines.length > 0) return cacheBustedPlaylistUrl;
+        else if (hasM3uHeader) { lastError = "Playlist exists but has no media segment URLs yet."; }
         else { lastError = "Playlist response is not a valid HLS playlist."; }
       }
     } catch (error: any) {
@@ -166,18 +165,6 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-function LoadingOverlay({ status }: { status: string }) {
-  if (!status) return null;
-  return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="rounded-2xl border border-white/10 bg-black/80 px-5 py-4 text-center shadow-xl">
-        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-red-500" />
-        <p className="text-sm font-medium text-white">{status}</p>
-      </div>
-    </div>
-  );
-}
-
 // ============================================================
 // COMPONENT
 // ============================================================
@@ -189,6 +176,7 @@ export default function IptvWatchPage() {
   const hlsRef = useRef<any>(null);
   const abortRef = useRef<AbortController | null>(null);
   const playbackStartedRef = useRef(false);
+  const reconnectingRef = useRef(false);
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [epgData, setEpgData] = useState<EpgResponse | null>(null);
@@ -206,29 +194,17 @@ export default function IptvWatchPage() {
   const channelTitle = channel?.name || `Channel ${channelId}`;
 
   // ============================================================
-  // LOAD CHANNEL INFO (ONLY CHANGE: fetchChannelFromVps)
+  // LOAD CHANNEL INFO
   // ============================================================
   useEffect(() => {
     let cancelled = false;
-
     async function loadChannelInfo() {
-      if (Number.isNaN(channelId)) {
-        setError("Invalid channel selected.");
-        setLoadingInfo(false);
-        return;
-      }
-
+      if (Number.isNaN(channelId)) { setError("Invalid channel selected."); setLoadingInfo(false); return; }
       try {
-        setLoadingInfo(true);
-        setStatus("Loading channel...");
-        setError("");
-
-        // Try VPS first, fall back to sessionStorage
+        setLoadingInfo(true); setStatus("Loading channel..."); setError("");
         const vpsChannel = await fetchChannelFromVps(channelId);
-        if (vpsChannel) {
-          setChannel(vpsChannel);
-        } else {
-          // Fallback to old sessionStorage method
+        if (vpsChannel) { setChannel(vpsChannel); }
+        else {
           try {
             const stored = sessionStorage.getItem(CHANNELS_CACHE_KEY);
             if (stored) {
@@ -241,31 +217,21 @@ export default function IptvWatchPage() {
           } catch (e) {}
           setChannel({ id: channelId, name: `Channel ${channelId}` });
         }
-
-        const [epgResult] = await Promise.allSettled([
-          callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
-        ]);
-
+        const [epgResult] = await Promise.allSettled([callWrapper("iptv:getShortEpg", { channelId, size: 8 })]);
         if (cancelled) return;
-
-        if (epgResult.status === "fulfilled") {
-          setEpgData(epgResult.value as EpgResponse);
-        }
+        if (epgResult.status === "fulfilled") setEpgData(epgResult.value as EpgResponse);
       } catch (e) {
-        console.error("Failed to load channel information:", e);
         if (!cancelled) setChannel({ id: channelId, name: `Channel ${channelId}` });
       } finally {
         if (!cancelled) { setLoadingInfo(false); setStatus(""); }
       }
     }
-
     loadChannelInfo();
-
     return () => { cancelled = true; };
   }, [channelId]);
 
   // ============================================================
-  // PLAY STREAM (COMPLETELY UNCHANGED)
+  // PLAY STREAM (seamless reconnect)
   // ============================================================
   useEffect(() => {
     if (loadingInfo || !videoRef.current || Number.isNaN(channelId)) return;
@@ -274,30 +240,15 @@ export default function IptvWatchPage() {
     let cancelled = false;
 
     playbackStartedRef.current = false;
+    reconnectingRef.current = false;
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
-    const onLoadedMetadata = () => {
-      console.log("Video loaded metadata:", { duration: video.duration, videoWidth: video.videoWidth, videoHeight: video.videoHeight, readyState: video.readyState, networkState: video.networkState });
-    };
-    const onCanPlay = () => {
-      console.log("Video can play:", { readyState: video.readyState, networkState: video.networkState });
-    };
-    const onPlaying = () => {
-      console.log("Video playing:", { currentTime: video.currentTime, readyState: video.readyState, videoWidth: video.videoWidth, videoHeight: video.videoHeight });
-      playbackStartedRef.current = true;
-      setStatus("");
-      setError("");
-    };
-    const onWaiting = () => {
-      console.log("Video waiting/buffering:", { currentTime: video.currentTime, readyState: video.readyState, networkState: video.networkState });
-      if (!playbackStartedRef.current) setStatus("Buffering live stream...");
-    };
-    const onVideoError = () => {
-      console.error("Native video element error:", { error: video.error, readyState: video.readyState, networkState: video.networkState });
-      setStatus("");
-      setError("The browser video element failed to decode this stream. This usually means unsupported codec or invalid media segments.");
-    };
+    const onLoadedMetadata = () => { console.log("Video loaded metadata"); };
+    const onCanPlay = () => { console.log("Video can play"); };
+    const onPlaying = () => { console.log("Video playing"); playbackStartedRef.current = true; setStatus(""); setError(""); };
+    const onWaiting = () => { console.log("Video waiting/buffering"); if (!playbackStartedRef.current) setStatus("Buffering..."); };
+    const onVideoError = () => { console.error("Native video error"); if (!reconnectingRef.current) { setStatus(""); setError("Video decode error."); } };
 
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("canplay", onCanPlay);
@@ -310,28 +261,25 @@ export default function IptvWatchPage() {
 
       const tryStartPlayback = async (source: string) => {
         if (cancelled || !videoRef.current) return;
-        console.log(`Trying video playback from: ${source}`);
+        console.log(`Trying playback from: ${source}`);
         try {
           const played = await safePlay(video);
-          if (played) { console.log(`Video playback started from: ${source}`); playbackStartedRef.current = true; setStatus(""); setError(""); }
-          else { console.log(`Video play was interrupted safely from ${source}, probably due to channel switch.`); }
-        } catch (err) { console.warn(`Playback attempt failed from ${source}:`, err); setStatus(""); setError("The stream loaded, but the browser could not start playback. Press play or check if this channel uses unsupported codecs."); }
+          if (played) { playbackStartedRef.current = true; setStatus(""); setError(""); }
+        } catch (err) { setStatus(""); setError("Could not start playback."); }
       };
 
       try {
         setError(""); setStatus("Starting stream...");
         if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-        try { if (!video.paused) video.pause(); video.removeAttribute("src"); video.load(); } catch (resetError) { console.warn("Safe video reset warning:", resetError); }
+        try { if (!video.paused) video.pause(); video.removeAttribute("src"); video.load(); } catch (e) {}
 
         const startRes = await fetch(`${HLS_BASE}/streams/${channelId}/start`, { method: "POST", cache: "no-store", signal: abortRef.current?.signal });
-        let startText = ""; try { startText = await startRes.text(); } catch { startText = ""; }
-        console.log("Stream start response:", { channelId, status: startRes.status, body: startText });
-        if (!startRes.ok) throw new Error(`Failed to start stream. Server returned HTTP ${startRes.status}.`);
+        if (!startRes.ok) throw new Error(`Failed to start stream. HTTP ${startRes.status}.`);
         if (cancelled) return;
 
         const readyPlaylistUrl = await waitForPlaylistReady(playlistUrl, { retries: 30, delayMs: 1500, signal: abortRef.current?.signal, onStatus: setStatus });
         if (cancelled || !videoRef.current) return;
-        setStatus("Connecting to live stream...");
+        setStatus("Connecting...");
 
         const Hls = (await import("hls.js")).default;
 
@@ -345,38 +293,88 @@ export default function IptvWatchPage() {
           });
           hlsRef.current = hls;
 
-          hls.on(Hls.Events.MEDIA_ATTACHED, () => console.log("HLS media attached."));
-          hls.on(Hls.Events.MANIFEST_LOADING, () => console.log("HLS manifest loading:", readyPlaylistUrl));
-          hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => { console.log("HLS manifest parsed:", data); setStatus("Buffering live stream..."); tryStartPlayback("MANIFEST_PARSED"); });
-          hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => console.log("HLS level loaded:", { level: data?.level, live: data?.details?.live, fragments: data?.details?.fragments?.length, targetduration: data?.details?.targetduration, totalduration: data?.details?.totalduration }));
-          hls.on(Hls.Events.FRAG_LOADING, (_event, data) => console.log("HLS fragment loading:", { url: data?.frag?.url, sn: data?.frag?.sn, type: data?.frag?.type }));
-          hls.on(Hls.Events.FRAG_LOADED, (_event, data) => console.log("HLS fragment loaded:", { url: data?.frag?.url, sn: data?.frag?.sn, stats: (data as any)?.stats }));
-          hls.on(Hls.Events.FRAG_PARSED, (_event, data) => console.log("HLS fragment parsed:", { url: data?.frag?.url, sn: data?.frag?.sn, type: data?.frag?.type }));
-          hls.on(Hls.Events.BUFFER_APPENDING, (_event, data) => console.log("HLS buffer appending:", { type: data?.type, length: data?.data?.length }));
-          hls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => { console.log("HLS buffer appended:", data); if (video.paused && !playbackStartedRef.current) tryStartPlayback("BUFFER_APPENDED"); });
+          hls.on(Hls.Events.MEDIA_ATTACHED, () => console.log("HLS attached."));
+          hls.on(Hls.Events.MANIFEST_LOADING, () => console.log("HLS manifest loading"));
+          hls.on(Hls.Events.MANIFEST_PARSED, () => { setStatus(""); tryStartPlayback("MANIFEST_PARSED"); });
 
+          // ═══════════════════════════════════════════════════
+          // SEAMLESS RECONNECT
+          // ═══════════════════════════════════════════════════
+          hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+  console.log("HLS level loaded:", { live: data?.details?.live, fragments: data?.details?.fragments?.length });
+
+  if (data?.details?.live === false) {
+    if (reconnectingRef.current) {
+      console.log("🔄 Still reconnecting, waiting for live stream...");
+      return; // Already reconnecting, don't trigger again
+    }
+
+    console.log("🔄 Stream ended — pausing HLS, restarting FFmpeg...");
+    reconnectingRef.current = true;
+    setStatus("Reconnecting...");
+    hls.stopLoad();
+
+    // Keep trying until stream comes back
+    const tryReconnect = async () => {
+      try {
+        await fetch(`${HLS_BASE}/streams/${channelId}/start`, { method: "POST" });
+      } catch (e) {}
+
+      // Wait for FFmpeg to generate segments
+      await new Promise(r => setTimeout(r, 5000));
+
+      if (cancelled || !hlsRef.current) return;
+
+      console.log("Resuming HLS...");
+      hls.startLoad();
+
+      // Give it 15 seconds to get live:true, otherwise retry
+      setTimeout(() => {
+        if (reconnectingRef.current && !cancelled && hlsRef.current) {
+          console.log("Still not live, retrying...");
+          hls.stopLoad();
+          tryReconnect();
+        }
+      }, 15000);
+    };
+
+    tryReconnect();
+  }
+
+  if (data?.details?.live === true && reconnectingRef.current) {
+    console.log("✅ Stream reconnected!");
+    setStatus(""); setError(""); reconnectingRef.current = false;
+  }
+});
+
+          hls.on(Hls.Events.FRAG_LOADING, (_event, data) => console.log("Fragment loading:", data?.frag?.sn));
+          hls.on(Hls.Events.FRAG_LOADED, (_event, data) => console.log("Fragment loaded:", data?.frag?.sn));
+          hls.on(Hls.Events.FRAG_PARSED, (_event, data) => console.log("Fragment parsed:", data?.frag?.sn));
+          hls.on(Hls.Events.BUFFER_APPENDING, (_event, data) => console.log("Buffer appending:", data?.type, data?.data?.length));
+          hls.on(Hls.Events.BUFFER_APPENDED, () => { if (video.paused && !playbackStartedRef.current) tryStartPlayback("BUFFER_APPENDED"); });
+
+          // ═══════════════════════════════════════════════════
+          // ERROR HANDLING
+          // ═══════════════════════════════════════════════════
           hls.on(Hls.Events.ERROR, (_event, data) => {
-            console.error("HLS error:", { type: data?.type, details: data?.details, fatal: data?.fatal, url: data?.url || data?.frag?.url, response: data?.response, error: data?.error });
-            const readableError = getReadableHlsError(data);
-            if (!data.fatal) { console.warn("Non-fatal HLS error:", readableError); return; }
-            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { setError("Network issue while loading this stream. Retrying..."); hls.startLoad(); return; }
-            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { setError("Media decoding issue. Trying to recover..."); hls.recoverMediaError(); return; }
+            console.error("HLS error:", { type: data?.type, details: data?.details, fatal: data?.fatal });
+            if (!data.fatal) return;
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { hls.startLoad(); return; }
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
             hls.destroy(); hlsRef.current = null;
-            setStatus(""); setError(`${readableError} This channel failed to play. The IPTV source may be offline, unsupported, or the HLS server failed to generate a browser-compatible stream.`);
+            setError("Stream failed. Reloading...");
+            setTimeout(() => { if (!cancelled) window.location.reload(); }, 5000);
           });
 
           hls.attachMedia(video);
           hls.loadSource(readyPlaylistUrl);
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = readyPlaylistUrl; setStatus("Buffering live stream...");
+          video.src = readyPlaylistUrl; setStatus("");
           await tryStartPlayback("NATIVE_HLS");
-        } else { setStatus(""); setError("Browser does not support HLS playback."); }
+        } else { setStatus(""); setError("Browser does not support HLS."); }
       } catch (e: any) {
-        console.error("Failed to play stream:", e);
         if (cancelled) return;
-        setStatus("");
-        const message = e?.message || "Unknown playback error.";
-        setError(`Could not play this channel. ${message} Check whether the HLS server generated a valid playlist and reachable segments for channel ${channelId}.`);
+        setStatus(""); setError(`Playback failed: ${e?.message || "Unknown error"}`);
       }
     }
 
@@ -396,7 +394,7 @@ export default function IptvWatchPage() {
   }, [loadingInfo, channelId]);
 
   // ============================================================
-  // RENDER (COMPLETELY UNCHANGED)
+  // RENDER
   // ============================================================
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--neu-bg-page)", color: "var(--text-primary)" }}>
@@ -426,7 +424,6 @@ export default function IptvWatchPage() {
               <div className="flex flex-wrap items-center gap-2">
                 {channel?.number && <span className="rounded-full px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-secondary)", border: "1px solid var(--border-primary)" }}>Ch. {channel.number}</span>}
                 {channel?.hd === 1 && <span className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-bold text-white">HD</span>}
-                <span className="rounded-full px-3 py-1.5 text-xs" style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-muted)", border: "1px solid var(--border-primary)" }}>ID: {channelId}</span>
               </div>
             </div>
           </div>
@@ -434,8 +431,17 @@ export default function IptvWatchPage() {
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="p-3 sm:p-5">
               <ErrorBanner message={error} />
+
+              {/* Video container with subtle reconnect indicator */}
               <div className="relative overflow-hidden rounded-3xl bg-black" style={{ border: "1px solid var(--border-primary)", boxShadow: "0 15px 35px var(--shadow-color-heavy)" }}>
-                {status && !error && <LoadingOverlay status={status} />}
+                {status && !error && (
+                  <div className="absolute bottom-4 right-4 z-10 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2 border border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-red-500" />
+                      <p className="text-xs text-white/80">{status}</p>
+                    </div>
+                  </div>
+                )}
                 <video ref={videoRef} controls autoPlay muted playsInline preload="auto" className="aspect-video w-full bg-black" style={{ maxHeight: "72vh" }} />
               </div>
             </div>

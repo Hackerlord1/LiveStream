@@ -14,7 +14,7 @@ if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 const streams = {};
 
 // ============================================================
-// STREAM FUNCTIONS
+// STREAM FUNCTIONS (with auto-restart on crash)
 // ============================================================
 function startStream(channelId) {
   if (streams[channelId]) return streams[channelId];
@@ -32,8 +32,32 @@ function startStream(channelId) {
   ]);
 
   ffmpeg.stderr.on("data", () => {});
-  ffmpeg.on("close", () => { delete streams[channelId]; });
-  ffmpeg.on("error", () => { delete streams[channelId]; });
+
+  // ═══════════════════════════════════════════════════
+  // FIXED: Auto-restart FFmpeg on crash
+  // ═══════════════════════════════════════════════════
+  ffmpeg.on("close", (code) => {
+    console.log(`Stream ${channelId} stopped (code ${code})`);
+    const wasActive = !!streams[channelId];
+    delete streams[channelId];
+
+    if (wasActive && code !== 0 && code !== null) {
+      console.log(`🔄 Auto-restarting stream ${channelId} in 3s...`);
+      setTimeout(() => startStream(channelId), 3000);
+    }
+  });
+
+  ffmpeg.on("error", (err) => {
+    console.error(`Stream ${channelId} error:`, err.message);
+    const wasActive = !!streams[channelId];
+    delete streams[channelId];
+
+    if (wasActive) {
+      console.log(`🔄 Auto-restarting stream ${channelId} after error in 3s...`);
+      setTimeout(() => startStream(channelId), 3000);
+    }
+  });
+
   streams[channelId] = ffmpeg;
   return ffmpeg;
 }
@@ -140,43 +164,27 @@ async function loadAllChannels() {
 async function loadAllVod() {
   console.log("🎬 ===== VOD =====");
   vodReady = false;
-
   try {
     const catData = await fetchConvex("iptv:getVodCategories", {});
     vodCategoriesCache = catData?.js?.data || [];
     console.log(`📂 Categories: ${vodCategoriesCache.length}`);
-
-    const seen = new Set();
-    allVodCache = [];
+    const seen = new Set(); allVodCache = [];
     let p = 1, consecutiveFailures = 0, lastMilestone = 0;
     const milestones = [5000, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000];
-
     while (true) {
       const data = await fetchConvex("iptv:getVodList", { page: p }, 2);
       const movies = data?.js?.data || [];
       const totalItems = data?.js?.total_items || 0;
-
       if (movies.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
-
       consecutiveFailures = 0;
       for (const m of movies) { if (!seen.has(String(m.id))) { seen.add(String(m.id)); allVodCache.push(m); } }
-
       const count = allVodCache.length;
       for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 VOD: ${m.toLocaleString()} movies`); lastMilestone = m; } }
-
-      if (p % 50 === 0) {
-        const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0;
-        vodProgress = { loaded: count, total: totalItems, percent };
-        console.log(`⏳ VOD: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`);
-      }
-
-      p++;
-      if (totalItems > 0 && count >= totalItems) break;
+      if (p % 50 === 0) { const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0; vodProgress = { loaded: count, total: totalItems, percent }; console.log(`⏳ VOD: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`); }
+      p++; if (totalItems > 0 && count >= totalItems) break;
       await new Promise(r => setTimeout(r, 100));
     }
-
-    vodReady = true;
-    vodProgress = { loaded: allVodCache.length, total: allVodCache.length, percent: 100 };
+    vodReady = true; vodProgress = { loaded: allVodCache.length, total: allVodCache.length, percent: 100 };
     console.log(`✅ VOD COMPLETE: ${allVodCache.length.toLocaleString()} movies loaded!\n`);
   } catch (e) { console.log("❌ VOD failed, retrying..."); setTimeout(loadAllVod, 60000); }
 }
@@ -187,68 +195,46 @@ async function loadAllVod() {
 async function loadAllSeries() {
   console.log("📺 ===== SERIES =====");
   seriesReady = false;
-
   try {
     const catData = await fetchConvex("iptv:getSeriesCategories", {});
     seriesCategoriesCache = catData?.js?.data || [];
     console.log(`📂 Categories: ${seriesCategoriesCache.length}`);
-
-    const seen = new Set();
-    allSeriesCache = [];
+    const seen = new Set(); allSeriesCache = [];
     let p = 1, consecutiveFailures = 0, lastMilestone = 0;
     const milestones = [5000, 10000, 15000, 20000, 25000, 27000];
-
     while (true) {
       const data = await fetchConvex("iptv:getSeriesList", { page: p }, 2);
       const series = data?.js?.data || [];
       const totalItems = data?.js?.total_items || 0;
-
       if (series.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
-
       consecutiveFailures = 0;
       for (const s of series) { if (!seen.has(String(s.id))) { seen.add(String(s.id)); allSeriesCache.push(s); } }
-
       const count = allSeriesCache.length;
       for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 Series: ${m.toLocaleString()} series`); lastMilestone = m; } }
-
-      if (p % 50 === 0) {
-        const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0;
-        seriesProgress = { loaded: count, total: totalItems, percent };
-        console.log(`⏳ Series: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`);
-      }
-
-      p++;
-      if (totalItems > 0 && count >= totalItems) break;
+      if (p % 50 === 0) { const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0; seriesProgress = { loaded: count, total: totalItems, percent }; console.log(`⏳ Series: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`); }
+      p++; if (totalItems > 0 && count >= totalItems) break;
       await new Promise(r => setTimeout(r, 100));
     }
-
-    seriesReady = true;
-    seriesProgress = { loaded: allSeriesCache.length, total: allSeriesCache.length, percent: 100 };
+    seriesReady = true; seriesProgress = { loaded: allSeriesCache.length, total: allSeriesCache.length, percent: 100 };
     console.log(`✅ SERIES COMPLETE: ${allSeriesCache.length.toLocaleString()} series loaded!\n`);
   } catch (e) { console.log("❌ Series failed, retrying..."); setTimeout(loadAllSeries, 60000); }
 }
 
 // ============================================================
-// SEQUENTIAL STARTUP — Channels → VOD → Series
+// SEQUENTIAL STARTUP
 // ============================================================
 let isLoading = false;
-
 async function loadAll() {
   if (isLoading) { console.log("⚠️ Load already in progress, skipping..."); return; }
   isLoading = true;
-
   console.log("📡 ===== STARTING DATA LOAD =====");
   await loadAllChannels();
   await loadAllVod();
   await loadAllSeries();
   console.log("🎉 ===== ALL DATA LOADED =====");
-
   isLoading = false;
 }
-
 loadAll();
-
-// NO scheduled refresh — data loads once on startup only
 
 // ============================================================
 // HTTP SERVER
@@ -258,7 +244,6 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "*");
   if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
-
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   if (url.pathname === "/progress") {
@@ -270,58 +255,14 @@ const server = http.createServer((req, res) => {
     }));
     return;
   }
-
-  if (url.pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", streams: Object.keys(streams), channels: allChannelsCache.length, vod: allVodCache.length, series: allSeriesCache.length }));
-    return;
-  }
-
-  if (url.pathname === "/api/channels/all") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ channels: allChannelsCache, total: allChannelsCache.length, ready: channelsReady }));
-    return;
-  }
-
-  if (url.pathname === "/api/channels/range") {
-    const start = parseInt(url.searchParams.get("start")) || 0, end = parseInt(url.searchParams.get("end")) || 140;
-    const filtered = allChannelsCache.filter(ch => { const num = parseInt(ch.number); return num >= start && num <= end; });
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ channels: filtered, total: allChannelsCache.length, ready: channelsReady }));
-    return;
-  }
-
-  if (url.pathname === "/api/vod/all") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ movies: allVodCache, categories: vodCategoriesCache, total: allVodCache.length, ready: vodReady }));
-    return;
-  }
-
-  if (url.pathname === "/api/series/all") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ series: allSeriesCache, categories: seriesCategoriesCache, total: allSeriesCache.length, ready: seriesReady }));
-    return;
-  }
-
-  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/start") && req.method === "POST") {
-    startStream(url.pathname.split("/")[2]);
-    res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "started" })); return;
-  }
-
-  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/stop") && req.method === "POST") {
-    stopStream(url.pathname.split("/")[2]);
-    res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "stopped" })); return;
-  }
-
-  if (url.pathname.startsWith("/hls/")) {
-    const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
-    if (fs.existsSync(filePath)) {
-      res.writeHead(200, { "Content-Type": path.extname(filePath) === ".m3u8" ? "application/vnd.apple.mpegurl" : "video/mp2t" });
-      fs.createReadStream(filePath).pipe(res);
-    } else { res.writeHead(404); res.end("Not found"); }
-    return;
-  }
-
+  if (url.pathname === "/health") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "ok", streams: Object.keys(streams), channels: allChannelsCache.length, vod: allVodCache.length, series: allSeriesCache.length })); return; }
+  if (url.pathname === "/api/channels/all") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ channels: allChannelsCache, total: allChannelsCache.length, ready: channelsReady })); return; }
+  if (url.pathname === "/api/channels/range") { const start = parseInt(url.searchParams.get("start")) || 0, end = parseInt(url.searchParams.get("end")) || 140; const filtered = allChannelsCache.filter(ch => { const num = parseInt(ch.number); return num >= start && num <= end; }); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ channels: filtered, total: allChannelsCache.length, ready: channelsReady })); return; }
+  if (url.pathname === "/api/vod/all") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ movies: allVodCache, categories: vodCategoriesCache, total: allVodCache.length, ready: vodReady })); return; }
+  if (url.pathname === "/api/series/all") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ series: allSeriesCache, categories: seriesCategoriesCache, total: allSeriesCache.length, ready: seriesReady })); return; }
+  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/start") && req.method === "POST") { startStream(url.pathname.split("/")[2]); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "started" })); return; }
+  if (url.pathname.startsWith("/streams/") && url.pathname.endsWith("/stop") && req.method === "POST") { stopStream(url.pathname.split("/")[2]); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "stopped" })); return; }
+  if (url.pathname.startsWith("/hls/")) { const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", "")); if (fs.existsSync(filePath)) { res.writeHead(200, { "Content-Type": path.extname(filePath) === ".m3u8" ? "application/vnd.apple.mpegurl" : "video/mp2t" }); fs.createReadStream(filePath).pipe(res); } else { res.writeHead(404); res.end("Not found"); } return; }
   res.writeHead(404); res.end("Not found");
 });
 
