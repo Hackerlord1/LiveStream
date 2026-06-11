@@ -384,7 +384,7 @@ export default function Home() {
     // ========== FEATURED CHANNELS ==========
     const [featuredChannels, setFeaturedChannels] = useState<any[]>([]);
 
-    const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm1%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
+    const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm0%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
 
     useEffect(() => {
         loadMatches();
