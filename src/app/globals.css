@@ -348,11 +348,7 @@ select {
     min-height: 0;
 }
 
-.neumorphic-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 8px 8px 20px var(--neu-shadow-darker),
-        -8px -8px 20px var(--neu-shadow-light);
-}
+
 
 .neumorphic-video-container {
     background: #1a1a1a;
@@ -1289,9 +1285,7 @@ ins.adsbygoogle,
         opacity: 1;
     }
 
-    .neumorphic-card:hover {
-        transform: none;
-    }
+
 }
 
 /* ========== CHAT SCROLLBAR ========== */

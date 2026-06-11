@@ -557,14 +557,26 @@ export default function Home() {
                 <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4">
                     <div className="mb-2">
                         <div className="flex items-center gap-2 mb-4">
-                            <span className="text-2xl">🏆</span>
-                            <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                                World Cup Channels
-                            </h2>
-                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                (Ch. 1-144)
-                            </span>
-                        </div>
+                        <img
+                            src="https://go4.pw/wc26.png"
+                            alt="World Cup Logo"
+                            className="w-10 h-11 object-contain"
+                        />
+
+                        <h2
+                            className="text-xl font-bold"
+                            style={{ color: 'var(--text-primary)' }}
+                        >
+                            World Cup Channels
+                        </h2>
+
+                        <span
+                            className="text-sm"
+                            style={{ color: 'var(--text-muted)' }}
+                        >
+                            (Ch. 1-144)
+                        </span>
+                    </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                             {featuredChannels.map((ch: any) => (
                                 <Link
