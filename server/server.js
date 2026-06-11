@@ -14,7 +14,7 @@ if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 const streams = {};
 
 // ============================================================
-// STREAM FUNCTIONS (with auto-restart on crash)
+// STREAM FUNCTIONS (with reconnect flags + omit_endlist)
 // ============================================================
 function startStream(channelId) {
   if (streams[channelId]) return streams[channelId];
@@ -23,24 +23,27 @@ function startStream(channelId) {
   console.log(`Starting stream for channel ${channelId}...`);
 
   const ffmpeg = spawn("ffmpeg", [
+    "-reconnect", "1",
+    "-reconnect_streamed", "1",
+    "-reconnect_at_eof", "1",
+    "-reconnect_delay_max", "5",
     "-i", streamUrl,
     "-headers", "User-Agent: Lavf53.32.100\r\nIcy-MetaData: 1",
-    "-c", "copy", "-f", "hls", "-hls_time", "4", "-hls_list_size", "6",
-    "-hls_flags", "delete_segments",
+    "-c", "copy",
+    "-f", "hls",
+    "-hls_time", "4",
+    "-hls_list_size", "12",
+    "-hls_flags", "delete_segments+append_list+omit_endlist",
     "-hls_segment_filename", path.join(HLS_DIR, `${channelId}_%03d.ts`),
     m3u8Path,
   ]);
 
   ffmpeg.stderr.on("data", () => {});
 
-  // ═══════════════════════════════════════════════════
-  // FIXED: Auto-restart FFmpeg on crash
-  // ═══════════════════════════════════════════════════
   ffmpeg.on("close", (code) => {
     console.log(`Stream ${channelId} stopped (code ${code})`);
     const wasActive = !!streams[channelId];
     delete streams[channelId];
-
     if (wasActive && code !== 0 && code !== null) {
       console.log(`🔄 Auto-restarting stream ${channelId} in 3s...`);
       setTimeout(() => startStream(channelId), 3000);
@@ -51,7 +54,6 @@ function startStream(channelId) {
     console.error(`Stream ${channelId} error:`, err.message);
     const wasActive = !!streams[channelId];
     delete streams[channelId];
-
     if (wasActive) {
       console.log(`🔄 Auto-restarting stream ${channelId} after error in 3s...`);
       setTimeout(() => startStream(channelId), 3000);
@@ -112,46 +114,25 @@ async function loadAllChannels() {
   channelsReady = false;
   const seen = new Set();
   const tempCache = [];
-
   const firstPage = await fetchConvex("iptv:getOrderedList", { page: 0, genre: "*", sortby: "number" });
   if (!firstPage?.js?.total_items) { console.log("❌ Failed, retrying in 30s..."); setTimeout(loadAllChannels, 30000); return; }
-
   const totalPages = Math.ceil(firstPage.js.total_items / 14);
   const totalItems = firstPage.js.total_items;
   console.log(`📄 Pages: ${totalPages.toLocaleString()} | Target: ${totalItems.toLocaleString()} channels`);
-
-  if (firstPage.js.data) {
-    for (const ch of firstPage.js.data) {
-      const key = `${ch.id}_${ch.number}`;
-      if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); }
-    }
-  }
-
+  if (firstPage.js.data) { for (const ch of firstPage.js.data) { const key = `${ch.id}_${ch.number}`; if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); } } }
   let lastMilestone = 0;
   const milestones = [2000, 5000, 10000, 15000, 20000, 25000, 28000];
   let consecutiveFailures = 0;
-
   for (let p = 1; p < totalPages; p++) {
     const data = await fetchConvex("iptv:getOrderedList", { page: p, genre: "*", sortby: "number" }, 2);
-    if (data?.js?.data && data.js.data.length > 0) {
-      for (const ch of data.js.data) {
-        const key = `${ch.id}_${ch.number}`;
-        if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); }
-      }
-      consecutiveFailures = 0;
-    } else { consecutiveFailures++; }
+    if (data?.js?.data && data.js.data.length > 0) { for (const ch of data.js.data) { const key = `${ch.id}_${ch.number}`; if (!seen.has(key)) { seen.add(key); tempCache.push({ id: ch.id, name: ch.name, number: ch.number, logo: ch.logo || "" }); } } consecutiveFailures = 0; }
+    else { consecutiveFailures++; }
     if (consecutiveFailures > 30) { console.log(`⚠️ Pausing at page ${p}...`); await new Promise(r => setTimeout(r, 30000)); consecutiveFailures = 0; }
-
     const count = tempCache.length;
     for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 MILESTONE: ${m.toLocaleString()} channels`); lastMilestone = m; } }
-    if (p % 200 === 0 && p > 0) {
-      channelsProgress = { loaded: count, total: totalItems, percent: Math.round((p / totalPages) * 100) };
-      console.log(`⏳ ${count.toLocaleString()} channels (${channelsProgress.percent}%)`);
-      allChannelsCache = [...tempCache]; saveCacheToDisk();
-    }
+    if (p % 200 === 0 && p > 0) { channelsProgress = { loaded: count, total: totalItems, percent: Math.round((p / totalPages) * 100) }; console.log(`⏳ ${count.toLocaleString()} channels (${channelsProgress.percent}%)`); allChannelsCache = [...tempCache]; saveCacheToDisk(); }
     await new Promise(r => setTimeout(r, 30));
   }
-
   allChannelsCache = tempCache; channelsReady = true;
   channelsProgress = { loaded: allChannelsCache.length, total: allChannelsCache.length, percent: 100 };
   saveCacheToDisk();
@@ -162,24 +143,17 @@ async function loadAllChannels() {
 // VOD LOADING
 // ============================================================
 async function loadAllVod() {
-  console.log("🎬 ===== VOD =====");
-  vodReady = false;
+  console.log("🎬 ===== VOD ====="); vodReady = false;
   try {
-    const catData = await fetchConvex("iptv:getVodCategories", {});
-    vodCategoriesCache = catData?.js?.data || [];
-    console.log(`📂 Categories: ${vodCategoriesCache.length}`);
+    const catData = await fetchConvex("iptv:getVodCategories", {}); vodCategoriesCache = catData?.js?.data || [];
     const seen = new Set(); allVodCache = [];
     let p = 1, consecutiveFailures = 0, lastMilestone = 0;
     const milestones = [5000, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000];
     while (true) {
-      const data = await fetchConvex("iptv:getVodList", { page: p }, 2);
-      const movies = data?.js?.data || [];
-      const totalItems = data?.js?.total_items || 0;
+      const data = await fetchConvex("iptv:getVodList", { page: p }, 2); const movies = data?.js?.data || []; const totalItems = data?.js?.total_items || 0;
       if (movies.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
-      consecutiveFailures = 0;
-      for (const m of movies) { if (!seen.has(String(m.id))) { seen.add(String(m.id)); allVodCache.push(m); } }
-      const count = allVodCache.length;
-      for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 VOD: ${m.toLocaleString()} movies`); lastMilestone = m; } }
+      consecutiveFailures = 0; for (const m of movies) { if (!seen.has(String(m.id))) { seen.add(String(m.id)); allVodCache.push(m); } }
+      const count = allVodCache.length; for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 VOD: ${m.toLocaleString()} movies`); lastMilestone = m; } }
       if (p % 50 === 0) { const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0; vodProgress = { loaded: count, total: totalItems, percent }; console.log(`⏳ VOD: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`); }
       p++; if (totalItems > 0 && count >= totalItems) break;
       await new Promise(r => setTimeout(r, 100));
@@ -193,24 +167,17 @@ async function loadAllVod() {
 // SERIES LOADING
 // ============================================================
 async function loadAllSeries() {
-  console.log("📺 ===== SERIES =====");
-  seriesReady = false;
+  console.log("📺 ===== SERIES ====="); seriesReady = false;
   try {
-    const catData = await fetchConvex("iptv:getSeriesCategories", {});
-    seriesCategoriesCache = catData?.js?.data || [];
-    console.log(`📂 Categories: ${seriesCategoriesCache.length}`);
+    const catData = await fetchConvex("iptv:getSeriesCategories", {}); seriesCategoriesCache = catData?.js?.data || [];
     const seen = new Set(); allSeriesCache = [];
     let p = 1, consecutiveFailures = 0, lastMilestone = 0;
     const milestones = [5000, 10000, 15000, 20000, 25000, 27000];
     while (true) {
-      const data = await fetchConvex("iptv:getSeriesList", { page: p }, 2);
-      const series = data?.js?.data || [];
-      const totalItems = data?.js?.total_items || 0;
+      const data = await fetchConvex("iptv:getSeriesList", { page: p }, 2); const series = data?.js?.data || []; const totalItems = data?.js?.total_items || 0;
       if (series.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
-      consecutiveFailures = 0;
-      for (const s of series) { if (!seen.has(String(s.id))) { seen.add(String(s.id)); allSeriesCache.push(s); } }
-      const count = allSeriesCache.length;
-      for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 Series: ${m.toLocaleString()} series`); lastMilestone = m; } }
+      consecutiveFailures = 0; for (const s of series) { if (!seen.has(String(s.id))) { seen.add(String(s.id)); allSeriesCache.push(s); } }
+      const count = allSeriesCache.length; for (const m of milestones) { if (count >= m && lastMilestone < m) { console.log(`🎯 Series: ${m.toLocaleString()} series`); lastMilestone = m; } }
       if (p % 50 === 0) { const percent = totalItems > 0 ? Math.round((count / totalItems) * 100) : 0; seriesProgress = { loaded: count, total: totalItems, percent }; console.log(`⏳ Series: ${count.toLocaleString()} / ${totalItems.toLocaleString()} (${percent}%) - page ${p}`); }
       p++; if (totalItems > 0 && count >= totalItems) break;
       await new Promise(r => setTimeout(r, 100));
@@ -248,11 +215,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/progress") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      channels: { loaded: channelsProgress.loaded, total: channelsProgress.total, percent: channelsProgress.percent, ready: channelsReady },
-      vod: { loaded: vodProgress.loaded, total: vodProgress.total, percent: vodProgress.percent, ready: vodReady },
-      series: { loaded: seriesProgress.loaded, total: seriesProgress.total, percent: seriesProgress.percent, ready: seriesReady },
-    }));
+    res.end(JSON.stringify({ channels: { loaded: channelsProgress.loaded, total: channelsProgress.total, percent: channelsProgress.percent, ready: channelsReady }, vod: { loaded: vodProgress.loaded, total: vodProgress.total, percent: vodProgress.percent, ready: vodReady }, series: { loaded: seriesProgress.loaded, total: seriesProgress.total, percent: seriesProgress.percent, ready: seriesReady } }));
     return;
   }
   if (url.pathname === "/health") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ status: "ok", streams: Object.keys(streams), channels: allChannelsCache.length, vod: allVodCache.length, series: allSeriesCache.length })); return; }
