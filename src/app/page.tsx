@@ -381,10 +381,27 @@ export default function Home() {
     const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
     const [showDonateBanner, setShowDonateBanner] = useState(true);
 
+    // ========== FEATURED CHANNELS ==========
+    const [featuredChannels, setFeaturedChannels] = useState<any[]>([]);
+
     const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm1%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
 
     useEffect(() => {
         loadMatches();
+    }, []);
+
+    // ========== LOAD FEATURED CHANNELS ==========
+    useEffect(() => {
+        async function loadChannels() {
+            try {
+                const res = await fetch("https://hls.bravestream.live/api/channels/range?start=1&end=144");
+                const data = await res.json();
+                if (data.channels) setFeaturedChannels(data.channels);
+            } catch (e) {
+                // Silently fail - featured channels are optional
+            }
+        }
+        loadChannels();
     }, []);
 
     const loadMatches = async () => {
@@ -503,7 +520,6 @@ export default function Home() {
                     <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6">
                         <div className="flex items-center justify-center py-3 gap-3 sm:gap-4">
                             <FaHeart className="w-4 h-4 text-red-400 animate-pulse flex-shrink-0 hidden sm:block" />
-                            {/* ✅ FIXED — Added inline style to force white */}
                             <p
                                 className="text-sm sm:text-base font-medium text-center"
                                 style={{ color: '#ffffff' }}
@@ -531,6 +547,65 @@ export default function Home() {
                             >
                                 <FaTimes className="w-4 h-4" />
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== FEATURED CHANNELS SECTION (NEW) ===== */}
+            {featuredChannels.length > 0 && (
+                <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 py-4">
+                    <div className="mb-2">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">🏆</span>
+                            <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                                World Cup Channels
+                            </h2>
+                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                (Ch. 1-144)
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                            {featuredChannels.map((ch: any) => (
+                                <Link
+                                    key={ch.id}
+                                    href={`/iptv/watch/${ch.id}`}
+                                    className="p-2.5 rounded-xl text-center hover:shadow-lg transition-all"
+                                    style={{
+                                        backgroundColor: 'var(--surface-primary)',
+                                        border: '1px solid var(--border-primary)',
+                                    }}
+                                    title={ch.name}
+                                >
+                                    {ch.logo ? (
+                                        <img
+                                            src={ch.logo}
+                                            alt={ch.name}
+                                            className="h-12 mx-auto mb-1.5 object-contain"
+                                            loading="lazy"
+                                        />
+                                    ) : (
+                                        <span className="text-2xl block mb-1.5">📺</span>
+                                    )}
+                                    <p
+                                        className="text-[11px] font-medium leading-tight"
+                                        style={{
+                                            color: 'var(--text-primary)',
+                                            overflow: 'hidden',
+                                            display: '-webkit-box',
+                                            WebkitLineClamp: 3,
+                                            WebkitBoxOrient: 'vertical',
+                                            wordBreak: 'break-word',
+                                            minHeight: '2.5rem',
+                                        }}
+                                    >
+                                        {ch.name}
+                                    </p>
+                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                        Ch. {ch.number}
+                                    </p>
+                                </Link>
+                            ))}
                         </div>
                     </div>
                 </div>
