@@ -4,7 +4,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 
-// Using Inter font (better for SEO and readability than Geist)
 const inter = Inter({
     subsets: ["latin"],
     display: 'swap',
@@ -142,7 +141,6 @@ export default function RootLayout({
     return (
         <html lang="en" className={inter.variable} suppressHydrationWarning>
             <head>
-                {/* Structured Data for Sports Website */}
                 <script
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{
@@ -153,30 +151,13 @@ export default function RootLayout({
                             "url": "https://bravestream.live",
                             "logo": "https://bravestream.live/logo.png",
                             "description": "Free live sports streaming platform for football, basketball, American football, hockey, and more.",
-                            "founder": {
-                                "@type": "Person",
-                                "name": "BraveStream Team"
-                            },
+                            "founder": { "@type": "Person", "name": "BraveStream Team" },
                             "foundingDate": "2024",
-                            "sameAs": [
-                                "https://twitter.com/bravestream",
-                                "https://facebook.com/bravestream"
-                            ],
-                            "knowsAbout": [
-                                "Live Sports Streaming",
-                                "Football",
-                                "Basketball",
-                                "American Football",
-                                "Hockey",
-                                "Tennis",
-                                "Boxing",
-                                "MMA"
-                            ]
+                            "sameAs": ["https://twitter.com/bravestream", "https://facebook.com/bravestream"],
+                            "knowsAbout": ["Live Sports Streaming", "Football", "Basketball", "American Football", "Hockey", "Tennis", "Boxing", "MMA"]
                         })
                     }}
                 />
-
-                {/* Additional structured data for search */}
                 <script
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{
@@ -194,12 +175,8 @@ export default function RootLayout({
                         })
                     }}
                 />
-
-                {/* Preconnect to critical domains for performance */}
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-
-                {/* DNS Prefetch for API domains */}
                 <link rel="dns-prefetch" href="https://api.bravestream.live" />
             </head>
             <body
@@ -208,13 +185,12 @@ export default function RootLayout({
                     backgroundColor: 'var(--neu-bg-page)',
                     color: 'var(--text-secondary)',
                 }}
+                suppressHydrationWarning
             >
                 <ConvexClientProvider>
-                    {/* Navigation will be added here */}
                     <main className="min-h-screen">
                         {children}
                     </main>
-                    {/* Footer will be added here */}
                 </ConvexClientProvider>
             </body>
         </html>

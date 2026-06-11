@@ -81,7 +81,7 @@ async function fetchConvex(path, args = {}, retries = 2) {
 }
 
 // ============================================================
-// CHANNEL LOADING (unchanged)
+// CHANNEL LOADING
 // ============================================================
 async function loadAllChannels() {
   console.log("\n🔄 ===== CHANNELS =====");
@@ -135,7 +135,7 @@ async function loadAllChannels() {
 }
 
 // ============================================================
-// VOD LOADING — ALL movies
+// VOD LOADING
 // ============================================================
 async function loadAllVod() {
   console.log("🎬 ===== VOD =====");
@@ -156,7 +156,7 @@ async function loadAllVod() {
       const movies = data?.js?.data || [];
       const totalItems = data?.js?.total_items || 0;
 
-      if (movies.length === 0) { consecutiveFailures++; if (consecutiveFailures > 5) break; await new Promise(r => setTimeout(r, 5000)); continue; }
+      if (movies.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
 
       consecutiveFailures = 0;
       for (const m of movies) { if (!seen.has(String(m.id))) { seen.add(String(m.id)); allVodCache.push(m); } }
@@ -182,7 +182,7 @@ async function loadAllVod() {
 }
 
 // ============================================================
-// SERIES LOADING — ALL series
+// SERIES LOADING
 // ============================================================
 async function loadAllSeries() {
   console.log("📺 ===== SERIES =====");
@@ -203,7 +203,7 @@ async function loadAllSeries() {
       const series = data?.js?.data || [];
       const totalItems = data?.js?.total_items || 0;
 
-      if (series.length === 0) { consecutiveFailures++; if (consecutiveFailures > 5) break; await new Promise(r => setTimeout(r, 5000)); continue; }
+      if (series.length === 0) { consecutiveFailures++; if (consecutiveFailures > 10) break; await new Promise(r => setTimeout(r, 5000)); continue; }
 
       consecutiveFailures = 0;
       for (const s of series) { if (!seen.has(String(s.id))) { seen.add(String(s.id)); allSeriesCache.push(s); } }
@@ -229,17 +229,26 @@ async function loadAllSeries() {
 }
 
 // ============================================================
-// SEQUENTIAL STARTUP — Channels first, then VOD + Series in parallel
+// SEQUENTIAL STARTUP — Channels → VOD → Series
 // ============================================================
+let isLoading = false;
+
 async function loadAll() {
+  if (isLoading) { console.log("⚠️ Load already in progress, skipping..."); return; }
+  isLoading = true;
+
   console.log("📡 ===== STARTING DATA LOAD =====");
   await loadAllChannels();
-  await Promise.all([loadAllVod(), loadAllSeries()]);
+  await loadAllVod();
+  await loadAllSeries();
   console.log("🎉 ===== ALL DATA LOADED =====");
+
+  isLoading = false;
 }
+
 loadAll();
 
-setInterval(async () => { await loadAll(); }, 3 * 60 * 60 * 1000);
+// NO scheduled refresh — data loads once on startup only
 
 // ============================================================
 // HTTP SERVER

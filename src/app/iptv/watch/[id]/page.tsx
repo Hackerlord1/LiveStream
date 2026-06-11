@@ -67,6 +67,160 @@ function getCachedChannel(channelId: number): Channel | null {
   }
 }
 
+function isPlayInterruptedError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+
+  return (
+    message.includes("play() request was interrupted") ||
+    message.includes("The play() request was interrupted") ||
+    message.includes("interrupted by a call to pause") ||
+    message.includes("interrupted by a new load request")
+  );
+}
+
+async function safePlay(video: HTMLVideoElement) {
+  try {
+    const playPromise = video.play();
+
+    if (playPromise !== undefined) {
+      await playPromise;
+    }
+
+    return true;
+  } catch (error) {
+    if (isPlayInterruptedError(error)) {
+      console.warn(
+        "Play request was interrupted during channel switch. This is safe to ignore.",
+        error
+      );
+
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function getSegmentLinesFromPlaylist(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.filter((line) => {
+    if (line.startsWith("#")) return false;
+
+    return (
+      line.includes(".ts") ||
+      line.includes(".m4s") ||
+      line.includes(".aac") ||
+      line.includes(".mp4")
+    );
+  });
+}
+
+async function waitForPlaylistReady(
+  playlistUrl: string,
+  options?: {
+    retries?: number;
+    delayMs?: number;
+    signal?: AbortSignal;
+    onStatus?: (message: string) => void;
+  }
+) {
+  const retries = options?.retries ?? 30;
+  const delayMs = options?.delayMs ?? 1500;
+
+  let lastError = "";
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    if (options?.signal?.aborted) {
+      throw new Error("Playback cancelled.");
+    }
+
+    try {
+      options?.onStatus?.(`Preparing stream... ${attempt}/${retries}`);
+
+      const cacheBustedPlaylistUrl = `${playlistUrl}?t=${Date.now()}`;
+
+      const playlistRes = await fetch(cacheBustedPlaylistUrl, {
+        method: "GET",
+        cache: "no-store",
+        signal: options?.signal,
+      });
+
+      if (!playlistRes.ok) {
+        lastError = `Playlist returned HTTP ${playlistRes.status}`;
+      } else {
+        const playlistText = await playlistRes.text();
+
+        console.log("Playlist content preview:", playlistText.slice(0, 1000));
+
+        const hasM3uHeader = playlistText.includes("#EXTM3U");
+        const segmentLines = getSegmentLinesFromPlaylist(playlistText);
+
+        if (hasM3uHeader && segmentLines.length > 0) {
+          const firstSegmentUrl = new URL(
+            segmentLines[segmentLines.length - 1],
+            playlistUrl
+          ).toString();
+
+          console.log("Checking first playable segment:", firstSegmentUrl);
+
+          const segmentRes = await fetch(`${firstSegmentUrl}?t=${Date.now()}`, {
+            method: "GET",
+            cache: "no-store",
+            signal: options?.signal,
+          });
+
+          console.log("First segment response:", {
+            status: segmentRes.status,
+            contentType: segmentRes.headers.get("content-type"),
+            contentLength: segmentRes.headers.get("content-length"),
+          });
+
+          if (segmentRes.ok) {
+            console.log("Playlist and segment are ready:", {
+              playlist: cacheBustedPlaylistUrl,
+              segment: firstSegmentUrl,
+            });
+
+            return cacheBustedPlaylistUrl;
+          }
+
+          lastError = `Playlist exists, but first segment returned HTTP ${segmentRes.status}`;
+        } else if (hasM3uHeader) {
+          lastError = "Playlist exists but has no media segment URLs yet.";
+        } else {
+          lastError = "Playlist response is not a valid HLS playlist.";
+        }
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        throw new Error("Playback cancelled.");
+      }
+
+      lastError = error?.message || "Could not fetch playlist.";
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  throw new Error(lastError || "Playlist was not ready.");
+}
+
+function getReadableHlsError(data: any) {
+  const type = data?.type || "unknown";
+  const details = data?.details || "unknown";
+  const responseCode = data?.response?.code;
+
+  if (responseCode) {
+    return `HLS error: ${type} / ${details}. HTTP ${responseCode}.`;
+  }
+
+  return `HLS error: ${type} / ${details}.`;
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
 
@@ -125,6 +279,8 @@ export default function IptvWatchPage() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<any>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const playbackStartedRef = useRef(false);
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [epgData, setEpgData] = useState<EpgResponse | null>(null);
@@ -133,11 +289,11 @@ export default function IptvWatchPage() {
   const [status, setStatus] = useState("Loading channel...");
 
   const programs = useMemo(() => {
-  if (!epgData) return [];
-  // The response has programs directly in js array
-  const data = epgData.js;
-  return Array.isArray(data) ? data : data?.data || [];
-}, [epgData]);
+    if (!epgData) return [];
+
+    const data = epgData.js;
+    return Array.isArray(data) ? data : data?.data || [];
+  }, [epgData]);
 
   const currentProgram = programs[0];
   const channelTitle = channel?.name || `Channel ${channelId}`;
@@ -146,53 +302,53 @@ export default function IptvWatchPage() {
     let cancelled = false;
 
     async function loadChannelInfo() {
-  if (Number.isNaN(channelId)) {
-    setError("Invalid channel selected.");
-    setLoadingInfo(false);
-    return;
-  }
+      if (Number.isNaN(channelId)) {
+        setError("Invalid channel selected.");
+        setLoadingInfo(false);
+        return;
+      }
 
-  try {
-    setLoadingInfo(true);
-    setStatus("Loading channel...");
-    setError("");
+      try {
+        setLoadingInfo(true);
+        setStatus("Loading channel...");
+        setError("");
 
-    const cachedChannel = getCachedChannel(channelId);
+        const cachedChannel = getCachedChannel(channelId);
 
-    if (cachedChannel) {
-      setChannel(cachedChannel);
-    } else {
-      setChannel({
-        id: channelId,
-        name: `Channel ${channelId}`,
-      });
+        if (cachedChannel) {
+          setChannel(cachedChannel);
+        } else {
+          setChannel({
+            id: channelId,
+            name: `Channel ${channelId}`,
+          });
+        }
+
+        const [epgResult] = await Promise.allSettled([
+          callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
+        ]);
+
+        if (cancelled) return;
+
+        if (epgResult.status === "fulfilled") {
+          setEpgData(epgResult.value as EpgResponse);
+        }
+      } catch (e) {
+        console.error("Failed to load channel information:", e);
+
+        if (!cancelled) {
+          setChannel({
+            id: channelId,
+            name: `Channel ${channelId}`,
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingInfo(false);
+          setStatus("");
+        }
+      }
     }
-
-    const [epgResult] = await Promise.allSettled([
-      callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
-    ]);
-
-    if (cancelled) return;
-
-    if (epgResult.status === "fulfilled") {
-      setEpgData(epgResult.value as EpgResponse);
-    }
-  } catch (e) {
-    console.error("Failed to load channel information:", e);
-
-    if (!cancelled) {
-      setChannel({
-        id: channelId,
-        name: `Channel ${channelId}`,
-      });
-    }
-  } finally {
-    if (!cancelled) {
-      setLoadingInfo(false);
-      setStatus("");
-    }
-  }
-}
 
     loadChannelInfo();
 
@@ -207,102 +363,309 @@ export default function IptvWatchPage() {
     const video = videoRef.current;
     let cancelled = false;
 
+    playbackStartedRef.current = false;
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    const onLoadedMetadata = () => {
+      console.log("Video loaded metadata:", {
+        duration: video.duration,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        readyState: video.readyState,
+        networkState: video.networkState,
+      });
+    };
+
+    const onCanPlay = () => {
+      console.log("Video can play:", {
+        readyState: video.readyState,
+        networkState: video.networkState,
+      });
+    };
+
+    const onPlaying = () => {
+      console.log("Video playing:", {
+        currentTime: video.currentTime,
+        readyState: video.readyState,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+      });
+
+      playbackStartedRef.current = true;
+      setStatus("");
+      setError("");
+    };
+
+    const onWaiting = () => {
+      console.log("Video waiting/buffering:", {
+        currentTime: video.currentTime,
+        readyState: video.readyState,
+        networkState: video.networkState,
+      });
+
+      if (!playbackStartedRef.current) {
+        setStatus("Buffering live stream...");
+      }
+    };
+
+    const onVideoError = () => {
+      console.error("Native video element error:", {
+        error: video.error,
+        readyState: video.readyState,
+        networkState: video.networkState,
+      });
+
+      setStatus("");
+      setError(
+        "The browser video element failed to decode this stream. This usually means unsupported codec or invalid media segments."
+      );
+    };
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("error", onVideoError);
+
     async function play() {
+      const playlistUrl = `${HLS_BASE}/hls/${channelId}.m3u8`;
+
+      const tryStartPlayback = async (source: string) => {
+        if (cancelled || !videoRef.current) return;
+
+        console.log(`Trying video playback from: ${source}`);
+
+        try {
+          const played = await safePlay(video);
+
+          if (played) {
+            console.log(`Video playback started from: ${source}`);
+            playbackStartedRef.current = true;
+            setStatus("");
+            setError("");
+          } else {
+            console.log(
+              `Video play was interrupted safely from ${source}, probably due to channel switch.`
+            );
+          }
+        } catch (err) {
+          console.warn(`Playback attempt failed from ${source}:`, err);
+
+          setStatus("");
+          setError(
+            "The stream loaded, but the browser could not start playback. Press play or check if this channel uses unsupported codecs."
+          );
+        }
+      };
+
       try {
         setError("");
         setStatus("Starting stream...");
-
-        const startRes = await fetch(`${HLS_BASE}/streams/${channelId}/start`, {
-          method: "POST",
-        });
-
-        if (!startRes.ok) {
-          throw new Error(`Failed to start stream: ${startRes.status}`);
-        }
-      } catch (e) {
-        console.error("Failed to start stream:", e);
-        setError("Could not start the stream. Please check the HLS server.");
-        setStatus("");
-        return;
-      }
-
-      if (cancelled) return;
-
-      await new Promise((resolve) => setTimeout(resolve, 4000));
-
-      if (cancelled || !videoRef.current) return;
-
-      setStatus("Connecting to live stream...");
-
-      const hlsUrl = `${HLS_BASE}/hls/${channelId}.m3u8`;
-
-      try {
-        const Hls = (await import("hls.js")).default;
 
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
 
+        try {
+          if (!video.paused) {
+            video.pause();
+          }
+
+          video.removeAttribute("src");
+          video.load();
+        } catch (resetError) {
+          console.warn("Safe video reset warning:", resetError);
+        }
+
+        const startRes = await fetch(`${HLS_BASE}/streams/${channelId}/start`, {
+          method: "POST",
+          cache: "no-store",
+          signal: abortRef.current?.signal,
+        });
+
+        let startText = "";
+
+        try {
+          startText = await startRes.text();
+        } catch {
+          startText = "";
+        }
+
+        console.log("Stream start response:", {
+          channelId,
+          status: startRes.status,
+          body: startText,
+        });
+
+        if (!startRes.ok) {
+          throw new Error(
+            `Failed to start stream. Server returned HTTP ${startRes.status}.`
+          );
+        }
+
+        if (cancelled) return;
+
+        const readyPlaylistUrl = await waitForPlaylistReady(playlistUrl, {
+          retries: 30,
+          delayMs: 1500,
+          signal: abortRef.current?.signal,
+          onStatus: setStatus,
+        });
+
+        if (cancelled || !videoRef.current) return;
+
+        setStatus("Connecting to live stream...");
+
+        const Hls = (await import("hls.js")).default;
+
         if (Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 90,
-            maxBufferLength: 30,
-          });
-
-          hls.loadSource(hlsUrl);
-          hls.attachMedia(video);
-
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            setStatus("");
-            setError("");
-
-            video.play().catch((err) => {
-              console.warn("Autoplay blocked or failed:", err);
-            });
-          });
-
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            console.log("HLS error:", data);
-
-            if (data.fatal) {
-              setError("Stream interrupted. Trying to recover...");
-
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                hls.startLoad();
-              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                hls.recoverMediaError();
-              } else {
-                hls.destroy();
-
-                setTimeout(() => {
-                  if (!cancelled && videoRef.current) {
-                    setError("");
-                    window.location.reload();
-                  }
-                }, 3000);
-              }
-            }
+            lowLatencyMode: false,
+            backBufferLength: 30,
+            maxBufferLength: 20,
+            maxMaxBufferLength: 40,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 8,
+            manifestLoadingMaxRetry: 6,
+            manifestLoadingRetryDelay: 1000,
+            levelLoadingMaxRetry: 6,
+            levelLoadingRetryDelay: 1000,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 1000,
           });
 
           hlsRef.current = hls;
-        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = hlsUrl;
-          setStatus("");
 
-          video.play().catch((err) => {
-            console.warn("Autoplay blocked or failed:", err);
+          hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+            console.log("HLS media attached.");
           });
+
+          hls.on(Hls.Events.MANIFEST_LOADING, () => {
+            console.log("HLS manifest loading:", readyPlaylistUrl);
+          });
+
+          hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+            console.log("HLS manifest parsed:", data);
+            setStatus("Buffering live stream...");
+            tryStartPlayback("MANIFEST_PARSED");
+          });
+
+          hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+            console.log("HLS level loaded:", {
+              level: data?.level,
+              live: data?.details?.live,
+              fragments: data?.details?.fragments?.length,
+              targetduration: data?.details?.targetduration,
+              totalduration: data?.details?.totalduration,
+            });
+          });
+
+          hls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
+            console.log("HLS fragment loading:", {
+              url: data?.frag?.url,
+              sn: data?.frag?.sn,
+              type: data?.frag?.type,
+            });
+          });
+
+          hls.on(Hls.Events.FRAG_LOADED, (_event, data) => {
+            console.log("HLS fragment loaded:", {
+              url: data?.frag?.url,
+              sn: data?.frag?.sn,
+              // Some Hls.js typings don't include `stats` on FragLoadedData, so
+              // use a safe any-cast to avoid TS errors while preserving runtime info.
+              stats: (data as any)?.stats,
+            });
+          });
+
+          hls.on(Hls.Events.FRAG_PARSED, (_event, data) => {
+            console.log("HLS fragment parsed:", {
+              url: data?.frag?.url,
+              sn: data?.frag?.sn,
+              type: data?.frag?.type,
+            });
+          });
+
+          hls.on(Hls.Events.BUFFER_APPENDING, (_event, data) => {
+            console.log("HLS buffer appending:", {
+              type: data?.type,
+              length: data?.data?.length,
+            });
+          });
+
+          hls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
+            console.log("HLS buffer appended:", data);
+
+            if (video.paused && !playbackStartedRef.current) {
+              tryStartPlayback("BUFFER_APPENDED");
+            }
+          });
+
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            console.error("HLS error:", {
+              type: data?.type,
+              details: data?.details,
+              fatal: data?.fatal,
+              url: data?.url || data?.frag?.url,
+              response: data?.response,
+              error: data?.error,
+            });
+
+            const readableError = getReadableHlsError(data);
+
+            if (!data.fatal) {
+              console.warn("Non-fatal HLS error:", readableError);
+              return;
+            }
+
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              setError("Network issue while loading this stream. Retrying...");
+              hls.startLoad();
+              return;
+            }
+
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              setError("Media decoding issue. Trying to recover...");
+              hls.recoverMediaError();
+              return;
+            }
+
+            hls.destroy();
+            hlsRef.current = null;
+
+            setStatus("");
+            setError(
+              `${readableError} This channel failed to play. The IPTV source may be offline, unsupported, or the HLS server failed to generate a browser-compatible stream.`
+            );
+          });
+
+          hls.attachMedia(video);
+          hls.loadSource(readyPlaylistUrl);
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = readyPlaylistUrl;
+          setStatus("Buffering live stream...");
+
+          await tryStartPlayback("NATIVE_HLS");
         } else {
           setStatus("");
           setError("Browser does not support HLS playback.");
         }
-      } catch (e) {
-        console.error("Failed to initialize HLS:", e);
+      } catch (e: any) {
+        console.error("Failed to play stream:", e);
+
+        if (cancelled) return;
+
         setStatus("");
-        setError("Failed to initialize video player.");
+
+        const message = e?.message || "Unknown playback error.";
+
+        setError(
+          `Could not play this channel. ${message} Check whether the HLS server generated a valid playlist and reachable segments for channel ${channelId}.`
+        );
       }
     }
 
@@ -310,6 +673,15 @@ export default function IptvWatchPage() {
 
     return () => {
       cancelled = true;
+
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("error", onVideoError);
+
+      abortRef.current?.abort();
+      abortRef.current = null;
 
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -469,6 +841,7 @@ export default function IptvWatchPage() {
                   autoPlay
                   muted
                   playsInline
+                  preload="auto"
                   className="aspect-video w-full bg-black"
                   style={{ maxHeight: "72vh" }}
                 />
@@ -476,75 +849,110 @@ export default function IptvWatchPage() {
             </div>
 
             <aside
-  className="p-4 lg:border-l"
-  style={{
-    backgroundColor: "var(--surface-secondary)",
-    borderColor: "var(--border-primary)",
-  }}
->
-  <div className="mb-3 flex items-center justify-between">
-    <div>
-      <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-        Program Guide
-      </h2>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        Current and upcoming
-      </p>
-    </div>
-    <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-      style={{ backgroundColor: "var(--error-bg)", color: "var(--error-text)", border: "1px solid var(--brand-red)" }}>
-      EPG
-    </span>
-  </div>
+              className="p-4 lg:border-l"
+              style={{
+                backgroundColor: "var(--surface-secondary)",
+                borderColor: "var(--border-primary)",
+              }}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2
+                    className="text-sm font-semibold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Program Guide
+                  </h2>
 
-  {programs.length > 0 ? (
-    <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
-      {programs.map((program, i) => {
-        const title = program.name || program.title || "Untitled";
-        const isNow = i === 0;
+                  <p
+                    className="text-xs"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Current and upcoming
+                  </p>
+                </div>
 
-        return (
-          <div
-            key={program.id || `${title}-${i}`}
-            className="rounded-xl border p-2.5 transition hover:scale-[1.01]"
-            style={{
-              backgroundColor: isNow ? "var(--error-bg)" : "var(--surface-primary)",
-              borderColor: isNow ? "var(--brand-red)" : "var(--border-primary)",
-            }}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-semibold line-clamp-2" style={{ color: "var(--text-primary)" }}>
-                {title}
-              </p>
-              {isNow && (
-                <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white flex-shrink-0">
-                  On Air
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: "var(--error-bg)",
+                    color: "var(--error-text)",
+                    border: "1px solid var(--brand-red)",
+                  }}
+                >
+                  EPG
                 </span>
+              </div>
+
+              {programs.length > 0 ? (
+                <div className="max-h-[50vh] space-y-1.5 overflow-y-auto">
+                  {programs.map((program, i) => {
+                    const title = program.name || program.title || "Untitled";
+                    const isNow = i === 0;
+
+                    return (
+                      <div
+                        key={program.id || `${title}-${i}`}
+                        className="rounded-xl border p-2.5"
+                        style={{
+                          backgroundColor: isNow
+                            ? "var(--error-bg)"
+                            : "var(--surface-primary)",
+                          borderColor: isNow
+                            ? "var(--brand-red)"
+                            : "var(--border-primary)",
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p
+                            className="line-clamp-2 text-xs font-semibold"
+                            style={{ color: "var(--text-primary)" }}
+                          >
+                            {title}
+                          </p>
+
+                          {isNow && (
+                            <span className="flex-shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+                              On Air
+                            </span>
+                          )}
+                        </div>
+
+                        {(program.time || program.time_to) && (
+                          <p
+                            className="mt-0.5 text-[11px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {program.time || "--:--"} –{" "}
+                            {program.time_to || "--:--"}
+                          </p>
+                        )}
+
+                        {program.description && (
+                          <p
+                            className="mt-1 line-clamp-1 text-[11px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {program.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  className="rounded-xl border border-dashed p-4 text-center text-xs"
+                  style={{
+                    backgroundColor: "var(--surface-primary)",
+                    borderColor: "var(--border-primary)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  No program guide available.
+                </div>
               )}
-            </div>
-
-            {(program.time || program.time_to) && (
-              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
-                {program.time || "--:--"} – {program.time_to || "--:--"}
-              </p>
-            )}
-
-            {program.description && (
-              <p className="mt-1 line-clamp-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                {program.description}
-              </p>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  ) : (
-    <div className="rounded-xl border border-dashed p-4 text-center text-xs"
-      style={{ backgroundColor: "var(--surface-primary)", borderColor: "var(--border-primary)", color: "var(--text-muted)" }}>
-      No program guide available.
-    </div>
-  )}
-</aside>
+            </aside>
           </div>
         </section>
       </main>
