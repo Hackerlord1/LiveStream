@@ -32,7 +32,7 @@ export default function SeriesPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`${VPS_URL}/api/series/all`);
+        const res = await fetch(`/api/series-data`);
         const data = await res.json();
         setCategories(data.categories || []);
         setAllSeries(data.series || []);

@@ -33,7 +33,7 @@ export default function VodPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`${VPS_URL}/api/vod/all`);
+        const res = await fetch(`/api/vod-data`);
         const data = await res.json();
         setCategories(data.categories || []);
         setAllMovies(data.movies || []);
