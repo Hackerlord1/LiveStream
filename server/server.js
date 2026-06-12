@@ -6,16 +6,35 @@ const path = require("path");
 const PORT = 8080;
 const HLS_DIR = path.join(__dirname, "hls");
 const STREAM_BASE = "http://seatv.xyz/B2X4MX4S65WNTPY/bc65CNzbec";
+const CACHE_FILE = path.join(__dirname, "channels_cache.json");
+const TOTAL_CHANNELS_ESTIMATE = 28400;
 
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
 const streams = {};
-const restartCounters = {};
 const viewers = {};
+const restartCounters = {};
 const stopTimers = {};
 
 // ============================================================
-// STREAM START
+// ✅ FORCE CLEAN START (CACHE RESET)
+// ============================================================
+console.log("🧹 Resetting cache...");
+
+if (fs.existsSync(CACHE_FILE)) {
+  fs.unlinkSync(CACHE_FILE);
+  console.log("🗑️ Cache file deleted");
+}
+
+// ============================================================
+// CHANNEL CACHE STATE
+// ============================================================
+let allChannelsCache = [];
+let channelsReady = false;
+let channelsProgress = { loaded: 0, total: TOTAL_CHANNELS_ESTIMATE, percent: 0 };
+
+// ============================================================
+// STREAM FUNCTIONS
 // ============================================================
 function startStream(channelId) {
   if (!channelId) return;
@@ -28,8 +47,7 @@ function startStream(channelId) {
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const streamUrl = `${STREAM_BASE}/${channelId}`;
 
-  console.log(`▶️ Starting stream ${channelId}`);
-  console.log(`📡 Source: ${streamUrl}`);
+  console.log(`▶️ Starting ${channelId}`);
 
   const ffmpeg = spawn("ffmpeg", [
     "-loglevel", "error",
@@ -45,11 +63,10 @@ function startStream(channelId) {
     "-avoid_negative_ts", "make_zero",
 
     "-c", "copy",
-
     "-f", "hls",
-    "-hls_time", "4",
-    "-hls_list_size", "15", // ~60s buffer
 
+    "-hls_time", "4",
+    "-hls_list_size", "15",
     "-hls_flags", "delete_segments+append_list+omit_endlist",
 
     "-hls_segment_filename",
@@ -59,52 +76,20 @@ function startStream(channelId) {
   ]);
 
   streams[channelId] = ffmpeg;
+  restartCounters[channelId] = 0;
 
-  if (!restartCounters[channelId]) restartCounters[channelId] = 0;
-
-  // ✅ Reset counter if stable
   const stableTimer = setTimeout(() => {
     restartCounters[channelId] = 0;
-    console.log(`✅ Stream ${channelId} stable`);
   }, 20000);
-
-  ffmpeg.stderr.on("data", (data) => {
-    console.log(`FFmpeg ${channelId}: ${data}`);
-  });
 
   ffmpeg.on("close", () => {
     clearTimeout(stableTimer);
+
     delete streams[channelId];
 
-    // ✅ CRITICAL FIX: do NOT restart if no viewers
-    if (!viewers[channelId] || viewers[channelId] === 0) {
+    // ✅ critical fix
+    if (!viewers[channelId]) {
       console.log(`⛔ No viewers → not restarting ${channelId}`);
-      return;
-    }
-
-    restartCounters[channelId]++;
-
-    if (restartCounters[channelId] > 10) {
-      console.log(`🚫 Disabled ${channelId} after 10 failures`);
-      return;
-    }
-
-    console.log(
-      `🔄 Restarting ${channelId} (${restartCounters[channelId]}/10)`
-    );
-
-    setTimeout(() => startStream(channelId), 5000);
-  });
-
-  ffmpeg.on("error", (err) => {
-    clearTimeout(stableTimer);
-    delete streams[channelId];
-
-    console.error(`⚠️ FFmpeg error ${channelId}: ${err.message}`);
-
-    // ✅ respect viewer condition
-    if (!viewers[channelId] || viewers[channelId] === 0) {
-      console.log(`⛔ Not restarting ${channelId} (no viewers)`);
       return;
     }
 
@@ -115,13 +100,11 @@ function startStream(channelId) {
       return;
     }
 
+    console.log(`🔄 Restarting ${channelId}`);
     setTimeout(() => startStream(channelId), 5000);
   });
 }
 
-// ============================================================
-// STOP STREAM
-// ============================================================
 function stopStream(channelId) {
   if (streams[channelId]) {
     console.log(`⛔ Stopping ${channelId}`);
@@ -130,21 +113,17 @@ function stopStream(channelId) {
   }
 
   delete viewers[channelId];
-  delete restartCounters[channelId];
 }
 
 // ============================================================
 // VIEWER MANAGEMENT
 // ============================================================
 function addViewer(channelId) {
-  if (!channelId) return;
-
   if (!viewers[channelId]) viewers[channelId] = 0;
 
   viewers[channelId]++;
-  console.log(`👁️ ${channelId} viewers: ${viewers[channelId]}`);
+  console.log(`👁️ ${channelId}: ${viewers[channelId]}`);
 
-  // cancel pending stop
   if (stopTimers[channelId]) {
     clearTimeout(stopTimers[channelId]);
     delete stopTimers[channelId];
@@ -154,43 +133,95 @@ function addViewer(channelId) {
 }
 
 function removeViewer(channelId) {
-  if (!channelId || !viewers[channelId]) return;
+  if (!viewers[channelId]) return;
 
   viewers[channelId]--;
-  console.log(`👁️ ${channelId} viewers: ${viewers[channelId]}`);
 
   if (viewers[channelId] <= 0) {
     viewers[channelId] = 0;
 
     stopTimers[channelId] = setTimeout(() => {
-      if (viewers[channelId] === 0) {
-        stopStream(channelId);
-      }
-    }, 30000); // 30s delay
+      if (viewers[channelId] === 0) stopStream(channelId);
+    }, 30000);
   }
 }
 
 // ============================================================
-// CLEANUP FILES
+// CHANNEL LOADER (UNCHANGED LOGIC)
 // ============================================================
-setInterval(() => {
-  try {
-    const files = fs.readdirSync(HLS_DIR);
-    const now = Date.now();
+async function fetchConvex(path, args = {}, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch("https://neighborly-perch-272.convex.cloud/api/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, args }),
+      });
 
-    files.forEach((f) => {
-      try {
-        const full = path.join(HLS_DIR, f);
-        const stat = fs.statSync(full);
-        const cid = f.split(/[_.]/)[0];
+      const data = await res.json();
+      if (data.value) return data.value;
+    } catch {}
 
-        if (now - stat.mtimeMs > 120000 && !streams[cid]) {
-          fs.unlinkSync(full);
-        }
-      } catch {}
+    if (i < retries) await new Promise(r => setTimeout(r, 2000));
+  }
+  return null;
+}
+
+async function loadAllChannels() {
+  console.log("\n🔄 ===== CHANNELS =====");
+
+  const seen = new Set();
+  const temp = [];
+
+  const firstPage = await fetchConvex("iptv:getOrderedList", {
+    page: 0,
+    genre: "*",
+    sortby: "number",
+  });
+
+  if (!firstPage?.js?.total_items) {
+    console.log("❌ retrying...");
+    setTimeout(loadAllChannels, 30000);
+    return;
+  }
+
+  const totalPages = Math.ceil(firstPage.js.total_items / 14);
+
+  for (let p = 0; p < totalPages; p++) {
+    const data = await fetchConvex("iptv:getOrderedList", {
+      page: p,
+      genre: "*",
+      sortby: "number",
     });
-  } catch {}
-}, 60000);
+
+    const list = data?.js?.data || [];
+
+    for (const ch of list) {
+      const key = `${ch.id}_${ch.number}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        temp.push(ch);
+      }
+    }
+
+    if (p % 200 === 0) {
+      console.log(`📦 ${temp.length} channels`);
+    }
+
+    await new Promise(r => setTimeout(r, 30));
+  }
+
+  allChannelsCache = temp;
+  channelsReady = true;
+
+  console.log(`✅ Loaded ${temp.length} channels`);
+}
+
+// ============================================================
+// STARTUP
+// ============================================================
+console.log("📡 Starting fresh load...");
+loadAllChannels();
 
 // ============================================================
 // SERVER
@@ -201,40 +232,30 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const id = url.searchParams.get("id");
 
-  // ✅ validate input
-  if (url.pathname.includes("/viewer") && !id) {
-    res.writeHead(400);
-    res.end("Missing channel id");
-    return;
-  }
-
-  // ✅ JOIN
-  if (url.pathname.includes("/viewer/join")) {
+  if (url.pathname === "/viewer/join") {
     addViewer(id);
     res.end("joined");
     return;
   }
 
-  // ✅ LEAVE
-  if (url.pathname.includes("/viewer/leave")) {
+  if (url.pathname === "/viewer/leave") {
     removeViewer(id);
     res.end("left");
     return;
   }
 
-  // ✅ COUNT
-  if (url.pathname.includes("/viewer/count")) {
-    res.setHeader("Content-Type", "application/json");
+  if (url.pathname === "/viewer/count") {
     res.end(JSON.stringify({ count: viewers[id] || 0 }));
     return;
   }
 
-  // ✅ HLS
+  if (url.pathname === "/api/channels/all") {
+    res.end(JSON.stringify({ channels: allChannelsCache }));
+    return;
+  }
+
   if (url.pathname.startsWith("/hls/")) {
-    const filePath = path.join(
-      HLS_DIR,
-      url.pathname.replace("/hls/", "")
-    );
+    const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
 
     if (fs.existsSync(filePath)) {
       res.writeHead(200, {
@@ -249,10 +270,9 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  res.writeHead(404);
   res.end("Not found");
 });
 
-server.listen(PORT, () =>
-  console.log(`🚀 Server running at http://localhost:${PORT}`)
-);
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on ${PORT}`);
+});
