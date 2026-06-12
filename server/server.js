@@ -11,46 +11,37 @@ if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
 const streams = {};
 const restartCounters = {};
+const viewers = {};        // ✅ track active viewers
+const stopTimers = {};     // ✅ stop timers
 
 // ============================================================
-// STREAM FUNCTION (FINAL OPTIMIZED)
+// STREAM START
 // ============================================================
 function startStream(channelId) {
-  if (streams[channelId]) return streams[channelId];
+  if (streams[channelId]) return;
 
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const streamUrl = `${STREAM_BASE}/${channelId}`;
 
-  console.log(`Starting stream for channel ${channelId}...`);
+  console.log(`▶️ Starting stream ${channelId}`);
 
   const ffmpeg = spawn("ffmpeg", [
     "-loglevel", "error",
-
-    // ✅ keep connection alive
     "-reconnect", "1",
     "-reconnect_streamed", "1",
     "-reconnect_at_eof", "1",
     "-reconnect_delay_max", "5",
-
     "-headers", "User-Agent: Lavf53.32.100\r\nIcy-MetaData: 1",
     "-i", streamUrl,
-
-    // ✅ timeline stability
     "-fflags", "+genpts",
     "-avoid_negative_ts", "make_zero",
 
     "-c", "copy",
 
     "-f", "hls",
-
-    // ✅ segment size
     "-hls_time", "4",
+    "-hls_list_size", "15", // ✅ ~60s buffer
 
-    // ✅ ✅ BIG BUFFER (this is your improvement)
-    // 4s * 15 = ~60 seconds buffer
-    "-hls_list_size", "15",
-
-    // ✅ NEVER END LIVE STREAM
     "-hls_flags", "delete_segments+append_list+omit_endlist",
 
     "-hls_segment_filename",
@@ -59,71 +50,28 @@ function startStream(channelId) {
     m3u8Path,
   ]);
 
-  ffmpeg.stderr.on("data", () => {});
+  streams[channelId] = ffmpeg;
+  restartCounters[channelId] = 0;
 
-  if (!restartCounters[channelId]) {
-    restartCounters[channelId] = 0;
-  }
-
-  // ✅ If it survives → reset counter
   const stableTimer = setTimeout(() => {
     restartCounters[channelId] = 0;
-    console.log(`✅ Stream ${channelId} stable (counter reset)`);
   }, 20000);
 
-  ffmpeg.on("close", (code) => {
+  ffmpeg.on("close", () => {
     clearTimeout(stableTimer);
 
-    console.log(`Stream ${channelId} stopped (code ${code})`);
-
-    const wasActive = !!streams[channelId];
     delete streams[channelId];
-
-    if (!wasActive) return;
-
-    restartCounters[channelId]++;
-
-    // ✅ STOP bad channel
-    if (restartCounters[channelId] > 10) {
-      console.log(`❌ Channel ${channelId} disabled after 10 failures`);
-      delete restartCounters[channelId];
-      return;
-    }
-
-    console.log(
-      `🔄 Restarting ${channelId} (${restartCounters[channelId]}/10)`
-    );
-
-    setTimeout(() => startStream(channelId), 5000);
-  });
-
-  ffmpeg.on("error", (err) => {
-    clearTimeout(stableTimer);
-
-    console.error(`Stream ${channelId} error:`, err.message);
-
-    const wasActive = !!streams[channelId];
-    delete streams[channelId];
-
-    if (!wasActive) return;
 
     restartCounters[channelId]++;
 
     if (restartCounters[channelId] > 10) {
-      console.log(`❌ Channel ${channelId} disabled after errors`);
-      delete restartCounters[channelId];
+      console.log(`🚫 Disabled channel ${channelId}`);
       return;
     }
 
-    console.log(
-      `🔄 Restarting after error ${channelId} (${restartCounters[channelId]}/10)`
-    );
-
+    console.log(`🔄 Restarting ${channelId}`);
     setTimeout(() => startStream(channelId), 5000);
   });
-
-  streams[channelId] = ffmpeg;
-  return ffmpeg;
 }
 
 // ============================================================
@@ -131,21 +79,62 @@ function startStream(channelId) {
 // ============================================================
 function stopStream(channelId) {
   if (streams[channelId]) {
+    console.log(`⛔ Stopping stream ${channelId}`);
     streams[channelId].kill();
     delete streams[channelId];
   }
+
+  delete viewers[channelId];
   delete restartCounters[channelId];
 }
 
 // ============================================================
-// CLEANUP
+// VIEWER MANAGEMENT
+// ============================================================
+
+function addViewer(channelId) {
+  if (!viewers[channelId]) viewers[channelId] = 0;
+
+  viewers[channelId]++;
+  console.log(`👁️ ${channelId} viewers: ${viewers[channelId]}`);
+
+  // ✅ cancel stop timer if exists
+  if (stopTimers[channelId]) {
+    clearTimeout(stopTimers[channelId]);
+    delete stopTimers[channelId];
+  }
+
+  // ✅ start stream if needed
+  startStream(channelId);
+}
+
+function removeViewer(channelId) {
+  if (!viewers[channelId]) return;
+
+  viewers[channelId]--;
+  console.log(`👁️ ${channelId} viewers: ${viewers[channelId]}`);
+
+  if (viewers[channelId] <= 0) {
+    viewers[channelId] = 0;
+
+    // ✅ wait before stopping (important)
+    stopTimers[channelId] = setTimeout(() => {
+      if (viewers[channelId] === 0) {
+        stopStream(channelId);
+      }
+    }, 30000); // ✅ 30 seconds grace
+  }
+}
+
+// ============================================================
+// CLEANUP FILES
 // ============================================================
 setInterval(() => {
   try {
     const files = fs.readdirSync(HLS_DIR);
     const now = Date.now();
 
-    files.forEach((f) => {
+    files.forEach(f => {
       try {
         const stat = fs.statSync(path.join(HLS_DIR, f));
         const cid = f.split(/[_.]/)[0];
@@ -163,39 +152,26 @@ setInterval(() => {
 // ============================================================
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  if (
-    url.pathname.startsWith("/streams/") &&
-    url.pathname.endsWith("/start")
-  ) {
-    const id = url.pathname.split("/")[2];
-    startStream(id);
-    res.writeHead(200);
-    res.end(JSON.stringify({ status: "started" }));
+  // ✅ USER START WATCHING
+  if (url.pathname.includes("/viewer/join")) {
+    const id = url.searchParams.get("id");
+    addViewer(id);
+    res.end("joined");
     return;
   }
 
-  if (
-    url.pathname.startsWith("/streams/") &&
-    url.pathname.endsWith("/stop")
-  ) {
-    const id = url.pathname.split("/")[2];
-    stopStream(id);
-    res.writeHead(200);
-    res.end(JSON.stringify({ status: "stopped" }));
+  // ✅ USER STOP WATCHING
+  if (url.pathname.includes("/viewer/leave")) {
+    const id = url.searchParams.get("id");
+    removeViewer(id);
+    res.end("left");
     return;
   }
 
+  // ✅ HLS SERVE
   if (url.pathname.startsWith("/hls/")) {
     const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
 
@@ -206,18 +182,16 @@ const server = http.createServer((req, res) => {
             ? "application/vnd.apple.mpegurl"
             : "video/mp2t",
       });
+
       fs.createReadStream(filePath).pipe(res);
-    } else {
-      res.writeHead(404);
-      res.end("Not found");
+      return;
     }
-    return;
   }
 
   res.writeHead(404);
   res.end("Not found");
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
+server.listen(PORT, () =>
+  console.log(`🚀 Server running at http://localhost:${PORT}`)
+);
