@@ -124,7 +124,7 @@ export default function IptvWatchPage() {
 
       const hls = new Hls({
         enableWorker: true, lowLatencyMode: true, backBufferLength: 90, maxBufferLength: 30,
-        liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 10,
+        liveSyncDurationCount: 6, liveMaxLatencyDurationCount: 15,
         manifestLoadingMaxRetry: 6, manifestLoadingRetryDelay: 1000,
         levelLoadingMaxRetry: 6, levelLoadingRetryDelay: 1000,
         fragLoadingMaxRetry: 6, fragLoadingRetryDelay: 1000,
