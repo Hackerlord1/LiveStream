@@ -5,7 +5,7 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-const VPS_URL = "https://hls.bravestream.live";
+const VPS_URL = "http://51.15.20.170:8081";
 
 export default function VodPage() {
   const [allMovies, setAllMovies] = useState<any[]>([]);
