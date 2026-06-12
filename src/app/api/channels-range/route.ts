@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const res = await fetch(
-      `http://51.15.20.170:3670/api/channels/range?start=${start}&end=${end}`,
+      `https://hls.bravestream.live/api/channels/range?start=${start}&end=${end}`,
       { cache: "no-store" }
     );
     const data = await res.json();
