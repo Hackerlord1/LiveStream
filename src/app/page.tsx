@@ -394,7 +394,7 @@ export default function Home() {
     useEffect(() => {
         async function loadChannels() {
             try {
-                const res = await fetch(`/api/channels-range?start=73&end=144`);
+                const res = await fetch("https://hls.bravestream.live/api/channels/range?start=73&end=144");
                 const data = await res.json();
                 if (data.channels) setFeaturedChannels(data.channels);
             } catch (e) {
