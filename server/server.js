@@ -6,19 +6,141 @@ const path = require("path");
 const PORT = 8080;
 const HLS_DIR = path.join(__dirname, "hls");
 const STREAM_BASE = "http://seatv.xyz/B2X4MX4S65WNTPY/bc65CNzbec";
+const CACHE_FILE = path.join(__dirname, "channels_cache.json");
 
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
-// ========================================================
-// STATE
-// ========================================================
+// =====================================================
+// GLOBAL STATE
+// =====================================================
 const streams = {};
 const viewers = {};
 const stopTimers = {};
 
-// ========================================================
-// PROBE STREAM (AUTO DETECT)
-// ========================================================
+// ✅ Channel cache
+let allChannelsCache = [];
+let channelsReady = false;
+let channelsProgress = { loaded: 0, total: 0, percent: 0 };
+
+// =====================================================
+// FETCH (Convex)
+// =====================================================
+async function fetchConvex(path, args = {}) {
+  try {
+    const res = await fetch(
+      "https://neighborly-perch-272.convex.cloud/api/action",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, args }),
+      }
+    );
+
+    const data = await res.json();
+    return data.value;
+  } catch {
+    return null;
+  }
+}
+
+// =====================================================
+// CHANNEL LOADER (28K CACHE)
+// =====================================================
+async function loadAllChannels() {
+  console.log("📡 Loading channels...");
+
+  const tempCache = [];
+  const seen = new Set();
+
+  channelsReady = false;
+
+  const first = await fetchConvex("iptv:getOrderedList", {
+    page: 0,
+    genre: "*",
+    sortby: "number",
+  });
+
+  if (!first?.js?.total_items) {
+    console.log("❌ Failed initial load");
+    setTimeout(loadAllChannels, 30000);
+    return;
+  }
+
+  const totalPages = Math.ceil(first.js.total_items / 14);
+  const totalItems = first.js.total_items;
+
+  console.log(`📄 Total: ${totalItems} | Pages: ${totalPages}`);
+
+  function addChannels(data) {
+    for (const ch of data) {
+      const key = `${ch.id}_${ch.number}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        tempCache.push({
+          id: ch.id,
+          name: ch.name,
+          number: ch.number,
+          logo: ch.logo || "",
+        });
+      }
+    }
+  }
+
+  addChannels(first.js.data);
+
+  for (let p = 1; p < totalPages; p++) {
+    const res = await fetchConvex("iptv:getOrderedList", {
+      page: p,
+      genre: "*",
+      sortby: "number",
+    });
+
+    if (res?.js?.data) {
+      addChannels(res.js.data);
+    }
+
+    channelsProgress = {
+      loaded: tempCache.length,
+      total: totalItems,
+      percent: Math.round((p / totalPages) * 100),
+    };
+
+    if (p % 100 === 0) {
+      console.log(
+        `📊 ${channelsProgress.loaded}/${channelsProgress.total} (${channelsProgress.percent}%)`
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, 20)); // prevent overload
+  }
+
+  allChannelsCache = tempCache;
+  channelsReady = true;
+
+  channelsProgress = {
+    loaded: allChannelsCache.length,
+    total: allChannelsCache.length,
+    percent: 100,
+  };
+
+  fs.writeFileSync(CACHE_FILE, JSON.stringify(allChannelsCache));
+
+  console.log(`✅ DONE: ${allChannelsCache.length} channels cached`);
+}
+
+// ✅ Load cache instantly if exists
+if (fs.existsSync(CACHE_FILE)) {
+  allChannelsCache = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
+  channelsReady = true;
+
+  console.log(`⚡ Loaded ${allChannelsCache.length} channels from cache`);
+} else {
+  loadAllChannels();
+}
+
+// =====================================================
+// STREAM MODE DETECTION
+// =====================================================
 function probeStream(url) {
   try {
     const output = execSync(
@@ -28,104 +150,84 @@ function probeStream(url) {
       .toString()
       .trim();
 
-    console.log(`🔍 Codec detected: ${output}`);
-
-    if (!output) return "transcode";
-
-    // Supported directly by browsers
-    if (["h264"].includes(output)) {
-      return "copy";
-    }
-
+    if (["h264"].includes(output)) return "copy";
     return "transcode";
-  } catch (e) {
-    console.log("⚠️ Probe failed → fallback to transcode");
+  } catch {
     return "transcode";
   }
 }
 
-// ========================================================
+// =====================================================
 // START STREAM
-// ========================================================
+// =====================================================
 function startStream(channelId) {
   if (streams[channelId]) return;
 
   const streamUrl = `${STREAM_BASE}/${channelId}`;
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
 
-  console.log(`🚀 Starting stream ${channelId}...`);
+  console.log(`🚀 Starting stream ${channelId}`);
 
   const mode = probeStream(streamUrl);
 
-  let args;
+  const args =
+    mode === "copy"
+      ? [
+          "-fflags", "+genpts",
 
-  if (mode === "copy") {
-    console.log(`✅ Using COPY mode for ${channelId}`);
+          "-reconnect", "1",
+          "-reconnect_streamed", "1",
+          "-reconnect_at_eof", "1",
 
-    args = [
-      "-fflags", "+genpts",
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_delay_max", "5",
+          "-user_agent", "Mozilla/5.0",
+          "-i", streamUrl,
 
-      "-user_agent", "Mozilla/5.0",
-      "-i", streamUrl,
+          "-c", "copy",
 
-      "-c", "copy",
+          "-f", "hls",
+          "-hls_time", "4",
+          "-hls_list_size", "12",
+          "-hls_flags",
+          "delete_segments+append_list+omit_endlist+independent_segments",
+          "-hls_segment_filename",
+          path.join(HLS_DIR, `${channelId}_%03d.ts`),
 
-      "-f", "hls",
-      "-hls_time", "4",
-      "-hls_list_size", "12",
-      "-hls_flags",
-      "delete_segments+append_list+omit_endlist+independent_segments",
-      "-hls_segment_filename",
-      path.join(HLS_DIR, `${channelId}_%03d.ts`),
+          m3u8Path,
+        ]
+      : [
+          "-fflags", "+genpts",
+          "-avoid_negative_ts", "make_zero",
 
-      m3u8Path,
-    ];
-  } else {
-    console.log(`🔥 Using TRANSCODE mode for ${channelId}`);
+          "-reconnect", "1",
+          "-reconnect_streamed", "1",
+          "-reconnect_at_eof", "1",
 
-    args = [
-      "-fflags", "+genpts",
-      "-avoid_negative_ts", "make_zero",
+          "-user_agent", "Mozilla/5.0",
+          "-i", streamUrl,
 
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_at_eof", "1",
-      "-reconnect_delay_max", "5",
+          "-c:v", "libx264",
+          "-preset", "veryfast",
+          "-tune", "zerolatency",
+          "-pix_fmt", "yuv420p",
 
-      "-user_agent", "Mozilla/5.0",
-      "-i", streamUrl,
+          "-g", "48",
+          "-keyint_min", "48",
+          "-sc_threshold", "0",
+          "-force_key_frames", "expr:gte(t,n_forced*4)",
 
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-tune", "zerolatency",
-      "-profile:v", "main",
-      "-level", "3.1",
-      "-pix_fmt", "yuv420p",
+          "-c:a", "aac",
+          "-b:a", "128k",
 
-      "-g", "48",
-      "-keyint_min", "48",
-      "-sc_threshold", "0",
-      "-force_key_frames", "expr:gte(t,n_forced*4)",
+          "-f", "hls",
+          "-hls_time", "4",
+          "-hls_list_size", "12",
+          "-hls_flags",
+          "delete_segments+append_list+omit_endlist+independent_segments",
+          "-hls_segment_filename",
+          path.join(HLS_DIR, `${channelId}_%03d.ts`),
 
-      "-c:a", "aac",
-      "-b:a", "128k",
-      "-ac", "2",
-
-      "-f", "hls",
-      "-hls_time", "4",
-      "-hls_list_size", "12",
-      "-hls_flags",
-      "delete_segments+append_list+omit_endlist+independent_segments",
-      "-hls_segment_filename",
-      path.join(HLS_DIR, `${channelId}_%03d.ts`),
-
-      m3u8Path,
-    ];
-  }
+          m3u8Path,
+        ];
 
   const ffmpeg = spawn("ffmpeg", args);
 
@@ -133,72 +235,82 @@ function startStream(channelId) {
     console.log(`[FFMPEG ${channelId}] ${data}`);
   });
 
-  ffmpeg.on("close", (code) => {
-    console.log(`❌ Stream ${channelId} stopped (${code})`);
+  ffmpeg.on("close", () => {
     delete streams[channelId];
   });
 
   streams[channelId] = ffmpeg;
 }
 
-// ========================================================
-// STOP STREAM (viewer aware)
-// ========================================================
+// =====================================================
+// STOP STREAM (VIEWER BASED)
+// =====================================================
 function scheduleStop(channelId) {
   if (stopTimers[channelId]) clearTimeout(stopTimers[channelId]);
 
   stopTimers[channelId] = setTimeout(() => {
     if ((viewers[channelId] || 0) === 0) {
-      console.log(`🛑 Stopping idle stream ${channelId}`);
-      if (streams[channelId]) {
-        streams[channelId].kill("SIGKILL");
-        delete streams[channelId];
-      }
+      console.log(`🛑 Stopping stream ${channelId}`);
+      streams[channelId]?.kill("SIGKILL");
+      delete streams[channelId];
     }
-  }, 30000); // 30s grace
+  }, 30000);
 }
 
-// ========================================================
-// HTTP SERVER
-// ========================================================
+// =====================================================
+// SERVER
+// =====================================================
 const server = http.createServer((req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // ================================
-  // VIEWER TRACKING
-  // ================================
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  // ✅ Progress (CHANNEL CACHE)
+  if (url.pathname === "/progress") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        channels: channelsProgress,
+        ready: channelsReady,
+      })
+    );
+  }
+
+  // ✅ Channels API
+  if (url.pathname === "/api/channels/all") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(
+      JSON.stringify({
+        channels: allChannelsCache,
+        total: allChannelsCache.length,
+        ready: channelsReady,
+      })
+    );
+  }
+
+  // ✅ Watch (start stream)
   if (url.pathname.startsWith("/watch/")) {
-    const channelId = url.pathname.split("/")[2];
+    const id = url.pathname.split("/")[2];
 
-    viewers[channelId] = (viewers[channelId] || 0) + 1;
-    console.log(`👀 Viewer +1 (${channelId}) = ${viewers[channelId]}`);
-
-    startStream(channelId);
+    viewers[id] = (viewers[id] || 0) + 1;
+    startStream(id);
 
     res.writeHead(200);
-    res.end("OK");
-    return;
+    return res.end("OK");
   }
 
+  // ✅ Leave (stop stream)
   if (url.pathname.startsWith("/leave/")) {
-    const channelId = url.pathname.split("/")[2];
+    const id = url.pathname.split("/")[2];
 
-    viewers[channelId] = Math.max(0, (viewers[channelId] || 1) - 1);
-
-    console.log(`👋 Viewer -1 (${channelId}) = ${viewers[channelId]}`);
-
-    scheduleStop(channelId);
+    viewers[id] = Math.max(0, (viewers[id] || 1) - 1);
+    scheduleStop(id);
 
     res.writeHead(200);
-    res.end("OK");
-    return;
+    return res.end("OK");
   }
 
-  // ================================
-  // HLS SERVE
-  // ================================
+  // ✅ HLS serve
   if (url.pathname.startsWith("/hls/")) {
     const filePath = path.join(HLS_DIR, url.pathname.replace("/hls/", ""));
 
@@ -210,26 +322,11 @@ const server = http.createServer((req, res) => {
             : "video/mp2t",
       });
 
-      fs.createReadStream(filePath).pipe(res);
-    } else {
-      res.writeHead(404);
-      res.end("Not found");
+      return fs.createReadStream(filePath).pipe(res);
     }
-    return;
-  }
 
-  // ================================
-  // HEALTH
-  // ================================
-  if (url.pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        activeStreams: Object.keys(streams),
-        viewers,
-      })
-    );
-    return;
+    res.writeHead(404);
+    return res.end("Not found");
   }
 
   res.writeHead(404);
@@ -237,5 +334,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () =>
-  console.log(`🚀 Running on http://localhost:${PORT}`)
+  console.log(`🚀 Server running at http://localhost:${PORT}`)
 );
