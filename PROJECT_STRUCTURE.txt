@@ -1,0 +1,154 @@
+football-streams/
+├── convex/
+│   ├── _generated/
+│   │   ├── ai/
+│   │   │   ├── ai-files.state.json
+│   │   │   └── guidelines.md
+│   │   ├── api.d.ts
+│   │   ├── api.js
+│   │   ├── dataModel.d.ts
+│   │   ├── server.d.ts
+│   │   └── server.js
+│   ├── crons.ts
+│   ├── iptv.ts
+│   ├── messages.ts
+│   └── schema.ts
+├── public/
+│   ├── ads/
+│   │   ├── ad1.png
+│   │   ├── ad2.png
+│   │   ├── ad3.png
+│   │   ├── banner1.png
+│   │   ├── banner2.png
+│   │   ├── teravolt_ad_1035x315_updated.png
+│   │   ├── teravolt_ad_502x310_updated.png
+│   │   └── teravolt_tiny_banner_1035x80_updated.png
+│   ├── favicon.ico
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── google914f6ca945db5704.html
+│   ├── manifest.json
+│   ├── next.svg
+│   ├── sitemap.xml
+│   ├── sw.js
+│   ├── vercel.svg
+│   └── window.svg
+├── server/
+│   ├── data-server.js
+│   ├── server.js
+│   └── websocket-server.js
+├── src/
+│   ├── app/
+│   │   ├── about/
+│   │   │   └── page.tsx
+│   │   ├── api/
+│   │   │   ├── channels-range/
+│   │   │   │   └── route.ts
+│   │   │   ├── contact/
+│   │   │   │   └── route.ts
+│   │   │   ├── inbound-webhook/
+│   │   │   │   └── route.ts
+│   │   │   ├── iptv-proxy/
+│   │   │   │   └── route.ts
+│   │   │   ├── series-data/
+│   │   │   │   └── route.ts
+│   │   │   └── vod-data/
+│   │   │       └── route.ts
+│   │   ├── api-test/
+│   │   │   └── page.tsx
+│   │   ├── channels/
+│   │   │   ├── [id]/
+│   │   │   │   ├── ChannelPlayer.tsx
+│   │   │   │   ├── loading.tsx
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── contact/
+│   │   │   └── page.tsx
+│   │   ├── dmca/
+│   │   │   └── page.tsx
+│   │   ├── iptv/
+│   │   │   ├── [id]/
+│   │   │   │   └── page.tsx
+│   │   │   ├── channels/
+│   │   │   │   └── page.tsx
+│   │   │   ├── games/
+│   │   │   │   └── page.tsx
+│   │   │   ├── radio/
+│   │   │   │   └── page.tsx
+│   │   │   ├── series/
+│   │   │   │   └── page.tsx
+│   │   │   ├── vod/
+│   │   │   │   └── page.tsx
+│   │   │   ├── watch/
+│   │   │   │   ├── [id]/
+│   │   │   │   │   └── page.tsx
+│   │   │   │   ├── movie/
+│   │   │   │   │   └── [id]/
+│   │   │   │   │       └── page.tsx
+│   │   │   │   └── series/
+│   │   │   │       └── [id]/
+│   │   │   │           └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── match/
+│   │   │   └── [id]/
+│   │   │       ├── ChatMessageItem.tsx
+│   │   │       ├── MatchPlayer.tsx
+│   │   │       ├── error.tsx
+│   │   │       ├── loading.tsx
+│   │   │       └── page.tsx
+│   │   ├── privacy/
+│   │   │   └── page.tsx
+│   │   ├── favicon2.ico
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── components/
+│   │   ├── AdSpace.tsx
+│   │   ├── ConvexClientProvider.tsx
+│   │   ├── Header.tsx
+│   │   └── WorldCupChannels.tsx
+│   ├── hooks/
+│   │   └── use-iptv-wrapper.ts
+│   ├── lib/
+│   │   ├── api/
+│   │   │   ├── cache.ts
+│   │   │   ├── channels.ts
+│   │   │   ├── config.ts
+│   │   │   ├── fetch-utils.ts
+│   │   │   ├── index.ts
+│   │   │   ├── iptv-types.ts
+│   │   │   ├── logger.ts
+│   │   │   ├── matches.ts
+│   │   │   ├── mock-data.ts
+│   │   │   ├── streaming.ts
+│   │   │   ├── team-normalization.ts
+│   │   │   ├── transformers.ts
+│   │   │   └── types.ts
+│   │   ├── backup-api.ts
+│   │   └── match-utils.ts
+│   └── css.d.ts
+├── AGENTS.md
+├── CLAUDE.md
+├── README.md
+├── channels.json
+├── eslint.config.mjs
+├── genres.json
+├── next-env.d.ts
+├── next.config.ts
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── skills-lock.json
+├── tailwind.config.js
+├── test.json
+└── tsconfig.json
+
+EXCLUDED FROM STRUCTURE:
+- node_modules/ (dependencies)
+- .next/ (build output)
+- .git/ (version control)
+- .vercel/ (deployment)
+- coverage/ (test coverage)
+- build/ (build artifacts)
+- .env* files
+- .*/ hidden directories
