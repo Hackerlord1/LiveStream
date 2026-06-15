@@ -3,15 +3,18 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
 // ============================================================
-// CONFIGURATION
+// PORTAL CONFIGURATION — expat-tv.xyz
 // ============================================================
-const PORTAL_URL = "http://seatv.xyz";
+const PORTAL_URL = "http://expat-tv.xyz";
 const API_BASE = `${PORTAL_URL}/portalott.php`;
-const MAC = "00:1A:79:55:16:06";
-const PREHASH = "2614ddf9829ba9d284f389d88e8c669d81f6a5c2";
-const STREAM_KEY = "B2X4MX4S65WNTPY/bc65CNzbec";
-const SN = "062014N013786";
-const STB_TYPE = "MAG424";
+const MAC = "00:1A:79:9C:5F:D5";
+const PREHASH = "9c42ac937c6bc42ba21b45b853bfc020b013f8f6";
+const STREAM_KEY = "MAGL2ELNMB/MAG42M41CA";
+const SN = "";
+const STB_TYPE = "MAG250";
+const IMAGE_VERSION = "218";
+const API_SIGNATURE = "263";
+const HW_VERSION_2 = "194afd292f2f70ca31fb618bfd1f2eecb12557b8";
 
 const HEADERS = {
   "Cookie": `mac=${MAC.replace(/:/g, "%3A")}; stb_lang=en; timezone=Africa%2FNairobi`,
@@ -19,7 +22,7 @@ const HEADERS = {
   "X-User-Agent": `Model: ${STB_TYPE}; Link: WiFi`,
   "Accept": "*/*",
   "Cache-Control": "no-cache",
-  "Host": "seatv.xyz",
+  "Host": "expat-tv.xyz",
 };
 
 // ============================================================
@@ -158,7 +161,6 @@ export const getChannelById = action({
   handler: async (ctx: ActionCtx, args) => {
     try {
       const token = await getOrRefreshToken(ctx);
-
       const params = new URLSearchParams({
         type: "itv",
         action: "get_all_channels",
@@ -166,27 +168,13 @@ export const getChannelById = action({
         JsHttpRequest: "1-xml",
         token,
       });
-
       const data = (await safeFetch(`${API_BASE}?${params}`)) as any;
       const channels = data?.js?.data || [];
-
-      const channel = channels.find((item: any) => {
-        return Number(item.id) === args.channelId;
-      });
-
-      return {
-        js: {
-          data: channel || null,
-        },
-      };
+      const channel = channels.find((item: any) => Number(item.id) === args.channelId);
+      return { js: { data: channel || null } };
     } catch (err) {
       console.error("getChannelById error:", err);
-
-      return {
-        js: {
-          data: null,
-        },
-      };
+      return { js: { data: null } };
     }
   },
 });
@@ -467,7 +455,7 @@ export const getPaymentInfo = action({
 export const getProfile = action({
   handler: async (ctx: ActionCtx) => {
     const token = await getOrRefreshToken(ctx);
-    const ver = encodeURIComponent("ImageDescription: 2.20.02-pub-424; ImageDate: Fri May 8 15:39:55 UTC 2020; PORTAL version: 5.3.1; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x588");
+    const ver = encodeURIComponent("ImageDescription: 0.2.18-r14-pub-250; ImageDate: Fri Jan 15 15:20:44 EET 2016; PORTAL version: 5.3.1; API Version: JS API version: 328; STB API version: 134; Player Engine version: 0x588");
     const metrics = encodeURIComponent(JSON.stringify({
       mac: MAC,
       sn: SN,
@@ -485,7 +473,7 @@ export const getProfile = action({
       sn: SN,
       stb_type: STB_TYPE,
       client_type: "STB",
-      image_version: "220",
+      image_version: IMAGE_VERSION,
       video_out: "hdmi",
       device_id: "",
       device_id2: "",
@@ -494,9 +482,9 @@ export const getProfile = action({
       hw_version: "1.7-BD-00",
       not_valid_token: "0",
       metrics,
-      hw_version_2: "3f31829b3ba2d6eeac202d4e6758192802a1c018",
+      hw_version_2: HW_VERSION_2,
       timestamp: String(Math.floor(Date.now() / 1000)),
-      api_signature: "262",
+      api_signature: API_SIGNATURE,
       prehash: PREHASH,
       JsHttpRequest: "1-xml",
       token,
@@ -504,8 +492,6 @@ export const getProfile = action({
     return await safeFetch(`${API_BASE}?${params}`);
   },
 });
-
-
 
 // ============================================================
 // STREAM URL HELPERS

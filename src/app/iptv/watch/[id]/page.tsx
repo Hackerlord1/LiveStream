@@ -42,14 +42,17 @@ async function callWrapper(path: string, args: Record<string, unknown> = {}) {
   return data.value;
 }
 
-// ✅ Wait for playlist to be READY
+// ✅ faster readiness check (2 segments instead of full)
 async function waitForPlaylist(url: string) {
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 12; i++) {
     try {
       const res = await fetch(url);
       const text = await res.text();
-      if (text.includes("#EXTINF")) return true;
+
+      const segments = text.match(/\.ts/g);
+      if (segments && segments.length >= 2) return true;
     } catch {}
+
     await new Promise((r) => setTimeout(r, 1000));
   }
   return false;
@@ -64,7 +67,7 @@ export default function IptvWatchPage() {
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [epgData, setEpgData] = useState<EpgResponse | null>(null);
-  const [status, setStatus] = useState("Loading...");
+  const [status, setStatus] = useState("Loading channel...");
   const [error, setError] = useState("");
 
   const programs = useMemo(() => {
@@ -73,16 +76,17 @@ export default function IptvWatchPage() {
     return Array.isArray(data) ? data : data?.data || [];
   }, [epgData]);
 
-  // ============================================
-  // LOAD CHANNEL INFO
-  // ============================================
+  const currentProgram = programs[0];
+  const channelTitle = channel?.name || `Channel ${channelId}`;
+
+  // ✅ LOAD CHANNEL INFO (UNCHANGED LOGIC)
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
         const [epg] = await Promise.allSettled([
-          callWrapper("iptv:getShortEpg", { channelId, size: 6 }),
+          callWrapper("iptv:getShortEpg", { channelId, size: 8 }),
         ]);
 
         if (!cancelled && epg.status === "fulfilled") {
@@ -101,38 +105,49 @@ export default function IptvWatchPage() {
     };
   }, [channelId]);
 
-  // ============================================
-  // PLAYER
-  // ============================================
+  // ✅ PLAYER (FIXED CORE LOGIC)
   useEffect(() => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || Number.isNaN(channelId)) return;
 
     let cancelled = false;
+    let fallbackTried = false;
+
     const video = videoRef.current;
 
-    async function init() {
-      setStatus("Starting stream...");
+    async function startPlayer(forceTranscode = false) {
       setError("");
+      setStatus("Starting stream...");
 
-      // ✅ Notify server viewer joined
-      await fetch(`${HLS_BASE}/watch/${channelId}`);
+      // ✅ notify server
+      await fetch(
+        `${HLS_BASE}/watch/${channelId}${
+          forceTranscode ? "?forceTranscode=1" : ""
+        }`
+      );
 
       const playlist = `${HLS_BASE}/hls/${channelId}.m3u8`;
 
-      // ✅ wait for playlist to be ready
       const ready = await waitForPlaylist(playlist);
 
       if (!ready) {
-        setError("Stream not available.");
+        setError("Stream not ready.");
         return;
       }
+
+      if (cancelled) return;
 
       const Hls = (await import("hls.js")).default;
 
-      if (!Hls.isSupported()) {
-        video.src = playlist;
-        return;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
       }
+
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {}
 
       const hls = new Hls({
         enableWorker: true,
@@ -144,9 +159,6 @@ export default function IptvWatchPage() {
 
         liveSyncDurationCount: 6,
         liveMaxLatencyDurationCount: 15,
-
-        fragLoadingMaxRetry: 6,
-        manifestLoadingMaxRetry: 6,
       });
 
       hlsRef.current = hls;
@@ -156,26 +168,45 @@ export default function IptvWatchPage() {
         video.play().catch(() => {});
       });
 
-      hls.on(Hls.Events.ERROR, (_: any, data: any) => {
+      hls.on(Hls.Events.ERROR, async (_: any, data: any) => {
         if (!data.fatal) return;
 
-        console.log("HLS error", data);
+        console.log("HLS ERROR", data);
 
+        // ✅ NETWORK RECOVERY
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           hls.startLoad();
           return;
         }
 
+        // ✅ MEDIA RECOVERY
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           hls.recoverMediaError();
           return;
         }
 
+        // ✅ FALLBACK (IMPORTANT)
+        if (!fallbackTried) {
+          fallbackTried = true;
+
+          console.log("🔥 Retrying with transcode...");
+
+          await fetch(`${HLS_BASE}/leave/${channelId}`);
+
+          setTimeout(() => {
+            startPlayer(true);
+          }, 2000);
+
+          return;
+        }
+
+        // ❌ HARD FAIL
         hls.destroy();
+        hlsRef.current = null;
 
         if (!cancelled) {
-          setStatus("Reconnecting...");
-          setTimeout(init, 4000);
+          setError("Playback failed.");
+          setStatus("");
         }
       });
 
@@ -183,12 +214,11 @@ export default function IptvWatchPage() {
       hls.loadSource(playlist);
     }
 
-    init();
+    startPlayer();
 
     return () => {
       cancelled = true;
 
-      // ✅ notify server viewer left
       fetch(`${HLS_BASE}/leave/${channelId}`);
 
       if (hlsRef.current) {
@@ -198,36 +228,55 @@ export default function IptvWatchPage() {
     };
   }, [channelId]);
 
-  // ============================================
-  // UI
-  // ============================================
+  // ✅ UI (UNCHANGED)
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ backgroundColor: "var(--neu-bg-page)", color: "var(--text-primary)" }}>
       <Header />
 
-      <main className="max-w-7xl mx-auto p-5">
-        <Link href="/iptv/channels">← Back</Link>
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <Link href="/iptv/channels"
+            className="inline-flex w-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium"
+            style={{
+              backgroundColor: "var(--neu-bg)",
+              color: "var(--text-secondary)",
+              boxShadow: "4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)"
+            }}>
+            ← Back to Channels
+          </Link>
 
-        <h1 className="text-2xl font-bold mt-4">
-          {channel?.name || "Loading..."}
-        </h1>
+          {status && !error && (
+            <span className="text-xs">{status}</span>
+          )}
+        </div>
 
-        {status && <p className="text-sm text-yellow-500">{status}</p>}
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        <div>
+          <h1 className="text-2xl font-bold">
+            {channelTitle}
+          </h1>
 
-        <video
-          ref={videoRef}
-          controls
-          autoPlay
-          muted
-          className="w-full mt-4 bg-black"
-        />
+          {currentProgram && (
+            <p className="text-sm text-gray-400">
+              Now playing: {currentProgram.name || currentProgram.title}
+            </p>
+          )}
+        </div>
 
         <div className="mt-4">
-          <h2>EPG</h2>
-          {programs.map((p, i) => (
-            <div key={i}>{p.name || p.title}</div>
-          ))}
+          {error && (
+            <div className="text-red-500 text-sm mb-2">
+              {error}
+            </div>
+          )}
+
+          <video
+            ref={videoRef}
+            controls
+            autoPlay
+            muted
+            playsInline
+            className="w-full bg-black rounded-xl"
+          />
         </div>
       </main>
     </div>

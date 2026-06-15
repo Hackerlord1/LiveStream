@@ -12,6 +12,7 @@ export default function IptvChannelsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(7);
 
@@ -33,28 +34,78 @@ export default function IptvChannelsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    async function load() {
-      setLoading(true);
+    
+    let pollInterval: NodeJS.Timeout;
+    let isSubscribed = true;
+
+    async function fetchChannels() {
       try {
+        // First check progress
+        const progRes = await fetch(`${VPS_URL}/progress`);
+        const progData = await progRes.json();
+        
+        if (!isSubscribed) return;
+
+        // Now get channels
         const res = await fetch(`${VPS_URL}/api/channels/all`);
         const data = await res.json();
-        if (data.channels?.length > 0) {
+        
+        if (!isSubscribed) return;
+
+        console.log("📡 Server response:", { 
+          channelsCount: data.channels?.length, 
+          ready: data.ready,
+          progress: progData 
+        });
+
+        if (data.channels && data.channels.length > 0) {
           setAllChannels(data.channels);
           sessionStorage.setItem(
             "iptv-channels-cache-v3",
             JSON.stringify(data.channels)
           );
-        } else if (data.loading) {
-          setError("Server still loading channels. Please refresh.");
+          setLoading(false);
+          setError("");
+
+          // Check if server is still loading
+          if (data.ready) {
+            setIsLoadingMore(false);
+            clearInterval(pollInterval);
+            console.log("✅ Fully loaded, stopping poll");
+          } else {
+            setIsLoadingMore(true);
+            console.log("🔄 Still loading more...");
+          }
         }
       } catch (e) {
+        console.error("❌ Fetch error:", e);
+        if (!isSubscribed) return;
+        
+        // Try to use cached data
         const stored = sessionStorage.getItem("iptv-channels-cache-v3");
-        if (stored) setAllChannels(JSON.parse(stored));
-        else setError("Failed to load channels");
+        if (stored) {
+          const cached = JSON.parse(stored);
+          if (cached.length > 0) {
+            setAllChannels(cached);
+            setLoading(false);
+          }
+        } else if (allChannels.length === 0) {
+          setError("Failed to load channels. Please try again.");
+          setLoading(false);
+        }
       }
-      setLoading(false);
     }
-    load();
+
+    // Initial fetch
+    fetchChannels();
+    
+    // Poll every 3 seconds if channels aren't ready
+    pollInterval = setInterval(fetchChannels, 3000);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(pollInterval);
+    };
   }, []);
 
   const filteredChannels = useMemo(() => {
@@ -72,14 +123,11 @@ export default function IptvChannelsPage() {
   const rowVirtualizer = useVirtualizer({
     count: totalRows,
     getScrollElement: () => parentRef.current,
-
-    // ✅ FIXED HEIGHT CALCULATION (DESKTOP SAFE)
     estimateSize: () => {
-      if (columns <= 3) return 120;   // mobile unchanged ✅
-      if (columns <= 5) return 140;   // tablet
-      return 150;                     // desktop fix ✅
+      if (columns <= 3) return 120;
+      if (columns <= 5) return 140;
+      return 150;
     },
-
     overscan: 5,
   });
 
@@ -94,7 +142,7 @@ export default function IptvChannelsPage() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
             <p style={{ color: "var(--text-muted)" }}>
-              Loading channels...
+              Connecting to server...
             </p>
           </div>
         </div>
@@ -134,6 +182,16 @@ export default function IptvChannelsPage() {
             >
               ({filteredChannels.length.toLocaleString()})
             </span>
+            
+            {/* Show loading indicator if still fetching more */}
+            {isLoadingMore && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-red-600" />
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Loading more...
+                </span>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -204,8 +262,6 @@ export default function IptvChannelsPage() {
                       className="grid px-2"
                       style={{
                         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-
-                        // ✅ DESKTOP SPACING FIX
                         rowGap: columns >= 6 ? "16px" : "12px",
                         columnGap: columns >= 6 ? "14px" : "10px",
                       }}
