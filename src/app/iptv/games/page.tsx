@@ -14,7 +14,8 @@ import {
   X,
 } from "lucide-react";
 
-const VPS_URL = "https://hls.bravestream.live";
+// ✅ Update this to match your server (use port 3822 - external forwarding to internal 3477)
+const VPS_URL = "http://57.129.106.133:3822";
 
 type Game = {
   title?: string;
@@ -32,7 +33,7 @@ async function fetchChannelMap(): Promise<Record<string, string>> {
   if (channelMapCache) return channelMapCache;
 
   try {
-    const res = await fetch(`${VPS_URL}/api/channels/all`);
+    const res = await fetch(`${VPS_URL}/api/channels-all`);
     const data = await res.json();
     const channels = data.channels || [];
 
@@ -81,41 +82,75 @@ export default function IptvGamesPage() {
     const controller = new AbortController();
 
     async function loadGames() {
-      setLoading(true);
-      setError("");
+  setLoading(true);
+  setError("");
 
-      try {
-        // 1. Load channel map from VPS
-        const map = await fetchChannelMap();
-        setChannelMap(map);
+  try {
+    // 1. Load channel map from VPS
+    const map = await fetchChannelMap();
+    setChannelMap(map);
+    console.log("✅ Channel map loaded:", Object.keys(map).length, "entries");
 
-        // 2. Load games from Convex
-        const res = await fetch(
-          "https://neighborly-perch-272.convex.cloud/api/action",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({
-              path: "iptv:getLiveGames",
-              args: { period: 1, page: 0, pageSize: 5000 },
-            }),
-          }
-        );
+    // 2. Fetch EPG data from VPS
+    console.log("📡 Fetching EPG data from VPS...");
+    const res = await fetch(`${VPS_URL}/api/epg`, {
+      signal: controller.signal,
+    });
 
-        if (!res.ok) throw new Error(`Failed with status ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`EPG fetch failed with status ${res.status}`);
+    }
 
-        const data = await res.json();
-        setAllGames(Array.isArray(data?.value?.games) ? data.value.games : []);
-      } catch (err: any) {
-        if (err?.name !== "AbortError") {
-          setError("Failed to load games");
-          setAllGames([]);
+    const epgData = await res.json();
+    console.log("📡 EPG data received");
+
+    // 3. Transform EPG data into games format
+    const games: Game[] = [];
+    
+    // EPG data structure: { js: { data: { "channel_id": [{ epg entries }] } } }
+    const channels = epgData?.js?.data || {};
+    
+    const now = Date.now();
+    
+    for (const [channelId, epgEntries] of Object.entries(channels)) {
+      if (!Array.isArray(epgEntries)) continue;
+      
+      for (const entry of epgEntries as any[]) {
+        const startTime = entry.start_timestamp ? new Date(entry.start_timestamp * 1000) : null;
+        const endTime = entry.stop_timestamp ? new Date(entry.stop_timestamp * 1000) : null;
+        const title = entry.name || "";
+        
+        // Only include current or upcoming programs
+        if (startTime && endTime && endTime.getTime() > now) {
+          games.push({
+            title: title,
+            channelId: channelId,
+            startTime: startTime.toISOString(),
+            channelName: map[channelId] || "",
+          });
         }
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
       }
     }
+
+    // Sort by start time
+    games.sort((a, b) => {
+      const timeA = new Date(a.startTime || "").getTime() || 0;
+      const timeB = new Date(b.startTime || "").getTime() || 0;
+      return timeA - timeB;
+    });
+
+    console.log(`✅ Loaded ${games.length} programs from EPG`);
+    setAllGames(games);
+  } catch (err: any) {
+    console.error("❌ Error loading games:", err);
+    if (err?.name !== "AbortError") {
+      setError("Failed to load games: " + err.message);
+      setAllGames([]);
+    }
+  } finally {
+    if (!controller.signal.aborted) setLoading(false);
+  }
+}
 
     loadGames();
     return () => controller.abort();

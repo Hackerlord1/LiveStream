@@ -5,18 +5,22 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-const VPS_URL = "https://hls.bravestream.live";
+const VPS_URL = "http://57.129.106.133:3822";
 
 export default function IptvChannelsPage() {
   const [allChannels, setAllChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cacheStatus, setCacheStatus] = useState({
+    ready: false,
+    progress: { percent: 0, loaded: 0, total: 0 },
+  });
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(7);
 
-  // Responsive columns
+  // ✅ Responsive columns
   useEffect(() => {
     function updateColumns() {
       const w = window.innerWidth;
@@ -32,86 +36,69 @@ export default function IptvChannelsPage() {
     return () => window.removeEventListener("resize", updateColumns);
   }, []);
 
+  // ✅ FETCH channels
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    
+    let mounted = true;
     let pollInterval: NodeJS.Timeout;
-    let isSubscribed = true;
 
-    async function fetchChannels() {
+    async function fetchData() {
       try {
-        // First check progress
-        const progRes = await fetch(`${VPS_URL}/progress`);
-        const progData = await progRes.json();
-        
-        if (!isSubscribed) return;
+        console.log(`Fetching from: ${VPS_URL}/api/channels-all`);
+        const res = await fetch(`${VPS_URL}/api/channels-all`);
+        console.log(`Response status: ${res.status}`);
 
-        // Now get channels
-        const res = await fetch(`${VPS_URL}/api/channels/all`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
         const data = await res.json();
-        
-        if (!isSubscribed) return;
+        console.log(`Channels received:`, data);
 
-        console.log("📡 Server response:", { 
-          channelsCount: data.channels?.length, 
-          ready: data.ready,
-          progress: progData 
-        });
+        if (!mounted) return;
 
         if (data.channels && data.channels.length > 0) {
           setAllChannels(data.channels);
-          sessionStorage.setItem(
-            "iptv-channels-cache-v3",
-            JSON.stringify(data.channels)
-          );
           setLoading(false);
           setError("");
+        }
 
-          // Check if server is still loading
-          if (data.ready) {
-            setIsLoadingMore(false);
-            clearInterval(pollInterval);
-            console.log("✅ Fully loaded, stopping poll");
-          } else {
-            setIsLoadingMore(true);
-            console.log("🔄 Still loading more...");
-          }
+        setCacheStatus({
+          ready: data.ready,
+          progress: {
+            percent:
+              data.total > 0
+                ? Math.round((data.channels.length / data.total) * 100)
+                : 0,
+            loaded: data.channels.length,
+            total: data.total,
+          },
+        });
+
+        if (data.ready) {
+          clearInterval(pollInterval);
         }
-      } catch (e) {
-        console.error("❌ Fetch error:", e);
-        if (!isSubscribed) return;
-        
-        // Try to use cached data
-        const stored = sessionStorage.getItem("iptv-channels-cache-v3");
-        if (stored) {
-          const cached = JSON.parse(stored);
-          if (cached.length > 0) {
-            setAllChannels(cached);
-            setLoading(false);
-          }
-        } else if (allChannels.length === 0) {
-          setError("Failed to load channels. Please try again.");
-          setLoading(false);
-        }
+      } catch (err) {
+        console.error("Fetch error:", err);
+        if (!mounted) return;
+        setError(`Failed to load channels: ${err instanceof Error ? err.message : "Unknown error"}`);
+        setLoading(false);
       }
     }
 
-    // Initial fetch
-    fetchChannels();
-    
-    // Poll every 3 seconds if channels aren't ready
-    pollInterval = setInterval(fetchChannels, 3000);
+    fetchData();
+    pollInterval = setInterval(fetchData, 2000);
 
     return () => {
-      isSubscribed = false;
+      mounted = false;
       clearInterval(pollInterval);
     };
   }, []);
 
+  // ✅ Search
   const filteredChannels = useMemo(() => {
     if (!search.trim()) return allChannels;
     const q = search.toLowerCase();
-    return allChannels.filter((ch: any) => {
+    return allChannels.filter((ch) => {
       const name = (ch.name || "").toLowerCase();
       const number = (ch.number || "").toString();
       return name.includes(q) || number === q;
@@ -131,19 +118,18 @@ export default function IptvChannelsPage() {
     overscan: 5,
   });
 
-  if (loading) {
+  // ✅ LOADING state
+  if (loading && allChannels.length === 0) {
     return (
       <div
         className="h-screen flex flex-col"
-        style={{ backgroundColor: "var(--neu-bg-page)" }}
+        style={{ backgroundColor: "#0a0a0f", color: "#e4e4e7" }}
       >
         <Header />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
-            <p style={{ color: "var(--text-muted)" }}>
-              Connecting to server...
-            </p>
+            <p style={{ color: "#a1a1aa" }}>Connecting to server...</p>
           </div>
         </div>
       </div>
@@ -153,10 +139,7 @@ export default function IptvChannelsPage() {
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
-      style={{
-        backgroundColor: "var(--neu-bg-page)",
-        color: "var(--text-primary)",
-      }}
+      style={{ backgroundColor: "#0a0a0f", color: "#e4e4e7" }}
     >
       <Header />
 
@@ -166,10 +149,24 @@ export default function IptvChannelsPage() {
           <div className="flex items-center gap-3 mb-3">
             <Link
               href="/iptv"
-              className="text-sm hover:underline flex-shrink-0"
-              style={{ color: "var(--text-muted)" }}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200"
+              style={{
+                backgroundColor: "#1a1a2e",
+                color: "#a1a1aa",
+                border: "1px solid #27272a",
+              }}
             >
-              ← Back
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Back
             </Link>
 
             <h1 className="text-xl sm:text-2xl font-bold flex-shrink-0">
@@ -178,30 +175,43 @@ export default function IptvChannelsPage() {
 
             <span
               className="text-xs sm:text-sm flex-shrink-0"
-              style={{ color: "var(--text-muted)" }}
+              style={{ color: "#a1a1aa" }}
             >
               ({filteredChannels.length.toLocaleString()})
             </span>
-            
-            {/* Show loading indicator if still fetching more */}
-            {isLoadingMore && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-red-600" />
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Loading more...
-                </span>
-              </div>
+
+            {!cacheStatus.ready && (
+              <span
+                className="flex items-center gap-2 text-xs flex-shrink-0"
+                style={{ color: "#f59e0b" }}
+              >
+                <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                Loading more… {cacheStatus.progress.percent}%
+              </span>
             )}
           </div>
 
           {error && (
             <div
-              className="mb-2 p-2 rounded-lg text-sm"
+              className="mb-2 p-3 rounded-lg text-sm flex items-center gap-2"
               style={{
-                backgroundColor: "var(--error-bg)",
-                color: "var(--error-text)",
+                backgroundColor: "rgba(239, 68, 68, 0.15)",
+                color: "#fca5a5",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
               }}
             >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
               {error}
             </div>
           )}
@@ -211,17 +221,17 @@ export default function IptvChannelsPage() {
             placeholder="Search channels..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl text-sm"
+            className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-colors duration-200 focus:ring-2 focus:ring-red-600/30"
             style={{
-              backgroundColor: "var(--surface-primary)",
-              border: "2px solid var(--border-primary)",
-              color: "var(--text-primary)",
+              backgroundColor: "#1a1a2e",
+              border: "1px solid #27272a",
+              color: "#e4e4e7",
             }}
           />
         </div>
       </div>
 
-      {/* CHANNEL GRID */}
+      {/* GRID */}
       <div className="flex-1 overflow-hidden px-2 sm:px-4 pb-4">
         <div className="max-w-7xl mx-auto h-full">
           <div
@@ -229,7 +239,7 @@ export default function IptvChannelsPage() {
             className="h-full overflow-auto rounded-xl"
             style={{
               scrollbarWidth: "thin",
-              scrollbarColor: "var(--border-primary) transparent",
+              scrollbarColor: "#27272a transparent",
             }}
           >
             <div
@@ -271,7 +281,12 @@ export default function IptvChannelsPage() {
                           key={`${channel.id}_${channel.number}`}
                           href={`/iptv/watch/${channel.id}`}
                           title={channel.name}
-                          className={`neumorphic-card rounded-xl text-center ${columns >= 6 ? "p-2.5" : "p-2.5"}`}
+                          className="block rounded-xl text-center p-2.5 no-underline transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
+                          style={{
+                            backgroundColor: "#1a1a2e",
+                            border: "1px solid #27272a",
+                            color: "#e4e4e7",
+                          }}
                         >
                           <div className="w-full h-10 sm:h-14 flex items-center justify-center mb-1">
                             {channel.logo ? (
@@ -289,14 +304,12 @@ export default function IptvChannelsPage() {
                               <span className="text-lg sm:text-xl">📺</span>
                             )}
                           </div>
-
                           <p className="font-semibold text-[9px] sm:text-[10px] leading-tight line-clamp-2">
                             {channel.name}
                           </p>
-
                           <p
                             className="text-[9px] sm:text-[10px] mt-0.5"
-                            style={{ color: "var(--text-muted)" }}
+                            style={{ color: "#a1a1aa" }}
                           >
                             Ch. {channel.number}
                           </p>

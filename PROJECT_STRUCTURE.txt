@@ -35,6 +35,7 @@ football-streams/
 │   └── window.svg
 ├── server/
 │   ├── data-server.js
+│   ├── debug_channel.js
 │   ├── server.js
 │   └── websocket-server.js
 ├── src/
