@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 // ✅ Update this to match your server (use port 3822 - external forwarding to internal 3477)
-const VPS_URL = "http://57.129.106.133:3822";
+const VPS_URL = "https://api.bravestream.live"; // Replace with your VPS URL
 
 type Game = {
   title?: string;

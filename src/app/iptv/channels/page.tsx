@@ -5,7 +5,7 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-const VPS_URL = "http://57.129.106.133:3822";
+const VPS_URL = "https://api.bravestream.live"; // Replace with your VPS URL
 
 export default function IptvChannelsPage() {
   const [allChannels, setAllChannels] = useState<any[]>([]);
