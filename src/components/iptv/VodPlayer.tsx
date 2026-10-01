@@ -3,12 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import { fetchIptv, IptvError, IPTV_API_URL } from "@/lib/iptv-client";
+import { readVodQuality, writeVodQuality } from "@/lib/quality";
+import { QualityPicker } from "./ui";
 
 interface Source {
   /** "direct": the file plays as-is (native seeking). "remux": the server repackages it; seeking restarts at ?start= */
   mode: "direct" | "remux";
   duration: number | null;
   stream: string;
+  /** "original" plus lower heights the server can re-encode to, e.g. ["original", "720", "480"] */
+  qualities?: string[];
 }
 
 const RESUME_MIN_SECONDS = 30;
@@ -51,6 +55,10 @@ function formatTime(total: number) {
 export default function VodPlayer({ sourcePath, resumeId, title }: { sourcePath: string; resumeId: string; title: string }) {
   const [source, setSource] = useState<Source | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Chosen quality ("original" or a height), and where to continue after switching
+  const [quality, setQuality] = useState(() => readVodQuality());
+  const [resumeAt, setResumeAt] = useState(0);
+  const position = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,16 +76,40 @@ export default function VodPlayer({ sourcePath, resumeId, title }: { sourcePath:
     };
   }, [sourcePath]);
 
+  const qualities = source?.qualities ?? ["original"];
+  // A saved choice this title doesn't offer (e.g. 720p on a 480p file) falls back to the original
+  const effective = qualities.includes(quality) ? quality : "original";
+
+  function chooseQuality(value: string) {
+    setResumeAt(position.current);
+    setQuality(value);
+    writeVodQuality(value);
+  }
+
+  const onPosition = (seconds: number) => {
+    position.current = seconds;
+  };
+
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
-      {error ? (
-        <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text={error} />
-      ) : !source ? (
-        <PlayerMessage icon={<Loader2 className="h-8 w-8 animate-spin text-white/80" />} text="Preparing video…" />
-      ) : source.mode === "direct" ? (
-        <DirectVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
-      ) : (
-        <RemuxVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
+    <div>
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
+        {error ? (
+          <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text={error} />
+        ) : !source ? (
+          <PlayerMessage icon={<Loader2 className="h-8 w-8 animate-spin text-white/80" />} text="Preparing video…" />
+        ) : source.mode === "direct" && effective === "original" ? (
+          <DirectVideo key={`${source.stream}|original`} source={source} resumeId={resumeId} title={title} startAt={resumeAt} onPosition={onPosition} />
+        ) : (
+          <RemuxVideo key={`${source.stream}|${effective}`} source={source} quality={effective} resumeId={resumeId} title={title} startAt={resumeAt} onPosition={onPosition} />
+        )}
+      </div>
+      {source && qualities.length > 1 && (
+        <QualityPicker
+          options={qualities.map((q) => ({ value: q, label: q === "original" ? "Original" : `${q}p` }))}
+          value={effective}
+          onChange={chooseQuality}
+          note={effective === "original" ? "Best picture, needs a fast connection" : "Lower quality, loads faster"}
+        />
       )}
     </div>
   );
@@ -93,7 +125,9 @@ function PlayerMessage({ icon, text }: { icon: React.ReactNode; text: string }) 
 }
 
 /** Browser-playable file: native controls and seeking. */
-function DirectVideo({ source, resumeId, title }: { source: Source; resumeId: string; title: string }) {
+function DirectVideo({ source, resumeId, title, startAt, onPosition }: {
+  source: Source; resumeId: string; title: string; startAt: number; onPosition: (seconds: number) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
 
@@ -101,6 +135,11 @@ function DirectVideo({ source, resumeId, title }: { source: Source; resumeId: st
     const video = videoRef.current;
     if (!video) return;
     const onLoaded = () => {
+      // Continue where a quality switch left off, else where the viewer last stopped
+      if (startAt > 0) {
+        video.currentTime = startAt;
+        return;
+      }
       const saved = readResume(resumeId);
       if (saved > RESUME_MIN_SECONDS && saved < video.duration - 60) video.currentTime = saved;
     };
@@ -115,7 +154,7 @@ function DirectVideo({ source, resumeId, title }: { source: Source; resumeId: st
       video.removeEventListener("loadedmetadata", onLoaded);
       video.removeEventListener("ended", onEnded);
     };
-  }, [resumeId]);
+  }, [resumeId, startAt]);
 
   if (failed) {
     return <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text="Playback failed. Please try again later." />;
@@ -129,6 +168,7 @@ function DirectVideo({ source, resumeId, title }: { source: Source; resumeId: st
       controls
       autoPlay
       playsInline
+      onTimeUpdate={(e) => onPosition(e.currentTarget.currentTime)}
       onError={() => setFailed(true)}
       className="h-full w-full"
     />
@@ -140,12 +180,16 @@ function DirectVideo({ source, resumeId, title }: { source: Source; resumeId: st
  * sees the stream from `offset` onwards. These controls present the full timeline
  * and reload the stream at the chosen time when seeking.
  */
-function RemuxVideo({ source, resumeId, title }: { source: Source; resumeId: string; title: string }) {
+function RemuxVideo({ source, quality, resumeId, title, startAt, onPosition }: {
+  source: Source; quality: string; resumeId: string; title: string; startAt: number; onPosition: (seconds: number) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const duration = source.duration || 0;
 
   const [offset, setOffset] = useState(() => {
+    // Continue where a quality switch left off, else where the viewer last stopped
+    if (startAt > 0) return startAt;
     const saved = readResume(resumeId);
     return saved > RESUME_MIN_SECONDS && (!duration || saved < duration - 60) ? saved : 0;
   });
@@ -162,7 +206,8 @@ function RemuxVideo({ source, resumeId, title }: { source: Source; resumeId: str
 
   const position = offset + elapsed;
   const separator = source.stream.includes("?") ? "&" : "?";
-  const src = `${IPTV_API_URL}${source.stream}${separator}start=${Math.floor(offset)}`;
+  const qualityParam = quality === "original" ? "" : `&q=${quality}`;
+  const src = `${IPTV_API_URL}${source.stream}${separator}start=${Math.floor(offset)}${qualityParam}`;
 
   function seekTo(seconds: number) {
     const target = Math.max(0, duration ? Math.min(seconds, duration - 5) : seconds);
@@ -210,6 +255,7 @@ function RemuxVideo({ source, resumeId, title }: { source: Source; resumeId: str
   function handleTimeUpdate(e: React.SyntheticEvent<HTMLVideoElement>) {
     const current = e.currentTarget.currentTime;
     setElapsed(current);
+    onPosition(offset + current);
     if (Date.now() - lastSaved.current > SAVE_EVERY_MS) {
       lastSaved.current = Date.now();
       writeResume(resumeId, offset + current);
@@ -217,7 +263,11 @@ function RemuxVideo({ source, resumeId, title }: { source: Source; resumeId: str
   }
 
   if (failed) {
-    return <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text="Playback failed. Please try again later." />;
+    const text = quality === "original"
+      ? "Playback failed. Please try again later."
+      // Lower qualities are re-encoded per viewer and capped on the server
+      : "This quality isn't available right now (the server may be busy). Try Original or another quality.";
+    return <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text={text} />;
   }
 
   const shown = scrubbing ?? position;

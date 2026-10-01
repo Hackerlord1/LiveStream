@@ -349,6 +349,12 @@ video is copied, audio converted to AAC, and seeking restarts at `?start=`. Expe
 start. The provider's file-server links expire after ~30–40 s and connections drop often,
 so all reads go through a reader that resumes from the exact byte with a fresh link.
 
+**Quality choice.** Live channels are encoded in several qualities at once (`LIVE_QUALITIES`,
+default 1080/720/480/360, never above the source). The player picks automatically for each
+viewer's connection and screen, or the viewer chooses. Movies and episodes offer *Original*
+(no extra CPU) plus lower qualities that are re-encoded per viewer, capped at
+`MAX_VOD_TRANSCODES` (default 3) at once.
+
 **Limits.** The portal account allows **6 simultaneous streams** (live channels count once
 each however many people watch them; every movie/episode/radio listener counts separately).
 The real limit is usually upload bandwidth.

@@ -228,6 +228,55 @@ export function RetryButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// ============================================================
+// QUALITY PICKER
+// ============================================================
+
+export interface QualityOption {
+  value: string;
+  label: string;
+}
+
+/** Row of quality chips shown under a player. `note` explains the current state (e.g. "Auto · 480p"). */
+export function QualityPicker({ options, value, onChange, note }: {
+  options: QualityOption[];
+  value: string;
+  onChange: (value: string) => void;
+  note?: string;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+        Quality
+      </span>
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            aria-pressed={active}
+            className="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+            style={
+              active
+                ? { backgroundColor: "var(--brand-red)", color: "#fff", border: "1px solid var(--brand-red)" }
+                : { backgroundColor: "var(--surface-primary)", color: "var(--text-secondary)", border: "1px solid var(--border-primary)" }
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+      {note && (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {note}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Badge({ children, tone = "dark" }: { children: ReactNode; tone?: "dark" | "red" | "gold" }) {
   const styles = {
     dark: "bg-black/70 text-white",

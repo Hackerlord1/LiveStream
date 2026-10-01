@@ -3,7 +3,7 @@
 require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 
 const http = require("http");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
@@ -59,22 +59,15 @@ const restartCount = {};
 // =============================
 // CLEANUP HLS FILES
 // =============================
+// Files ffmpeg writes per channel: <id>.m3u8 (playlist, or master playlist when there are
+// several qualities), <id>_720p.m3u8 (per-quality playlists), <id>_00012.ts / <id>_720p_00012.ts
+const HLS_FILE_RE = /^(\d{1,10})(\.m3u8|_\d{3,4}p\.m3u8|_(?:\d{3,4}p_)?\d+\.ts)$/;
+
 function cleanupHLSFiles(channelId) {
   try {
-    const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
-    if (fs.existsSync(m3u8Path)) {
-      fs.unlinkSync(m3u8Path);
-      console.log(`🧹 Cleaned up ${channelId}.m3u8`);
-    }
-    const files = fs.readdirSync(HLS_DIR);
-    const segmentPattern = new RegExp(`^${channelId}_\\d+\\.ts$`);
-    files.forEach(file => {
-      if (segmentPattern.test(file)) {
-        const filePath = path.join(HLS_DIR, file);
-        fs.unlinkSync(filePath);
-        console.log(`🧹 Cleaned up ${file}`);
-      }
-    });
+    const files = fs.readdirSync(HLS_DIR).filter((file) => HLS_FILE_RE.exec(file)?.[1] === String(channelId));
+    for (const file of files) fs.unlinkSync(path.join(HLS_DIR, file));
+    if (files.length) console.log(`🧹 Cleaned up ${files.length} HLS files for ${channelId}`);
   } catch (err) {
     console.error(`❌ Cleanup error for ${channelId}: ${err.message}`);
   }
@@ -179,7 +172,53 @@ function sendJson(req, res, status, body, extraHeaders = {}) {
   res.end(json);
 }
 
-function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
+// =============================
+// LIVE QUALITIES
+// =============================
+// Heights encoded for each live channel (never above the source). Fewer = less CPU.
+const LIVE_QUALITIES = (process.env.LIVE_QUALITIES || "1080,720,480,360")
+  .split(",").map((h) => Number(h.trim())).filter((h) => h >= 144 && h <= 2160)
+  .sort((a, b) => b - a);
+
+function videoKbpsFor(height) {
+  if (height >= 1080) return 4500;
+  if (height >= 720) return 2500;
+  if (height >= 576) return 1600;
+  if (height >= 480) return 1200;
+  return 700;
+}
+
+// Source height per channel, probed once (avoids encoding e.g. a "1080p" that is really 720p)
+const sourceHeights = new Map();
+
+function probeSourceHeight(url) {
+  return new Promise((resolve) => {
+    execFile(
+      tools.FFPROBE,
+      ["-v", "error", "-user_agent", portal.USER_AGENT, "-analyzeduration", "3000000", "-probesize", "3000000",
+        "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", url],
+      { timeout: 15000, windowsHide: true },
+      (err, stdout) => resolve(err ? null : Number(String(stdout).trim().split(/\s+/)[0]) || null)
+    );
+  });
+}
+
+/** Heights to encode for this channel: the source (capped at the top quality) plus every lower rung. */
+async function qualityLadder(channelId) {
+  if (!sourceHeights.has(channelId) && tools.ffprobeOk) {
+    try {
+      const { url } = await getStreamLink(channelId);
+      sourceHeights.set(channelId, await probeSourceHeight(url));
+    } catch {
+      sourceHeights.set(channelId, null);
+    }
+  }
+  const source = sourceHeights.get(channelId) || LIVE_QUALITIES[0];
+  const top = Math.min(source, LIVE_QUALITIES[0]);
+  return [top, ...LIVE_QUALITIES.filter((h) => h < top)];
+}
+
+function getFFmpegArgs(streamUrl, channelId, useReencode = false, ladder = null) {
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const baseArgs = [
     "-analyzeduration", "5000000",
@@ -206,6 +245,50 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
     "-i", streamUrl,
   );
 
+  // Re-encode mode with several qualities: one master playlist (<id>.m3u8, the same URL
+  // players always used) listing a variant per height. Players pick automatically or
+  // let the viewer choose.
+  if (useReencode && ladder && ladder.length > 1) {
+    const split = ladder.map((_, i) => `[s${i}]`).join("");
+    const scales = ladder.map((h, i) => `[s${i}]scale=-2:${h}[v${i}]`).join(";");
+    baseArgs.push(
+      "-filter_complex",
+      // Deinterlace only frames flagged interlaced (1080i broadcasts), then one scaled copy per quality
+      `[0:v:0]yadif=mode=0:deint=interlaced,split=${ladder.length}${split};${scales}`,
+    );
+    ladder.forEach((_, i) => baseArgs.push("-map", `[v${i}]`, "-map", "0:a:0?"));
+    baseArgs.push(
+      ...tools.fpsPassthroughArgs,
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-pix_fmt", "yuv420p", // browsers can't decode 10-bit
+      "-g", "48",
+      "-sc_threshold", "0",
+    );
+    ladder.forEach((h, i) => {
+      const kbps = videoKbpsFor(h);
+      baseArgs.push(`-b:v:${i}`, `${kbps}k`, `-maxrate:v:${i}`, `${Math.round(kbps * 1.1)}k`, `-bufsize:v:${i}`, `${kbps * 2}k`);
+    });
+    // Always AAC: browsers can't play the AC3/E-AC3/MP2 audio many channels carry
+    baseArgs.push("-c:a", "aac", "-ac", "2");
+    ladder.forEach((h, i) => baseArgs.push(`-b:a:${i}`, i === 0 ? "128k" : h <= 360 ? "64k" : "96k"));
+    baseArgs.push(
+      "-force_key_frames", "expr:gte(t,n_forced*4)",
+      "-f", "hls",
+      "-hls_time", "4",
+      "-hls_list_size", "15",
+      "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
+      "-hls_segment_type", "mpegts",
+      "-master_pl_name", `${channelId}.m3u8`,
+      "-var_stream_map", ladder.map((h, i) => `v:${i},a:${i},name:${h}p`).join(" "),
+      "-hls_segment_filename", path.join(HLS_DIR, `${channelId}_%v_%05d.ts`),
+      path.join(HLS_DIR, `${channelId}_%v.m3u8`),
+    );
+    return baseArgs;
+  }
+
+  // Single quality (copy mode, or LIVE_QUALITIES set to one height)
   // First video + first audio only (sources can carry DVB subtitles / data streams)
   baseArgs.push("-map", "0:v:0", "-map", "0:a:0?");
 
@@ -266,6 +349,10 @@ async function startStream(channelId, forceReencode = false) {
 
   const initPromise = (async () => {
     try {
+      // Qualities to encode (probes the channel's resolution the first time)
+      const ladder = forceReencode ? await qualityLadder(channelId) : null;
+      if (ladder) console.log(`📐 ${channelId}: qualities ${ladder.map((h) => `${h}p`).join(", ")}`);
+
       const streamInfo = await getStreamLink(channelId);
 
       if (!streamInfo || !streamInfo.url) {
@@ -276,7 +363,7 @@ async function startStream(channelId, forceReencode = false) {
 
       console.log(`🔗 Got stream link for ${channelId}`);
 
-      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode);
+      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode, ladder);
       const ffmpeg = spawn(FFMPEG, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true, // no console window per ffmpeg on Windows
@@ -643,9 +730,9 @@ const server = http.createServer(async (req, res) => {
     try {
       if (action === "source") {
         const info = await vod.describe(key, createLink);
-        return sendJson(req, res, 200, { mode: info.mode, duration: info.duration, stream: `/api/vod/${id}/stream` });
+        return sendJson(req, res, 200, { mode: info.mode, duration: info.duration, height: info.height, qualities: vod.qualitiesFor(info), stream: `/api/vod/${id}/stream` });
       }
-      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"), url.searchParams.get("q") || "original");
     } catch (err) {
       if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
       console.error(`❌ Movie ${id} playback failed: ${err.message}`);
@@ -674,11 +761,13 @@ const server = http.createServer(async (req, res) => {
         const qs = new URLSearchParams({ season: seasonId, episode });
         return sendJson(req, res, 200, {
           mode: info.mode,
+          height: info.height,
+          qualities: vod.qualitiesFor(info),
           duration: info.duration,
           stream: `/api/series/${encodeURIComponent(id)}/stream?${qs}`,
         });
       }
-      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"), url.searchParams.get("q") || "original");
     } catch (err) {
       if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
       console.error(`❌ Episode ${id} ${seasonId}/${episode} playback failed: ${err.message}`);
@@ -785,8 +874,8 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname.startsWith("/hls/")) {
     const file = url.pathname.slice("/hls/".length);
-    // Only serve playlists and segments this server writes (e.g. 123.m3u8, 123_00042.ts)
-    if (!/^\d{1,10}(\.m3u8|_\d+\.ts)$/.test(file)) {
+    // Only serve playlists and segments this server writes (see HLS_FILE_RE)
+    if (!HLS_FILE_RE.test(file)) {
       res.writeHead(404);
       return res.end("not found");
     }
