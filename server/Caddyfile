@@ -1,8 +1,18 @@
 # Caddy: serves https://api.bravestream.live directly from this computer.
-# It gets and renews the HTTPS certificate automatically (needs ports 80 and 443
-# forwarded to this computer) and passes requests to the stream server on :3477.
+# It gets and renews the HTTPS certificate automatically and passes requests to the
+# stream server on :3477.
+#
+# Ports: HTTPS on 443. Port 80 is already used by Windows (System / HTTP.sys) on the
+# server computer, so Caddy's plain-HTTP listener moves to 8880. Router forwards:
+#   outside 443 -> 192.168.0.52:443   (required)
+#   outside 80  -> 192.168.0.52:8880  (optional: http->https redirect, extra cert check)
 #
 # Run:  caddy run --config C:\bravestream\server\Caddyfile
+
+{
+	http_port 8880
+	https_port 443
+}
 
 api.bravestream.live {
 	# No `encode` here: the stream server already gzips its JSON, and video doesn't compress

@@ -159,13 +159,22 @@ you're behind CGNAT: use [the Cloudflare Tunnel instead](#alternative-cloudflare
 (e.g. `192.168.1.50`). In your router, add a **DHCP reservation** for it so it never
 changes.
 
-**8.2 Forward ports on the router.** Forward **TCP 80** and **TCP 443** to that IP.
-Do **not** forward 3477; the stream server stays private behind Caddy.
+**8.2 Forward ports on the router.**
+
+| Outside port | Forward to | |
+| --- | --- | --- |
+| TCP **443** | this computer, port **443** | required (HTTPS) |
+| TCP **80** | this computer, port **8880** | optional (redirects http to https) |
+
+Caddy uses 8880 for plain HTTP because port 80 is often already taken on Windows (check with
+`Get-NetTCPConnection -State Listen -LocalPort 80`). Do **not** forward 3477; the stream
+server stays private behind Caddy. If something else already uses the router's outside 80,
+skip that row: HTTPS certificates still work through 443 alone.
 
 **8.3 Allow the ports in Windows Firewall** (Administrator PowerShell):
 
 ```powershell
-New-NetFirewallRule -DisplayName "Caddy HTTP/HTTPS" -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow
+New-NetFirewallRule -DisplayName "Caddy HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443,8880 -Action Allow
 ```
 
 **8.4 Point the domain at your IP.** The domain's DNS is on Cloudflare. In
