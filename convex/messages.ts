@@ -6,25 +6,28 @@ const MAX_MESSAGE_LENGTH = 200;
 const MAX_USERNAME_LENGTH = 20;
 const RATE_LIMIT_WINDOW = 10_000;
 const RATE_LIMIT_MAX = 5;
+// Per-match cap across all users, so switching usernames can't bypass the per-user limit
+const MATCH_RATE_LIMIT_MAX = 30;
 
-const ADMIN_USERS = new Set(["admin", "moderator", "system"]);
+// Names that could be mistaken for staff. Admin status is never granted from a username.
+const RESERVED_USERNAMES = new Set(["admin", "moderator", "system", "bravestream"]);
+const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const DEFAULT_COLOR = "#3B82F6";
 
 // WELCOME MESSAGE - Edit this to customize
 const WELCOME_MESSAGE = "👋 Welcome to BraveStream Chat! This is a free community space to share your thoughts, react to the game, and connect with fellow sports fans. Be respectful and enjoy the match! ⚽🔥";
 
 function sanitizeUsername(username: string) {
-  const cleaned = username.trim().slice(0, MAX_USERNAME_LENGTH);
-  return cleaned.replace(/[^\w\s-]/g, "") || "Anonymous";
+  const cleaned = username.trim().slice(0, MAX_USERNAME_LENGTH).replace(/[^\w\s-]/g, "").trim();
+  if (!cleaned || RESERVED_USERNAMES.has(cleaned.toLowerCase())) {
+    return "Anonymous";
+  }
+  return cleaned;
 }
 
+// Messages are stored as plain text; the client renders them as text, never as HTML.
 function sanitizeMessage(message: string) {
-  return message
-    .trim()
-    .slice(0, MAX_MESSAGE_LENGTH)
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return message.trim().slice(0, MAX_MESSAGE_LENGTH);
 }
 
 export const getMessages = query({
@@ -97,7 +100,7 @@ export const sendMessage = mutation({
           .eq("username", username)
           .gt("createdAt", windowStart)
       )
-      .collect();
+      .take(RATE_LIMIT_MAX);
 
     if (recentMessages.length >= RATE_LIMIT_MAX) {
       throw new ConvexError(
@@ -105,15 +108,24 @@ export const sendMessage = mutation({
       );
     }
 
-    const isAdmin = ADMIN_USERS.has(username.toLowerCase());
+    const recentMatchMessages = await ctx.db
+      .query("messages")
+      .withIndex("by_match_created", (q) =>
+        q.eq("matchId", args.matchId).gt("createdAt", windowStart)
+      )
+      .take(MATCH_RATE_LIMIT_MAX);
+
+    if (recentMatchMessages.length >= MATCH_RATE_LIMIT_MAX) {
+      throw new ConvexError("Chat is busy. Please wait a moment.");
+    }
 
     await ctx.db.insert("messages", {
       matchId: args.matchId,
       username,
       message,
-      color: args.color,
+      color: COLOR_PATTERN.test(args.color) ? args.color : DEFAULT_COLOR,
       createdAt: now,
-      isAdmin,
+      isAdmin: false,
     });
   },
 });

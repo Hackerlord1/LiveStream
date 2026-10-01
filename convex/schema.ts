@@ -16,7 +16,9 @@ export default defineSchema({
     .index("by_match_created", ["matchId", "createdAt"])
     .index("by_match_user_created", ["matchId", "username", "createdAt"]),
 
-  // ---- IPTV TOKEN CACHE ----
+  // ---- LEGACY: old IPTV token cache, no longer used (IPTV moved to server/). ----
+  // Kept so deploys don't fail on existing rows; clear the table in the Convex
+  // dashboard, then this can be deleted.
   token: defineTable({
     value: v.string(),
     expiresAt: v.float64(),

@@ -1,0 +1,16 @@
+{
+  "name": "bravestream-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BraveStream stream/API server: IPTV portal client, catalogues, live restreaming and VOD playback",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.4"
+  }
+}

@@ -5,7 +5,6 @@ import { logger } from './logger';
 import { apiCache } from './cache';
 import { fetchWithRetry, isAbortError } from './fetch-utils';
 import { transformChannelData, enhanceChannel } from './transformers';
-import { getMockChannels } from './mock-data';
 import type { ApiChannel, ChannelsResponse } from './types';
 
 // ========== MAIN FETCH FUNCTION ==========
@@ -28,7 +27,7 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
 
         if (!response.ok) {
             logger.error(`Channels API responded with ${response.status}`);
-            return useFallbackChannels();
+            return emptyChannelsFallback();
         }
 
         const data: ChannelsResponse = await response.json();
@@ -51,7 +50,7 @@ export async function fetchAllChannels(): Promise<ChannelsResponse> {
         return result;
     } catch (error: unknown) {
         handleChannelsError(error);
-        return useFallbackChannels();
+        return emptyChannelsFallback();
     }
 }
 
@@ -73,7 +72,7 @@ function handleChannelsError(error: unknown): void {
     }
 }
 
-function useFallbackChannels(): ChannelsResponse {
+function emptyChannelsFallback(): ChannelsResponse {
     logger.warn('API unavailable — returning empty channels');
     return {
         total_channels: 0,
@@ -82,26 +81,6 @@ function useFallbackChannels(): ChannelsResponse {
 }
 
 // ========== FILTER FUNCTIONS ==========
-
-/**
- * Fetch channels by category
- */
-export async function fetchChannelsByCategory(category: string): Promise<ApiChannel[]> {
-    const allChannels = await fetchAllChannels();
-    return allChannels.channels.filter(
-        channel => channel.category?.toLowerCase() === category.toLowerCase()
-    );
-}
-
-/**
- * Fetch channels by country
- */
-export async function fetchChannelsByCountry(country: string): Promise<ApiChannel[]> {
-    const allChannels = await fetchAllChannels();
-    return allChannels.channels.filter(
-        channel => channel.country?.toLowerCase().includes(country.toLowerCase())
-    );
-}
 
 /**
  * Search channels by query
@@ -158,53 +137,4 @@ export function getChannelLanguages(channels: ApiChannel[]): string[] {
     });
     return Array.from(languages).sort();
 }
-
-/**
- * Get top channels by viewer count
- */
-export function getTopChannelsByViewers(channels: ApiChannel[], limit = 10): ApiChannel[] {
-    return [...channels]
-        .sort((a, b) => b.viewers - a.viewers)
-        .slice(0, limit);
-}
-
-/**
- * Get only online channels
- */
-export function getOnlineChannels(channels: ApiChannel[]): ApiChannel[] {
-    return channels.filter(channel => channel.status === 'online');
-}
-
-/**
- * Group channels by country
- */
-export function groupChannelsByCountry(channels: ApiChannel[]): Record<string, ApiChannel[]> {
-    const grouped: Record<string, ApiChannel[]> = {};
-
-    channels.forEach(channel => {
-        const country = channel.country || 'Unknown';
-        if (!grouped[country]) {
-            grouped[country] = [];
-        }
-        grouped[country].push(channel);
-    });
-
-    return grouped;
-}
-
-/**
- * Group channels by category
- */
-export function groupChannelsByCategory(channels: ApiChannel[]): Record<string, ApiChannel[]> {
-    const grouped: Record<string, ApiChannel[]> = {};
-
-    channels.forEach(channel => {
-        const category = channel.category || 'Other';
-        if (!grouped[category]) {
-            grouped[category] = [];
-        }
-        grouped[category].push(channel);
-    });
-
-    return grouped;
-}
+

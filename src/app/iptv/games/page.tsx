@@ -1,314 +1,291 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Header from "@/components/Header";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  ArrowLeft,
-  CirclePlay,
-  Clock,
-  Search,
-  Trophy,
-  Tv,
-  X,
-} from "lucide-react";
+import { CalendarClock, Play, SearchX, Trophy, WifiOff } from "lucide-react";
+import { fetchIptv } from "@/lib/iptv-client";
+import { EmptyState, FilterChips, IptvPage, RetryButton, SearchBox, SkeletonGrid } from "@/components/iptv/ui";
 
-// ✅ Update this to match your server (use port 3822 - external forwarding to internal 3477)
-const VPS_URL = "https://api.bravestream.live"; // Replace with your VPS URL
-
-type Game = {
-  title?: string;
-  channelId?: string | number;
-  startTime?: string;
-  channelName?: string;
-};
-
-// ============================================================
-// CHANNEL MAP FROM VPS (not sessionStorage)
-// ============================================================
-let channelMapCache: Record<string, string> | null = null;
-
-async function fetchChannelMap(): Promise<Record<string, string>> {
-  if (channelMapCache) return channelMapCache;
-
-  try {
-    const res = await fetch(`${VPS_URL}/api/channels-all`);
-    const data = await res.json();
-    const channels = data.channels || [];
-
-    console.log(`📡 Loaded ${channels.length} channels from VPS`);
-
-    const map: Record<string, string> = {};
-    for (const ch of channels) {
-      if (ch.name) {
-        if (ch.id) map[String(ch.id)] = ch.name;
-        if (ch.number) map[String(ch.number)] = ch.name;
-      }
-    }
-
-    // Debug: Check specific missing channel
-    console.log("108906 lookup:", map["108906"] || "NOT FOUND");
-    console.log("45233 lookup:", map["45233"] || "NOT FOUND");
-
-    channelMapCache = map;
-    return map;
-  } catch (e) {
-    console.error("Failed to load channel map:", e);
-    return {};
-  }
+interface Game {
+  channelId: string;
+  altChannelIds: string[];
+  title: string;
+  league: string;
+  start: number | null;
+  end: number | null;
+  /** Kick-off time from the channel name when no date was given, e.g. "7:45pm UK" */
+  timeText: string | null;
+  status: "live" | "upcoming" | "unscheduled";
 }
 
-function getChannelName(channelId: string | number, channelMap: Record<string, string>): string {
-  const id = String(channelId ?? "").trim();
-  if (!id) return "";
-  return channelMap[id] || "";
-}
+type Filter = "all" | "live" | "upcoming" | "unscheduled";
 
-// ============================================================
-// COMPONENT
-// ============================================================
+const REFRESH_MS = 60 * 1000;
+const TEAMS_RE = /\s+(vs?\.?|@)\s+/i;
+
 export default function IptvGamesPage() {
-  const [allGames, setAllGames] = useState<Game[]>([]);
-  const [channelMap, setChannelMap] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [error, setError] = useState("");
+  const [games, setGames] = useState<Game[] | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  // Load channel map + games
+  // Load, then refresh every minute so "live" and "in 20 min" stay accurate
   useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadGames() {
-  setLoading(true);
-  setError("");
-
-  try {
-    // 1. Load channel map from VPS
-    const map = await fetchChannelMap();
-    setChannelMap(map);
-    console.log("✅ Channel map loaded:", Object.keys(map).length, "entries");
-
-    // 2. Fetch EPG data from VPS
-    console.log("📡 Fetching EPG data from VPS...");
-    const res = await fetch(`${VPS_URL}/api/epg`, {
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      throw new Error(`EPG fetch failed with status ${res.status}`);
+    let cancelled = false;
+    function load() {
+      fetchIptv<{ games: Game[] }>("/api/games")
+        .then((data) => {
+          if (cancelled) return;
+          setGames(data.games);
+          setError(false);
+          setNow(Date.now());
+        })
+        .catch(() => {
+          if (!cancelled) setError(true);
+        });
     }
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [attempt]);
 
-    const epgData = await res.json();
-    console.log("📡 EPG data received");
+  const counts = useMemo(() => {
+    const c = { live: 0, upcoming: 0, unscheduled: 0 };
+    for (const g of games ?? []) c[g.status]++;
+    return c;
+  }, [games]);
 
-    // 3. Transform EPG data into games format
-    const games: Game[] = [];
-    
-    // EPG data structure: { js: { data: { "channel_id": [{ epg entries }] } } }
-    const channels = epgData?.js?.data || {};
-    
-    const now = Date.now();
-    
-    for (const [channelId, epgEntries] of Object.entries(channels)) {
-      if (!Array.isArray(epgEntries)) continue;
-      
-      for (const entry of epgEntries as any[]) {
-        const startTime = entry.start_timestamp ? new Date(entry.start_timestamp * 1000) : null;
-        const endTime = entry.stop_timestamp ? new Date(entry.stop_timestamp * 1000) : null;
-        const title = entry.name || "";
-        
-        // Only include current or upcoming programs
-        if (startTime && endTime && endTime.getTime() > now) {
-          games.push({
-            title: title,
-            channelId: channelId,
-            startTime: startTime.toISOString(),
-            channelName: map[channelId] || "",
-          });
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (games ?? []).filter(
+      (g) =>
+        (filter === "all" || g.status === filter) &&
+        (!q || g.title.toLowerCase().includes(q) || g.league.toLowerCase().includes(q))
+    );
+  }, [games, search, filter]);
+
+  const live = visible.filter((g) => g.status === "live");
+  const upcomingByDay = groupByDay(visible.filter((g) => g.status === "upcoming"), now);
+  const unscheduled = visible.filter((g) => g.status === "unscheduled");
+
+  const chips = [
+    { id: "all", label: "All", count: games?.length ?? 0 },
+    { id: "live", label: "🔴 Live now", count: counts.live },
+    { id: "upcoming", label: "Coming up", count: counts.upcoming },
+    { id: "unscheduled", label: "Time not confirmed", count: counts.unscheduled },
+  ];
+
+  let body;
+  if (!games && error) {
+    body = (
+      <EmptyState
+        icon={<WifiOff className="h-6 w-6" />}
+        title="Can't reach the server"
+        message="We couldn't load today's games right now."
+        action={<RetryButton onClick={() => setAttempt((a) => a + 1)} />}
+      />
+    );
+  } else if (!games) {
+    body = <SkeletonGrid variant="tile" count={12} />;
+  } else if (visible.length === 0) {
+    body = (
+      <EmptyState
+        icon={search ? <SearchX className="h-6 w-6" /> : <CalendarClock className="h-6 w-6" />}
+        title={search ? "No games found" : "No games scheduled right now"}
+        message={search ? `Nothing matches “${search}”.` : "Check back later, or browse live channels."}
+        action={
+          !search && (
+            <Link href="/iptv/channels" className="text-sm font-semibold" style={{ color: "var(--brand-red)" }}>
+              Browse channels →
+            </Link>
+          )
         }
-      }
-    }
-
-    // Sort by start time
-    games.sort((a, b) => {
-      const timeA = new Date(a.startTime || "").getTime() || 0;
-      const timeB = new Date(b.startTime || "").getTime() || 0;
-      return timeA - timeB;
-    });
-
-    console.log(`✅ Loaded ${games.length} programs from EPG`);
-    setAllGames(games);
-  } catch (err: any) {
-    console.error("❌ Error loading games:", err);
-    if (err?.name !== "AbortError") {
-      setError("Failed to load games: " + err.message);
-      setAllGames([]);
-    }
-  } finally {
-    if (!controller.signal.aborted) setLoading(false);
-  }
-}
-
-    loadGames();
-    return () => controller.abort();
-  }, []);
-
-  // Filter + sort games
-  const filteredGames = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-
-    let games = allGames;
-
-    if (q) {
-      games = games.filter((game) => {
-        const title = String(game.title || "").toLowerCase();
-        const channelId = String(game.channelId || "").toLowerCase();
-        const channelName = getChannelName(game.channelId || "", channelMap).toLowerCase();
-        return title.includes(q) || channelName.includes(q) || channelId.includes(q);
-      });
-    }
-
-    // Sort by time
-    games = [...games].sort((a, b) => {
-      const timeA = new Date(a.startTime || "").getTime() || 0;
-      const timeB = new Date(b.startTime || "").getTime() || 0;
-      return timeA - timeB;
-    });
-
-    return games;
-  }, [allGames, searchQuery, channelMap]);
-
-  const rowVirtualizer = useVirtualizer({
-    count: filteredGames.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 88,
-    overscan: 12,
-  });
-
-  if (loading) {
-    return (
-      <div className="h-screen flex flex-col" style={{ backgroundColor: "var(--neu-bg-page)" }}>
-        <Header />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
-            <p style={{ color: "var(--text-muted)" }}>Loading games...</p>
-          </div>
-        </div>
+      />
+    );
+  } else {
+    body = (
+      <div className="space-y-8">
+        {live.length > 0 && (
+          <Section title="Live now" count={live.length}>
+            {live.map((g) => (
+              <GameCard key={`${g.channelId}-${g.title}`} game={g} now={now} />
+            ))}
+          </Section>
+        )}
+        {upcomingByDay.map(([day, dayGames]) => (
+          <Section key={day} title={day} count={dayGames.length}>
+            {dayGames.map((g) => (
+              <GameCard key={`${g.channelId}-${g.title}`} game={g} now={now} />
+            ))}
+          </Section>
+        ))}
+        {unscheduled.length > 0 && (
+          <Section
+            title="Time not confirmed"
+            count={unscheduled.length}
+            note="These channels are named after a fixture but don't give a date, so they may be showing something else."
+          >
+            {unscheduled.map((g) => (
+              <GameCard key={`${g.channelId}-${g.title}`} game={g} now={now} />
+            ))}
+          </Section>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: "var(--neu-bg-page)", color: "var(--text-primary)" }}>
-      <Header />
+    <IptvPage
+      title="Live Games"
+      icon={<Trophy className="h-5 w-5" />}
+      subtitle={games ? `${counts.live} live · ${counts.upcoming} coming up` : undefined}
+      toolbar={
+        <>
+          <SearchBox value={search} onChange={setSearch} placeholder="Search teams or competitions…" />
+          <FilterChips options={chips} value={filter} onChange={(id) => setFilter(id as Filter)} />
+        </>
+      }
+    >
+      {body}
+    </IptvPage>
+  );
+}
 
-      {/* Header Bar */}
-      <div className="px-4 py-3 flex-shrink-0">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-4 mb-3">
-            <Link href="/iptv" className="text-sm flex-shrink-0" style={{ color: "var(--text-muted)" }}>
-              <ArrowLeft className="h-4 w-4 inline mr-1" />Back
-            </Link>
-            <Trophy className="h-5 w-5 text-red-500 flex-shrink-0" />
-            <h1 className="text-2xl font-bold flex-shrink-0">Live Games</h1>
-            <span className="text-sm flex-shrink-0" style={{ color: "var(--text-muted)" }}>
-              ({filteredGames.length.toLocaleString()})
-            </span>
-          </div>
+function Section({ title, count, note, children }: { title: string; count: number; note?: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <div className="mb-3 flex items-baseline gap-2">
+        <h2 className="text-lg font-bold">{title}</h2>
+        <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+          {count}
+        </span>
+      </div>
+      {note && (
+        <p className="-mt-2 mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
+          {note}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">{children}</div>
+    </section>
+  );
+}
 
-          {error && (
-            <div className="mb-2 p-2 rounded-lg text-sm" style={{ backgroundColor: "var(--error-bg)", color: "var(--error-text)" }}>
-              {error}
-            </div>
-          )}
+function GameCard({ game, now }: { game: Game; now: number }) {
+  const parts = game.title.split(TEAMS_RE);
+  const [home, , away] = parts.length >= 3 ? parts : [game.title, "", ""];
+  const isLive = game.status === "live";
+  const progress = isLive && game.start && game.end ? Math.min(100, Math.max(0, ((now - game.start) / (game.end - game.start)) * 100)) : null;
 
-          {/* Search */}
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--text-muted)" }} />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search matches, teams, or channels..."
-              className="w-full pl-10 pr-10 py-2.5 rounded-xl text-sm outline-none"
-              style={{ backgroundColor: "var(--surface-primary)", border: "2px solid var(--border-primary)", color: "var(--text-primary)" }}
-            />
-            {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear search">
-                <X className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
-              </button>
-            )}
-          </div>
-        </div>
+  return (
+    <div
+      className="relative flex flex-col overflow-hidden rounded-2xl p-4"
+      style={{
+        backgroundColor: "var(--surface-primary)",
+        border: `1px solid ${isLive ? "var(--brand-red)" : "var(--border-secondary)"}`,
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          {game.league || "Match"}
+        </span>
+        <TimeBadge game={game} now={now} />
       </div>
 
-      {/* Games List */}
-      <div className="flex-1 overflow-hidden px-4 pb-4">
-        <div className="max-w-7xl mx-auto h-full">
-          <div ref={parentRef} className="h-full overflow-auto rounded-xl" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border-primary) transparent" }}>
-            {filteredGames.length === 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <Trophy className="h-12 w-12 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-                  <p className="text-lg" style={{ color: "var(--text-muted)" }}>No live games found</p>
-                </div>
-              </div>
-            ) : (
-              <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const game = filteredGames[virtualRow.index];
-                  const channelName = getChannelName(game.channelId || "", channelMap);
-                  const displayChannel = channelName || `Channel ${game.channelId || "?"}`;
+      <div className="my-4 min-w-0">
+        <p className="truncate text-base font-bold leading-tight" title={home}>
+          {home}
+        </p>
+        {away && (
+          <>
+            <p className="my-0.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              vs
+            </p>
+            <p className="truncate text-base font-bold leading-tight" title={away}>
+              {away}
+            </p>
+          </>
+        )}
+      </div>
 
-                  return (
-                    <div
-                      key={virtualRow.key}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: `${virtualRow.size}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                        paddingBottom: "8px",
-                      }}
-                    >
-                      <Link
-                        href={`/iptv/watch/${encodeURIComponent(String(game.channelId || ""))}`}
-                        className="neumorphic-card mx-1 relative block overflow-hidden rounded-2xl p-4"
-                      >
-                        <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-red-600 to-orange-500 opacity-80" />
-                        <div className="flex items-center justify-between pl-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <CirclePlay className="h-4 w-4 text-red-500 flex-shrink-0" />
-                              <h2 className="text-sm font-bold truncate">{game.title || "Untitled game"}</h2>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                              <span className="flex items-center gap-1 min-w-0">
-                                <Clock className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{game.startTime || "TBD"}</span>
-                              </span>
-                              <span className="flex items-center gap-1 min-w-0">
-                                <Tv className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{displayChannel}</span>
-                              </span>
-                            </div>
-                          </div>
-                          <span className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg font-bold flex-shrink-0 ml-3">WATCH</span>
-                        </div>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+      {progress !== null && (
+        <div className="mb-3 h-1 overflow-hidden rounded-full" style={{ backgroundColor: "var(--surface-tertiary)" }}>
+          <div className="h-full rounded-full bg-red-600" style={{ width: `${progress}%` }} />
         </div>
+      )}
+
+      <div className="mt-auto flex items-center gap-2">
+        <Link
+          href={`/iptv/watch/${game.channelId}`}
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: isLive ? "var(--brand-red)" : "var(--text-secondary)" }}
+        >
+          <Play className="h-4 w-4 fill-current" /> {isLive ? "Watch live" : "Open channel"}
+        </Link>
+        {game.altChannelIds.map((id, i) => (
+          <Link
+            key={id}
+            href={`/iptv/watch/${id}`}
+            title={`Backup stream ${i + 1}`}
+            className="rounded-xl px-3 py-2 text-xs font-semibold"
+            style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-secondary)", border: "1px solid var(--border-secondary)" }}
+          >
+            Alt {i + 1}
+          </Link>
+        ))}
       </div>
     </div>
   );
+}
+
+function TimeBadge({ game, now }: { game: Game; now: number }) {
+  if (game.status === "live") {
+    return (
+      <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> LIVE
+      </span>
+    );
+  }
+  if (game.start) {
+    const time = new Date(game.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return (
+      <span className="flex-shrink-0 text-xs font-semibold tabular-nums" style={{ color: "var(--text-secondary)" }}>
+        {time} <span className="font-normal" style={{ color: "var(--text-muted)" }}>· {relative(game.start - now)}</span>
+      </span>
+    );
+  }
+  return game.timeText ? (
+    <span className="flex-shrink-0 text-xs" style={{ color: "var(--text-muted)" }}>
+      {game.timeText}
+    </span>
+  ) : null;
+}
+
+function relative(ms: number) {
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `in ${Math.max(1, minutes)} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  return `in ${Math.round(hours / 24)}d`;
+}
+
+/** Groups upcoming games under "Today", "Tomorrow" or a date, in the visitor's timezone. */
+function groupByDay(games: Game[], now: number): [string, Game[]][] {
+  const dayKey = (t: number) => new Date(t).toDateString();
+  const today = dayKey(now);
+  const tomorrow = dayKey(now + 24 * 60 * 60 * 1000);
+  const groups = new Map<string, Game[]>();
+  for (const g of games) {
+    if (!g.start) continue;
+    const key = dayKey(g.start);
+    const label =
+      key === today ? "Coming up today" : key === tomorrow ? "Tomorrow" : new Date(g.start).toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label)!.push(g);
+  }
+  return [...groups];
 }

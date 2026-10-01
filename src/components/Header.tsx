@@ -10,6 +10,7 @@ import { GiSoccerBall } from 'react-icons/gi';
 const NAV_LINKS = [
     { href: '/', label: 'Home' },
     { href: '/channels', label: 'Channels' },
+    { href: '/iptv', label: 'IPTV' },
     { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' },
 ] as const;
@@ -23,21 +24,31 @@ export default function Header({ onSearch, searchValue = '' }: {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState(searchValue);
 
-    useEffect(() => setSearchTerm(searchValue), [searchValue]);
+    // Sync local state when the prop / route changes (adjusting state during render, not in an effect)
+    const [prevSearchValue, setPrevSearchValue] = useState(searchValue);
+    if (searchValue !== prevSearchValue) {
+        setPrevSearchValue(searchValue);
+        setSearchTerm(searchValue);
+    }
+
+    const [prevPathname, setPrevPathname] = useState(pathname);
+    if (pathname !== prevPathname) {
+        setPrevPathname(pathname);
+        setIsMenuOpen(false);
+    }
 
     useEffect(() => {
         document.body.style.overflow = isMenuOpen ? 'hidden' : '';
         return () => { document.body.style.overflow = ''; };
     }, [isMenuOpen]);
 
-    useEffect(() => setIsMenuOpen(false), [pathname]);
-
     const handleSearch = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         onSearch?.(searchTerm);
         if (pathname === '/' || pathname === '/channels') {
             const params = new URLSearchParams(window.location.search);
-            searchTerm ? params.set('search', searchTerm) : params.delete('search');
+            if (searchTerm) params.set('search', searchTerm);
+            else params.delete('search');
             router.push(`${pathname}?${params.toString()}`, { scroll: false });
         }
     }, [onSearch, searchTerm, pathname, router]);

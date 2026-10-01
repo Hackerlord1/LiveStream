@@ -25,7 +25,7 @@ export default function Error({
 
                 <h1 className="text-3xl font-bold mb-4">Stream Not Available</h1>
                 <p className="text-gray-400 mb-8">
-                    We couldn't load the match stream. This might be due to temporary issues or the match might have ended.
+                    We couldn&apos;t load the match stream. This might be due to temporary issues or the match might have ended.
                 </p>
 
                 <div className="space-y-4">

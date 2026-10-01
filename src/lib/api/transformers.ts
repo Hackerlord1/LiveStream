@@ -108,7 +108,7 @@ export function extractCountryFromImage(imageUrl: string): string {
                 return country;
             }
         }
-    } catch (error) {
+    } catch {
         logger.warn('Could not extract country from URL:', imageUrl);
     }
 

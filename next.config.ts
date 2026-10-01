@@ -1,53 +1,11 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "flagcdn.com",
-      },
-      {
-        protocol: "https",
-        hostname: "i.ibb.co",
-      },
-      {
-        protocol: "https",
-        hostname: "api.cdn-live.tv",
-      },
-      {
-        protocol: "https",
-        hostname: "**",
-      },
-    ],
-    minimumCacheTTL: 60,
-    formats: ['image/webp'],
-    unoptimized: process.env.NODE_ENV === 'development',
-  },
-
-  serverExternalPackages: ['sharp'],
-
-  async headers() {
-    return [
-      {
-        source: '/_next/image',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=86400, stale-while-revalidate=31536000',
-          },
-        ],
-      },
-      // Allow mixed content for IPTV streams (HTTP on HTTPS site)
-      {
-        source: '/iptv/:path*',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; media-src * data: blob:;",
-          },
-        ],
-      },
-    ];
+    // Logos come from third-party APIs on arbitrary hosts. Serving them unoptimized
+    // lets the browser load them directly instead of turning /_next/image into an
+    // open image proxy that fetches from any site on our server's bandwidth.
+    unoptimized: true,
   },
 };
 

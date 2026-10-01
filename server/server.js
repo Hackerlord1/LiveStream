@@ -1,23 +1,46 @@
+
+// Always load server/.env, whichever folder the server is started from
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
+
 const http = require("http");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
+const portal = require("./portal");
+const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
+const vod = require("./vod");
+const { buildGames } = require("./games");
+const tools = require("./tools");
 
-// ✅ KEEP YOUR PORT (change if needed)
-const PORT = 3477;
+// Fixtures are derived from channel names; statuses (live/upcoming) depend on the clock
+let gamesCache = { data: null, builtAt: 0 };
+const GAMES_TTL_MS = 60 * 1000;
+
+const PORT = Number(process.env.PORT) || 3477;
+const FFMPEG = tools.FFMPEG;
+// Live restream retries: give up after this many failures in a row
+const MAX_RESTARTS = 3;
+// ...but a stream that ran this long counts as healthy and resets the count
+const HEALTHY_RUN_MS = 60 * 1000;
 
 const HLS_DIR = path.join(__dirname, "hls");
 
-const MAC = "00:1A:79:55:16:06";
-const PREHASH = "9c42ac937c6bc42ba21b45b853bfc020b013f8f6";
-const COOKIE = "mac=00%3A1A%3A79%3A55%3A16%3A06; stb_lang=en; timezone=Africa%2FNairobi; adid=13390b63b1ae7032187e40a96e160ee4";
+// Hard cap on concurrent ffmpeg processes so the box can't be exhausted
+const MAX_ACTIVE_STREAMS = Number(process.env.MAX_ACTIVE_STREAMS) || 20;
+// Debug endpoints are disabled unless a token is configured and supplied
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "";
+// Radio is transcoded per listener, so cap concurrent listeners too
+const MAX_RADIO_PROXIES = Number(process.env.MAX_RADIO_PROXIES) || 50;
+let activeRadioProxies = 0;
+
+function parseChannelId(value) {
+  return typeof value === "string" && /^\d{1,10}$/.test(value) ? value : null;
+}
 
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 
-// ✅ GLOBAL CACHE
-let channelsCache = [];
-let cacheReady = false;
-let cacheProgress = { loaded: 0, total: 0, percent: 0 };
+startCatalogue();
 
 // ✅ STREAMING STATE
 const streams = {};
@@ -25,6 +48,12 @@ const viewers = {};
 const stopTimers = {};
 const healthChecks = {};
 const reencodeAttempts = {};
+// Channels seen carrying HEVC video (re-encoded from the start next time)
+const hevcChannels = new Set();
+// Live video is re-encoded by default: even 4-second segments and clean timestamps across
+// the provider's frequent reconnects. LIVE_VIDEO_MODE=copy saves CPU (HEVC is still
+// re-encoded) but copy-mode channels start slower and can freeze after reconnects.
+const LIVE_COPY = process.env.LIVE_VIDEO_MODE === "copy";
 const restartCount = {};
 
 // =============================
@@ -55,172 +84,102 @@ function cleanupHLSFiles(channelId) {
 // IPTV API
 // =============================
 
-async function getToken() {
-  try {
-    const res = await fetch(
-      `http://seatv.xyz/portalott.php?type=stb&action=handshake&token=&prehash=${PREHASH}&JsHttpRequest=1-xml`,
-      {
-        headers: {
-          Cookie: COOKIE,
-          "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        },
-      }
-    );
-
-    if (!res.ok) {
-      throw new Error(`Handshake failed with status ${res.status}`);
-    }
-
-    const data = await res.json();
-    const token = data?.js?.token;
-    if (!token) {
-      throw new Error("No token received from handshake");
-    }
-    return token;
-  } catch (err) {
-    console.error(`❌ getToken failed: ${err.message}`);
-    throw err;
-  }
-}
-
-async function fetchChannels(page = 0) {
-  try {
-    const token = await getToken();
-    if (!token) {
-      throw new Error("No token available for fetching channels");
-    }
-
-    const url = `http://seatv.xyz/portalott.php?type=itv&action=get_ordered_list&genre=*&force_ch_link_check=&fav=0&sortby=number&hd=0&p=${page}&JsHttpRequest=1-xml&from_ch_id=0`;
-
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Cookie: COOKIE,
-        Referer: "http://seatv.xyz/c/",
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "X-User-Agent": "Model: MAG250; Link: WiFi",
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`fetchChannels failed with status ${res.status}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error(`❌ fetchChannels page ${page} failed: ${err.message}`);
-    throw err;
-  }
+function findChannel(channelId) {
+  return catalogue.channels.items.find((c) => String(c.id) === String(channelId));
 }
 
 async function getStreamLink(channelId) {
-  console.log(`🔗 Using direct URL for ${channelId}`);
-  return { 
-    url: `http://seatv.xyz/MAGL2ELNMB/MAG42M41CA/${channelId}`, 
-    needsAuth: true, 
-    token: null
+  const url = await portal.createLiveLink(channelId, findChannel(channelId)?.cmd);
+  return { url };
+}
+
+// EPG changes often but is expensive, so cache it briefly
+let epgCache = { data: null, fetchedAt: 0 };
+const EPG_TTL_MS = 10 * 60 * 1000;
+
+async function fetchEpgData() {
+  if (epgCache.data && Date.now() - epgCache.fetchedAt < EPG_TTL_MS) return epgCache.data;
+  try {
+    console.log("📡 Fetching EPG");
+    const parsed = await portal.portalGet({ type: "itv", action: "get_epg_info", period: "5" });
+    const channels = parsed?.js?.data || {};
+    console.log(`📡 EPG contains data for ${Object.keys(channels).length} channels`);
+    epgCache = { data: parsed, fetchedAt: Date.now() };
+    return parsed;
+  } catch (err) {
+    console.error(`❌ EPG fetch failed: ${err.message}`);
+    return epgCache.data;
+  }
+}
+
+// A series' seasons (each with its episode numbers and the cmd used to play them).
+// Cached briefly: the detail page and every episode play need them.
+const seasonsCache = new Map();
+const SEASONS_TTL_MS = 10 * 60 * 1000;
+
+async function getSeasons(seriesId) {
+  const cached = seasonsCache.get(seriesId);
+  if (cached && cached.expiresAt > Date.now()) return cached.seasons;
+  const data = await portal.portalGet({
+    type: "series", action: "get_ordered_list", movie_id: seriesId,
+    season_id: "0", episode_id: "0", category: "*", sortby: "added", p: "1",
+  });
+  const seasons = (data?.js?.data || []).map((s) => ({ id: s.id, name: s.name, series: s.series, cmd: s.cmd }));
+  if (seasonsCache.size > 500) seasonsCache.clear();
+  seasonsCache.set(seriesId, { seasons, expiresAt: Date.now() + SEASONS_TTL_MS });
+  return seasons;
+}
+
+// =============================
+// RESPONSE HELPERS
+// =============================
+
+// Only what the channel grid and player show (the raw portal objects are ~10x bigger)
+function channelFields(ch) {
+  return {
+    id: ch.id,
+    number: ch.number,
+    name: ch.name,
+    logo: ch.logo,
+    hd: ch.hd,
+    genreId: ch.tv_genre_id,
   };
 }
 
-// =============================
-// EPG DATA FETCH
-// =============================
-async function fetchEpgData() {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No token");
-
-    const url = `http://seatv.xyz/portalott.php?type=itv&action=get_epg_info&period=5&JsHttpRequest=1-xml`;
-    
-    console.log(`📡 Fetching EPG from: ${url}`);
-    
-    const res = await fetch(url, {
-      headers: {
-        Cookie: COOKIE,
-        Authorization: `Bearer ${token}`,
-        Accept: "*/*",
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
-        Referer: "http://seatv.xyz/c/",
-        "X-User-Agent": "Model: MAG250; Link: WiFi",
-      },
-    });
-
-    const text = await res.text();
-    console.log(`📡 EPG response status: ${res.status}, length: ${text.length}`);
-    
-    if (!text || text.trim() === '') {
-      console.warn(`⚠️ EPG returned empty response (status ${res.status})`);
-      return null;
-    }
-    
-    try {
-      const parsed = JSON.parse(text);
-      console.log(`📡 EPG parsed successfully`);
-      
-      // Check if EPG data is actually empty
-      const channels = parsed?.js?.data || {};
-      console.log(`📡 EPG contains data for ${Object.keys(channels).length} channels`);
-      
-      return parsed;
-    } catch (parseErr) {
-      console.error(`❌ Failed to parse EPG JSON: ${parseErr.message}`);
-      console.error(`   First 500 chars: ${text.substring(0, 500)}`);
-      return null;
-    }
-  } catch (err) {
-    console.error(`❌ EPG fetch failed: ${err.message}`);
-    return null;
-  }
+// Only what the movie/series grids show; full items come from /api/vod/:id and /api/series/:id
+function listFields(item) {
+  return {
+    id: item.id,
+    name: item.name,
+    screenshot_uri: item.screenshot_uri,
+    rating_kinopoisk: item.rating_kinopoisk,
+    genres_str: item.genres_str,
+    year: item.year,
+    hd: item.hd,
+    category_id: item.category_id,
+  };
 }
 
-// =============================
-// LOAD CHANNELS
-// =============================
-async function loadAllChannels() {
-  console.log("📡 Loading channels...");
-
-  let all = [];
-
-  try {
-    const first = await fetchChannels(0);
-
-    const totalItems = first?.js?.total_items || 0;
-    const perPage = 14;
-    const totalPages = Math.ceil(totalItems / perPage);
-
-    if (first?.js?.data) {
-      all.push(...first.js.data);
-      channelsCache = [...all];
-    }
-
-    for (let p = 1; p < totalPages; p++) {
-      try {
-        const data = await fetchChannels(p);
-
-        if (data?.js?.data) {
-          all.push(...data.js.data);
-          channelsCache = [...all];
-        }
-      } catch (err) {
-        console.log(`❌ failed page ${p}: ${err.message}`);
+// JSON response, gzipped when the client accepts it (the catalogues are large)
+function sendJson(req, res, status, body, extraHeaders = {}) {
+  const json = JSON.stringify(body);
+  const headers = { "Content-Type": "application/json", ...extraHeaders };
+  if (json.length > 1024 && /\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
+    zlib.gzip(json, (err, gz) => {
+      if (err) {
+        res.writeHead(status, headers);
+        return res.end(json);
       }
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    cacheReady = true;
-    fs.writeFileSync("channels.json", JSON.stringify(all));
-
-    console.log(`✅ Loaded ${all.length} channels`);
-  } catch (err) {
-    console.error(`❌ Failed to load channels: ${err.message}`);
-    console.log("⏳ Will retry in 30 seconds...");
-    setTimeout(loadAllChannels, 30000);
+      res.writeHead(status, { ...headers, "Content-Encoding": "gzip", Vary: "Accept-Encoding" });
+      res.end(gz);
+    });
+    return;
   }
+  res.writeHead(status, headers);
+  res.end(json);
 }
 
-loadAllChannels();
-
-function getFFmpegArgs(streamUrl, channelId, useReencode = false, needsAuth = true, token = null) {
+function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const baseArgs = [
     "-analyzeduration", "5000000",
@@ -228,20 +187,9 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, needsAuth = tr
     "-fflags", "+genpts+discardcorrupt+igndts",
     "-flags", "low_delay",
     "-max_delay", "1000000",
+    // create_link URLs carry their own play_token, so only a player-like UA is needed
+    "-user_agent", portal.USER_AGENT,
   ];
-
-  if (needsAuth) {
-    let headers =
-      `User-Agent: Mozilla/5.0 (QtEmbedded; U; Linux; C)\r\n` +
-      `X-User-Agent: Model: MAG250; Link: WiFi\r\n` +
-      `Referer: http://seatv.xyz/c/\r\n` +
-      `Accept: */*\r\n` +
-      `Cookie: ${COOKIE}\r\n`;
-    if (token) {
-      headers += `Authorization: Bearer ${token}\r\n`;
-    }
-    baseArgs.push("-headers", headers);
-  }
 
   baseArgs.push(
     "-reconnect", "1",
@@ -253,30 +201,33 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, needsAuth = tr
     "-rw_timeout", "15000000",
     "-err_detect", "ignore_err",
     "-correct_ts_overflow", "1",
-    "-vsync", "drop",
     "-copytb", "0",
     "-multiple_requests", "1",
     "-i", streamUrl,
   );
 
+  // First video + first audio only (sources can carry DVB subtitles / data streams)
+  baseArgs.push("-map", "0:v:0", "-map", "0:a:0?");
+
   if (useReencode) {
     baseArgs.push(
+      // Deinterlace only frames flagged interlaced (1080i broadcasts); progressive passes through
+      "-vf", "yadif=mode=0:deint=interlaced",
+      ...tools.fpsPassthroughArgs,
       "-c:v", "libx264",
       "-preset", "ultrafast",
       "-tune", "zerolatency",
       "-crf", "23",
+      "-pix_fmt", "yuv420p", // browsers can't decode 10-bit
       "-g", "48",
       "-sc_threshold", "0",
-      "-c:a", "aac",
-      "-b:a", "96k",
-      "-ac", "2"
     );
   } else {
-    baseArgs.push(
-      "-c:v", "copy",
-      "-c:a", "copy"
-    );
+    baseArgs.push("-c:v", "copy");
   }
+
+  // Always AAC: browsers can't play the AC3/E-AC3/MP2 audio many channels carry
+  baseArgs.push("-c:a", "aac", "-b:a", "128k", "-ac", "2");
 
   baseArgs.push(
     "-f", "hls",
@@ -294,6 +245,7 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, needsAuth = tr
 }
 
 async function startStream(channelId, forceReencode = false) {
+  if (!tools.ffmpegOk) return;
   if (streams[channelId]) {
     if (streams[channelId] instanceof Promise) {
       console.log(`⏳ Stream ${channelId} is initializing, waiting...`);
@@ -301,6 +253,10 @@ async function startStream(channelId, forceReencode = false) {
     }
     return;
   }
+
+  // Channels already known to be HEVC go straight to re-encode (browsers can't play
+  // HEVC), instead of opening a copy-mode connection only to throw it away
+  if (!LIVE_COPY || hevcChannels.has(channelId)) forceReencode = true;
 
   if (!forceReencode) {
     reencodeAttempts[channelId] = 0;
@@ -318,14 +274,10 @@ async function startStream(channelId, forceReencode = false) {
         return;
       }
 
-      console.log(`🔗 INPUT: ${streamInfo.url}`);
-      if (streamInfo.needsAuth) {
-        console.log(`🔐 Using authentication headers for ${channelId}`);
-      }
+      console.log(`🔗 Got stream link for ${channelId}`);
 
-      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode, streamInfo.needsAuth, streamInfo.token);
-      console.log("FFMPEG ARGS:", args.join(" "));
-      const ffmpeg = spawn("ffmpeg", args, {
+      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode);
+      const ffmpeg = spawn(FFMPEG, args, {
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
@@ -334,9 +286,14 @@ async function startStream(channelId, forceReencode = false) {
       let errorCount = 0;
       let hevcDetected = false;
 
+      // Last lines of ffmpeg output, printed if it exits unexpectedly
+      const recentOutput = [];
+
       ffmpeg.stderr.on("data", (d) => {
         const logMessage = d.toString();
         lastOutput = Date.now();
+        recentOutput.push(...logMessage.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("frame=")));
+        if (recentOutput.length > 8) recentOutput.splice(0, recentOutput.length - 8);
         if (logMessage.includes("ffmpeg version") ||
             logMessage.includes("built with") ||
             logMessage.includes("configuration:") ||
@@ -346,12 +303,8 @@ async function startStream(channelId, forceReencode = false) {
         }
         if (logMessage.includes("Video: hevc") && !forceReencode && !hevcDetected) {
           hevcDetected = true;
-          console.log(`🔧 HEVC detected for ${channelId}, switching to re-encode mode...`);
-          ffmpeg.kill("SIGTERM");
-          cleanupHLSFiles(channelId);
-          delete streams[channelId];
-          clearInterval(healthCheck);
-          setTimeout(() => startStream(channelId, true), 1000);
+          hevcChannels.add(channelId);
+          killAndRestart("HEVC video detected", true);
           return;
         }
         if (logMessage.includes("Opening") || logMessage.includes("Starting") || logMessage.includes("Input #")) {
@@ -366,7 +319,10 @@ async function startStream(channelId, forceReencode = false) {
             }
           }
         }
-        if (logMessage.includes("HTTP error") || 
+        if (logMessage.includes("Unrecognized option") ||
+            logMessage.includes("Error opening") ||
+            logMessage.includes("Error splitting") ||
+            logMessage.includes("HTTP error") || 
             logMessage.includes("Connection refused") ||
             logMessage.includes("No route to host") ||
             logMessage.includes("403 Forbidden") ||
@@ -378,95 +334,82 @@ async function startStream(channelId, forceReencode = false) {
           errorCount++;
         }
         if (logMessage.includes("Stream #") || logMessage.includes("Duration:")) {
-          const sanitized = logMessage.replace(/Cookie:.*?\r\n/g, 'Cookie: [REDACTED]\r\n');
-          console.log(`[ffmpeg ${channelId}] ${sanitized.trim()}`);
+          console.log(`[ffmpeg ${channelId}] ${logMessage.trim()}`);
         }
       });
 
+      const startedAt = Date.now();
+      let exitHandled = false;
+
+      // The single place that decides whether to restart, so one failure is never
+      // counted (or restarted) twice, and attempts really stop at MAX_RESTARTS.
+      function handleExit(reason, reencode) {
+        if (exitHandled) return;
+        exitHandled = true;
+        clearInterval(healthCheck);
+        delete streams[channelId];
+        delete healthChecks[channelId];
+        if (stopTimers[channelId]) {
+          clearTimeout(stopTimers[channelId]);
+          delete stopTimers[channelId];
+        }
+        if (!(viewers[channelId] > 0)) {
+          cleanupHLSFiles(channelId);
+          return;
+        }
+
+        // A stream that played for a while earns a fresh set of attempts
+        if (Date.now() - startedAt > HEALTHY_RUN_MS) restartCount[channelId] = 0;
+        restartCount[channelId] = (restartCount[channelId] || 0) + 1;
+        if (restartCount[channelId] > MAX_RESTARTS) {
+          console.log(`🛑 ${channelId} failed ${MAX_RESTARTS} times, giving up`);
+          cleanupHLSFiles(channelId);
+          delete viewers[channelId];
+          delete restartCount[channelId];
+          delete reencodeAttempts[channelId];
+          return;
+        }
+        // Same mode: keep the segments so players carry on (ffmpeg's append_list continues
+        // the playlist with a discontinuity marker). A mode change starts a fresh playlist.
+        if (reencode !== forceReencode) cleanupHLSFiles(channelId);
+        console.log(`🔄 ${reason}: restarting ${channelId}${reencode ? " in re-encode mode" : ""} (attempt ${restartCount[channelId]}/${MAX_RESTARTS})`);
+        setTimeout(() => startStream(channelId, reencode), 2000);
+      }
+
+      function killAndRestart(reason, reencode) {
+        handleExit(reason, reencode); // mark handled first so the resulting "close" is ignored
+        ffmpeg.kill("SIGTERM");
+      }
+
       const healthCheck = setInterval(() => {
         const timeSinceLastOutput = Date.now() - lastOutput;
-        if (timeSinceLastOutput > 15000) {
-          console.warn(`⚠️ ${channelId} stream stalled (${timeSinceLastOutput}ms no output), restarting...`);
-          ffmpeg.kill("SIGTERM");
-          cleanupHLSFiles(channelId);
-          delete streams[channelId];
-          clearInterval(healthCheck);
-          restartCount[channelId] = 0;
-          if (!forceReencode && reencodeAttempts[channelId] < 2) {
-            reencodeAttempts[channelId] = (reencodeAttempts[channelId] || 0) + 1;
-            setTimeout(() => startStream(channelId, true), 2000);
-          } else if (viewers[channelId] > 0) {
-            setTimeout(() => startStream(channelId, forceReencode), 2000);
-          }
-        }
         if (!streamStarted && timeSinceLastOutput > 10000) {
-          console.warn(`⚠️ ${channelId} stream failed to start, trying re-encode...`);
-          ffmpeg.kill("SIGTERM");
-          cleanupHLSFiles(channelId);
-          delete streams[channelId];
-          clearInterval(healthCheck);
-          restartCount[channelId] = 0;
-          if (!forceReencode) {
-            setTimeout(() => startStream(channelId, true), 2000);
-          }
-        }
-        if (errorCount > 10 && !forceReencode) {
-          console.warn(`⚠️ ${channelId} too many errors, switching to re-encode mode...`);
-          ffmpeg.kill("SIGTERM");
-          cleanupHLSFiles(channelId);
-          delete streams[channelId];
-          clearInterval(healthCheck);
-          restartCount[channelId] = 0;
-          setTimeout(() => startStream(channelId, true), 2000);
+          killAndRestart("Stream didn't start", true);
+        } else if (timeSinceLastOutput > 15000) {
+          const tryReencode = !forceReencode && (reencodeAttempts[channelId] || 0) < 2;
+          if (tryReencode) reencodeAttempts[channelId] = (reencodeAttempts[channelId] || 0) + 1;
+          killAndRestart(`Stream stalled (${timeSinceLastOutput}ms without output)`, tryReencode || forceReencode);
+        } else if (errorCount > 10 && !forceReencode) {
+          killAndRestart("Too many stream errors", true);
         }
       }, 5000);
 
       ffmpeg.on("close", (code) => {
-        console.log(`❌ ffmpeg ${channelId} exited (${code})`);
-        clearInterval(healthCheck);
-        cleanupHLSFiles(channelId);
-        delete streams[channelId];
-        if (stopTimers[channelId]) {
-          clearTimeout(stopTimers[channelId]);
-          delete stopTimers[channelId];
+        console.log(`ffmpeg ${channelId} exited (${code})`);
+        if (!exitHandled && code !== 0 && recentOutput.length) {
+          console.log(`   last ffmpeg output:\n     ${recentOutput.join("\n     ")}`);
         }
-        restartCount[channelId] = (restartCount[channelId] || 0) + 1;
-        if (viewers[channelId] > 0 && restartCount[channelId] < 3) {
-          console.log(`🔄 Auto-restarting ${channelId} (attempt ${restartCount[channelId]}/3)...`);
-          setTimeout(() => startStream(channelId, forceReencode), 3000);
-        } else if (restartCount[channelId] >= 3) {
-          console.log(`🛑 ${channelId} failed 3 times, stopping auto-restart`);
-          delete viewers[channelId];
-          delete restartCount[channelId];
-          delete reencodeAttempts[channelId];
-        }
+        handleExit("ffmpeg exited", forceReencode);
       });
 
       ffmpeg.on("error", (err) => {
         console.error(`❌ ffmpeg error for ${channelId}: ${err.message}`);
-        clearInterval(healthCheck);
-        cleanupHLSFiles(channelId);
-        delete streams[channelId];
-        if (stopTimers[channelId]) {
-          clearTimeout(stopTimers[channelId]);
-          delete stopTimers[channelId];
-        }
-        restartCount[channelId] = (restartCount[channelId] || 0) + 1;
-        if (!forceReencode && viewers[channelId] > 0 && restartCount[channelId] < 3) {
-          console.log(`🔄 Auto-restarting ${channelId} with re-encode (attempt ${restartCount[channelId]}/3)...`);
-          setTimeout(() => startStream(channelId, true), 3000);
-        } else if (restartCount[channelId] >= 3) {
-          console.log(`🛑 ${channelId} failed 3 times, stopping auto-restart`);
-          delete viewers[channelId];
-          delete restartCount[channelId];
-          delete reencodeAttempts[channelId];
-        }
+        handleExit("ffmpeg error", true);
       });
 
       streams[channelId] = ffmpeg;
       healthChecks[channelId] = healthCheck;
-      console.log(`✅ Stream ${channelId} started successfully (${forceReencode ? 're-encode' : 'copy'} mode)`);
-      restartCount[channelId] = 0;
+      console.log(`▶️ ffmpeg launched for ${channelId} (${forceReencode ? "re-encode" : "copy"} mode)`);
     } catch (err) {
       console.error(`❌ Failed to start stream ${channelId}: ${err.message}`);
       delete streams[channelId];
@@ -519,104 +462,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =============================
-  // DEBUG ENDPOINTS
+  // DEBUG ENDPOINTS (require ?token=DEBUG_TOKEN)
   // =============================
 
-  if (url.pathname.startsWith("/debug/stream-url/")) {
-    const id = url.pathname.split("/")[3];
-    if (!id) {
-      res.writeHead(400);
-      return res.end(JSON.stringify({ error: "Channel ID required" }));
+  if (url.pathname.startsWith("/debug/")) {
+    if (!DEBUG_TOKEN || url.searchParams.get("token") !== DEBUG_TOKEN) {
+      res.writeHead(404);
+      return res.end("not found");
     }
-    try {
-      const streamInfo = await getStreamLink(id);
-      return res.end(JSON.stringify({
-        channelId: id,
-        url: streamInfo?.url,
-        needsAuth: streamInfo?.needsAuth,
-        hasToken: !!streamInfo?.token,
-        success: !!streamInfo?.url
-      }));
-    } catch (err) {
-      return res.end(JSON.stringify({
-        channelId: id,
-        error: err.message,
-        success: false
-      }));
-    }
-  }
-
-  if (url.pathname.startsWith("/debug/test-stream/")) {
-    const id = url.pathname.split("/")[3];
-    if (!id) {
-      res.writeHead(400);
-      return res.end(JSON.stringify({ error: "Channel ID required" }));
-    }
-    
-    res.writeHead(200, { 
-      "Content-Type": "text/plain",
-      "Transfer-Encoding": "chunked" 
-    });
-    
-    res.write(`🔍 Testing stream for channel ${id}...\n\n`);
-    
-    try {
-      const streamInfo = await getStreamLink(id);
-      const streamUrl = streamInfo?.url;
-      res.write(`📡 Stream URL: ${streamUrl}\n`);
-      res.write(`   Needs Auth: ${streamInfo?.needsAuth ? 'Yes' : 'No'}\n\n`);
-      
-      const urlsToTest = [
-        { label: "Direct URL", url: streamUrl },
-        { label: "Port 80", url: `http://seatv.xyz:80/MAGL2ELNMB/MAG42M41CA/${id}` },
-      ];
-      
-      for (const test of urlsToTest) {
-        if (!test.url) continue;
-        
-        res.write(`\n📡 Testing: ${test.label}\n`);
-        res.write(`   URL: ${test.url}\n`);
-        
-        try {
-          const headers = {
-            "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-            "X-User-Agent": "Model: MAG250; Link: WiFi",
-            "Referer": "http://seatv.xyz/c/",
-            "Accept": "*/*",
-            "Cookie": COOKIE,
-          };
-          
-          const testRes = await fetch(test.url, {
-            method: 'GET',
-            headers: headers,
-            signal: AbortSignal.timeout(5000),
-            redirect: 'follow'
-          });
-          
-          res.write(`   Status: ${testRes.status} ${testRes.statusText}\n`);
-          res.write(`   Content-Type: ${testRes.headers.get('content-type')}\n`);
-          
-          if (testRes.ok) {
-            res.write(`   ✅ Stream appears valid!\n`);
-          } else {
-            res.write(`   ❌ Failed\n`);
-          }
-        } catch (err) {
-          res.write(`   ❌ Error: ${err.message}\n`);
-        }
-      }
-      
-      res.end();
-    } catch (err) {
-      res.write(`❌ Error: ${err.message}\n`);
-      res.end();
-    }
-    
-    return;
   }
 
   if (url.pathname.startsWith("/debug/restart-stream/")) {
-    const id = url.pathname.split("/")[3];
+    const id = parseChannelId(url.pathname.split("/")[3]);
     if (!id) {
       res.writeHead(400);
       return res.end(JSON.stringify({ error: "Channel ID required" }));
@@ -685,44 +542,193 @@ const server = http.createServer(async (req, res) => {
   // =============================
 
   if (url.pathname === "/health") {
-    return res.end(JSON.stringify({
+    return sendJson(req, res, 200, {
       status: "ok",
-      cacheReady,
+      catalogue: catalogueStatus(),
       activeStreams: Object.keys(streams).filter(id => !(streams[id] instanceof Promise)).length,
       initializingStreams: Object.keys(streams).filter(id => streams[id] instanceof Promise).length,
       totalViewers: Object.values(viewers).reduce((a, b) => a + b, 0),
       uptime: process.uptime(),
-      memory: process.memoryUsage()
-    }));
+    });
+  }
+
+  // Small, cheap to poll: counts and load progress for every catalogue
+  if (url.pathname === "/api/status") {
+    return sendJson(req, res, 200, catalogueStatus());
   }
 
   if (url.pathname === "/api/channels-all") {
-    return res.end(JSON.stringify({
-      channels: channelsCache,
-      total: channelsCache.length,
-      ready: cacheReady,
-    }));
+    const { items, categories, ready } = catalogue.channels;
+    return sendJson(req, res, 200, {
+      channels: items.map(channelFields),
+      genres: categories.map((g) => ({ id: g.id, title: g.title })),
+      total: items.length,
+      ready,
+    });
   }
 
-  // ✅ EPG DATA ENDPOINT
-  if (url.pathname === "/api/epg") {
+  if (url.pathname === "/api/games") {
+    if (!gamesCache.data || Date.now() - gamesCache.builtAt > GAMES_TTL_MS) {
+      gamesCache = {
+        data: buildGames(catalogue.channels.items, catalogue.channels.categories),
+        builtAt: Date.now(),
+      };
+    }
+    return sendJson(req, res, 200, { games: gamesCache.data, ready: catalogue.channels.ready });
+  }
+
+  const channelMatch = url.pathname.match(/^\/api\/channel\/(\d{1,10})$/);
+  if (channelMatch) {
+    const channel = findChannel(channelMatch[1]);
+    return channel
+      ? sendJson(req, res, 200, { channel: channelFields(channel) })
+      : sendJson(req, res, 404, { error: "Channel not found", ready: catalogue.channels.ready });
+  }
+
+  if (url.pathname === "/api/radio") {
+    const { items, ready } = catalogue.radio;
+    return sendJson(req, res, 200, { stations: items.map(channelFields), ready });
+  }
+
+  // Radio arrives as MPEG-TS, which browsers can't play in <audio>, so ffmpeg converts it
+  // to MP3. Serving it from here also keeps plain-HTTP URLs off the HTTPS site.
+  const radioMatch = url.pathname.match(/^\/api\/radio\/(\d{1,10})\/listen$/);
+  if (radioMatch) {
+    const station = catalogue.radio.items.find((s) => String(s.id) === radioMatch[1]);
+    if (!station) return sendJson(req, res, 404, { error: "Station not found" });
+    if (!tools.ffmpegOk) return sendJson(req, res, 503, { error: tools.MISSING_MESSAGE });
+    if (activeRadioProxies >= MAX_RADIO_PROXIES) return sendJson(req, res, 503, { error: "Server busy, try again shortly" });
     try {
-      const epgData = await fetchEpgData();
-      if (!epgData) {
-        res.writeHead(500);
-        return res.end(JSON.stringify({ error: "Failed to fetch EPG data" }));
-      }
-      res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(epgData));
+      const upstreamUrl = await portal.createLiveLink(station.id, station.cmd);
+      const ffmpeg = spawn(FFMPEG, [
+        "-loglevel", "error",
+        "-user_agent", portal.USER_AGENT,
+        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
+        "-i", upstreamUrl,
+        "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "pipe:1",
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+      activeRadioProxies++;
+      res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache" });
+      ffmpeg.stdout.pipe(res);
+      ffmpeg.stderr.on("data", (d) => console.error(`[radio ${station.id}] ${d.toString().trim()}`));
+      ffmpeg.on("error", (err) => { console.error(`❌ Radio ffmpeg: ${err.message}`); res.end(); });
+      ffmpeg.on("close", () => res.end());
+      res.on("close", () => { activeRadioProxies--; ffmpeg.kill("SIGTERM"); });
+      return;
     } catch (err) {
-      console.error(`❌ EPG endpoint error: ${err.message}`);
-      res.writeHead(500);
-      return res.end(JSON.stringify({ error: "Failed to fetch EPG" }));
+      console.error(`❌ Radio ${radioMatch[1]} failed: ${err.message}`);
+      return sendJson(req, res, 502, { error: "Station unavailable" });
     }
   }
 
+  if (url.pathname === "/api/vod/all") {
+    const { items, categories, ready } = catalogue.vod;
+    return sendJson(req, res, 200, { movies: items.map(listFields), categories, total: items.length, ready });
+  }
+
+  if (url.pathname === "/api/series/all") {
+    const { items, categories, ready } = catalogue.series;
+    return sendJson(req, res, 200, { series: items.map(listFields), categories, total: items.length, ready });
+  }
+
+  // ---- Movie playback: /api/vod/:id/source (how to play + duration) and /stream ----
+  const vodPlayMatch = url.pathname.match(/^\/api\/vod\/(\d{1,12})\/(source|stream)$/);
+  if (vodPlayMatch) {
+    const [, id, action] = vodPlayMatch;
+    const movie = catalogue.vod.items.find((m) => String(m.id) === id);
+    if (!movie?.cmd) return sendJson(req, res, 404, { error: "Movie not found" });
+    const key = `vod:${id}`;
+    const createLink = () => portal.createVodLink(movie.cmd);
+    try {
+      if (action === "source") {
+        const info = await vod.describe(key, createLink);
+        return sendJson(req, res, 200, { mode: info.mode, duration: info.duration, stream: `/api/vod/${id}/stream` });
+      }
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
+    } catch (err) {
+      if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
+      console.error(`❌ Movie ${id} playback failed: ${err.message}`);
+      if (!res.headersSent) return sendJson(req, res, 502, { error: "This movie can't be played right now" });
+      return res.end();
+    }
+  }
+
+  // ---- Episode playback: /api/series/:id/(source|stream)?season=<seasonId>&episode=<n> ----
+  const episodePlayMatch = url.pathname.match(/^\/api\/series\/([^/]{1,80})\/(source|stream)$/);
+  if (episodePlayMatch) {
+    let id;
+    try { id = decodeURIComponent(episodePlayMatch[1]); } catch { id = ""; }
+    const seasonId = url.searchParams.get("season") || "";
+    const episode = url.searchParams.get("episode") || "";
+    if (!/^[\w:-]{1,40}$/.test(id) || !/^[\w:-]{1,40}$/.test(seasonId) || !/^\d{1,4}$/.test(episode)) {
+      return sendJson(req, res, 400, { error: "Invalid episode" });
+    }
+    try {
+      const season = (await getSeasons(id)).find((s) => String(s.id) === seasonId);
+      if (!season?.cmd) return sendJson(req, res, 404, { error: "Episode not found" });
+      const key = `ep:${seasonId}:${episode}`;
+      const createLink = () => portal.createVodLink(season.cmd, episode);
+      if (episodePlayMatch[2] === "source") {
+        const info = await vod.describe(key, createLink);
+        const qs = new URLSearchParams({ season: seasonId, episode });
+        return sendJson(req, res, 200, {
+          mode: info.mode,
+          duration: info.duration,
+          stream: `/api/series/${encodeURIComponent(id)}/stream?${qs}`,
+        });
+      }
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
+    } catch (err) {
+      if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
+      console.error(`❌ Episode ${id} ${seasonId}/${episode} playback failed: ${err.message}`);
+      if (!res.headersSent) return sendJson(req, res, 502, { error: "This episode can't be played right now" });
+      return res.end();
+    }
+  }
+
+  const vodMatch = url.pathname.match(/^\/api\/vod\/(\d{1,12})$/);
+  if (vodMatch) {
+    const movie = catalogue.vod.items.find((m) => String(m.id) === vodMatch[1]);
+    return movie
+      ? sendJson(req, res, 200, { movie })
+      : sendJson(req, res, 404, { error: "Movie not found", ready: catalogue.vod.ready });
+  }
+
+  // Series ids look like "47441:47441" and arrive URL-encoded ("47441%3A47441")
+  const seriesMatch = url.pathname.match(/^\/api\/series\/([^/]{1,80})(\/episodes)?$/);
+  if (seriesMatch && seriesMatch[1] !== "all") {
+    let id;
+    try { id = decodeURIComponent(seriesMatch[1]); } catch { id = ""; }
+    if (!/^[\w:-]{1,40}$/.test(id)) return sendJson(req, res, 400, { error: "Invalid series ID" });
+    if (!seriesMatch[2]) {
+      const series = catalogue.series.items.find((s) => String(s.id) === id);
+      return series
+        ? sendJson(req, res, 200, { series })
+        : sendJson(req, res, 404, { error: "Series not found", ready: catalogue.series.ready });
+    }
+    try {
+      const seasons = await getSeasons(id);
+      // Season cmds are only needed server-side for playback
+      return sendJson(req, res, 200, { episodes: seasons.map(({ cmd: _cmd, ...season }) => season) });
+    } catch (err) {
+      console.error(`❌ Episodes for ${id} failed: ${err.message}`);
+      return sendJson(req, res, 502, { error: "Failed to load episodes" });
+    }
+  }
+
+  if (url.pathname === "/api/epg") {
+    const epgData = await fetchEpgData();
+    return epgData
+      ? sendJson(req, res, 200, epgData)
+      : sendJson(req, res, 502, { error: "Failed to fetch EPG" });
+  }
+
   if (url.pathname.startsWith("/api/stream-status/")) {
-    const id = url.pathname.split("/")[3];
+    const id = parseChannelId(url.pathname.split("/")[3]);
+    if (!id) {
+      res.writeHead(400);
+      return res.end(JSON.stringify({ error: "Invalid channel ID" }));
+    }
     const stream = streams[id];
     return res.end(JSON.stringify({
       channelId: id,
@@ -735,12 +741,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname.startsWith("/watch/")) {
-    const id = url.pathname.split("/")[2];
+    const id = parseChannelId(url.pathname.split("/")[2]);
     if (!id) {
       res.writeHead(400);
-      return res.end(JSON.stringify({ error: "Channel ID required" }));
+      return res.end(JSON.stringify({ error: "Invalid channel ID" }));
     }
-    
+
+    if (!tools.ffmpegOk) return sendJson(req, res, 503, { error: tools.MISSING_MESSAGE });
+
+    if (!streams[id] && Object.keys(streams).length >= MAX_ACTIVE_STREAMS) {
+      res.writeHead(503);
+      return res.end(JSON.stringify({ error: "Server busy, try again shortly" }));
+    }
+
     viewers[id] = (viewers[id] || 0) + 1;
     console.log(`👁️ ${id}: ${viewers[id]} viewer(s)`);
     
@@ -752,21 +765,30 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname.startsWith("/leave/")) {
-    const id = url.pathname.split("/")[2];
+    const id = parseChannelId(url.pathname.split("/")[2]);
     if (!id) {
       res.writeHead(400);
-      return res.end("Channel ID required");
+      return res.end("Invalid channel ID");
     }
     
-    viewers[id] = Math.max(0, (viewers[id] || 0) - 1);
+    if (!viewers[id]) {
+      // Already nobody watching (e.g. the stream never started): nothing to do
+      return res.end(JSON.stringify({ ok: true, viewers: 0 }));
+    }
+    viewers[id] -= 1;
     console.log(`👁️ ${id}: ${viewers[id]} viewer(s)`);
-    
+
     scheduleStop(id);
     return res.end(JSON.stringify({ ok: true, viewers: viewers[id] }));
   }
 
   if (url.pathname.startsWith("/hls/")) {
-    const file = url.pathname.replace("/hls/", "");
+    const file = url.pathname.slice("/hls/".length);
+    // Only serve playlists and segments this server writes (e.g. 123.m3u8, 123_00042.ts)
+    if (!/^\d{1,10}(\.m3u8|_\d+\.ts)$/.test(file)) {
+      res.writeHead(404);
+      return res.end("not found");
+    }
     const filePath = path.join(HLS_DIR, file);
 
     if (!fs.existsSync(filePath)) {

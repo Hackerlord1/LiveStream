@@ -1,15 +1,16 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Header from "@/components/Header";
+import { AlertTriangle, Loader2, RefreshCw, Tv, WifiOff } from "lucide-react";
+import { splitTag } from "@/lib/iptv-format";
+import { Badge, IptvPage } from "@/components/iptv/ui";
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
-const HLS_BASE = "http://57.129.106.133:3822";
-const VPS_URL = "http://57.129.106.133:3822";
+import { IPTV_API_URL } from "@/lib/iptv-client";
 const PLAYLIST_TIMEOUT = 15000;
 const PLAYLIST_RETRY_INTERVAL = 1000;
 const MIN_SEGMENTS = 2;
@@ -22,7 +23,7 @@ interface Channel {
   name: string;
   number?: string | number;
   logo?: string;
-  hd?: number;
+  hd?: number | string;
 }
 
 type PlayerStatus = "loading" | "connecting" | "playing" | "retrying" | "error" | "offline";
@@ -60,121 +61,106 @@ async function waitForPlaylist(url: string, timeoutMs = PLAYLIST_TIMEOUT): Promi
 // ============================================================
 // SUB-COMPONENTS
 // ============================================================
-function BackButton({ href = "/iptv/channels" }: { href?: string }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 hover:bg-white/5"
-      style={{ backgroundColor: "#1a1a2e", color: "#a1a1aa", border: "1px solid #27272a" }}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M19 12H5M12 19l-7-7 7-7" />
-      </svg>
-      Back to Channels
-    </Link>
-  );
-}
-
 function StatusBadge({ status }: { status: PlayerStatus }) {
-  const config: Record<PlayerStatus, { color: string; bg: string; label: string; pulse: boolean }> = {
-    loading: { color: "#a1a1aa", bg: "rgba(161, 161, 170, 0.1)", label: "Loading...", pulse: false },
-    connecting: { color: "#fbbf24", bg: "rgba(245, 158, 11, 0.1)", label: "Connecting...", pulse: true },
-    playing: { color: "#4ade80", bg: "rgba(34, 197, 94, 0.1)", label: "● LIVE", pulse: false },
-    retrying: { color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)", label: "Retrying...", pulse: true },
-    error: { color: "#fca5a5", bg: "rgba(239, 68, 68, 0.1)", label: "Error", pulse: false },
-    offline: { color: "#71717a", bg: "rgba(113, 113, 122, 0.1)", label: "Offline", pulse: false },
+  const config: Record<PlayerStatus, { label: string; live?: boolean; tone: "muted" | "warn" | "live" | "error" }> = {
+    loading: { label: "Preparing…", tone: "muted" },
+    connecting: { label: "Connecting…", tone: "warn" },
+    playing: { label: "LIVE", tone: "live", live: true },
+    retrying: { label: "Reconnecting…", tone: "warn" },
+    error: { label: "Error", tone: "error" },
+    offline: { label: "Offline", tone: "muted" },
   };
-
-  const { color, bg, label, pulse } = config[status];
+  const { label, tone, live } = config[status];
+  const styles = {
+    muted: { backgroundColor: "var(--surface-secondary)", color: "var(--text-muted)" },
+    warn: { backgroundColor: "var(--warning-bg)", color: "var(--warning-text)" },
+    live: { backgroundColor: "#dc2626", color: "#fff" },
+    error: { backgroundColor: "var(--error-bg)", color: "var(--error-text)" },
+  } as const;
 
   return (
-    <span
-      className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-      style={{ backgroundColor: bg, color }}
-    >
-      {pulse && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: color }} />}
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={styles[tone]}>
+      {(live || tone === "warn") && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
       {label}
     </span>
   );
 }
 
-function ChannelInfoCard({ channel }: { channel: Channel | null }) {
+function ChannelInfo({ channel, status }: { channel: Channel | null; status: PlayerStatus }) {
   const [logoFailed, setLogoFailed] = useState(false);
-
-  if (!channel) {
-    return (
-      <div className="rounded-2xl p-5 mb-5 animate-pulse" style={{ backgroundColor: "#1a1a2e", border: "1px solid #27272a" }}>
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl" style={{ backgroundColor: "#0a0a0f" }} />
-          <div className="space-y-2 flex-1">
-            <div className="h-5 w-48 rounded-md" style={{ backgroundColor: "#27272a" }} />
-            <div className="h-4 w-24 rounded-md" style={{ backgroundColor: "#27272a" }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const { tag, title } = splitTag(channel?.name);
 
   return (
-    <div className="rounded-2xl p-5 mb-5 flex items-center gap-4 transition-all" style={{ backgroundColor: "#1a1a2e", border: "1px solid #27272a" }}>
-      {/* Logo */}
-      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: "#0a0a0f" }}>
-        {channel.logo && !logoFailed ? (
-          <img
-            src={channel.logo}
-            alt={channel.name}
-            className="max-h-full max-w-full object-contain p-1.5"
-            onError={() => setLogoFailed(true)}
-          />
+    <div
+      className="mt-4 flex items-center gap-4 rounded-2xl p-4"
+      style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-secondary)" }}
+    >
+      <div
+        className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl"
+        style={{ backgroundColor: "var(--surface-secondary)" }}
+      >
+        {channel?.logo && !logoFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
+          <img src={channel.logo} alt="" className="max-h-full max-w-full object-contain p-1.5" onError={() => setLogoFailed(true)} />
         ) : (
-          <span className="text-2xl opacity-40">📺</span>
+          <Tv className="h-6 w-6" style={{ color: "var(--text-muted)" }} />
         )}
       </div>
-
-      {/* Info */}
       <div className="min-w-0 flex-1">
-        <h1 className="text-lg sm:text-xl font-bold truncate">{channel.name}</h1>
-        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-          {channel.number && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md font-mono font-medium" style={{ backgroundColor: "#27272a", color: "#a1a1aa" }}>
-              Ch. {channel.number}
-            </span>
-          )}
-          {channel.hd === 1 && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md font-bold" style={{ backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#60a5fa" }}>
-              HD
-            </span>
-          )}
-          {channel.hd === 2 && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md font-bold" style={{ backgroundColor: "rgba(168, 85, 247, 0.15)", color: "#a78bfa" }}>
-              4K
-            </span>
-          )}
-        </div>
+        {channel ? (
+          <>
+            <h1 className="truncate text-lg font-bold sm:text-xl">{title}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              {channel.number && (
+                <span className="rounded-md px-2 py-0.5 font-mono text-[11px]" style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-muted)" }}>
+                  CH {channel.number}
+                </span>
+              )}
+              {tag && <Badge>{tag}</Badge>}
+              {String(channel.hd) === "1" && <Badge tone="red">HD</Badge>}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2" aria-hidden>
+            <div className="h-5 w-48 animate-pulse rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
+            <div className="h-3 w-20 animate-pulse rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
+          </div>
+        )}
       </div>
+      <StatusBadge status={status} />
     </div>
   );
 }
 
-function PlayerOverlay({ status, error }: { status: PlayerStatus; error: string }) {
+function PlayerOverlay({ status, error, onRetry }: { status: PlayerStatus; error: string; onRetry: () => void }) {
   if (status === "error" || status === "offline") {
     return (
-      <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: "rgba(0, 0, 0, 0.85)" }}>
-        <div className="text-center max-w-sm px-6">
-          <div className="text-5xl mb-4">{status === "offline" ? "📡" : "⚠️"}</div>
-          <h3 className="text-lg font-semibold mb-2" style={{ color: "#e4e4e7" }}>
-            {status === "offline" ? "Channel Offline" : "Playback Error"}
-          </h3>
-          <p className="text-sm mb-4" style={{ color: "#a1a1aa" }}>
+      <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/85 px-6">
+        <div className="max-w-sm text-center text-white">
+          {status === "offline" ? (
+            <WifiOff className="mx-auto mb-3 h-10 w-10 text-white/60" />
+          ) : (
+            <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-yellow-400" />
+          )}
+          <h3 className="mb-1 text-lg font-semibold">{status === "offline" ? "Channel offline" : "Playback error"}</h3>
+          <p className="mb-5 text-sm text-white/70">
             {error || "Unable to play this channel. It may be temporarily unavailable."}
           </p>
-          <Link
-            href="/iptv/channels"
-            className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all hover:opacity-80"
-            style={{ backgroundColor: "#ef4444", color: "#fff" }}
-          >
-            Browse Other Channels
-          </Link>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90"
+            >
+              <RefreshCw className="h-4 w-4" /> Try again
+            </button>
+            <Link
+              href="/iptv/channels"
+              className="rounded-full bg-white/10 px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-white/20"
+            >
+              Other channels
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -182,18 +168,15 @@ function PlayerOverlay({ status, error }: { status: PlayerStatus; error: string 
 
   if (status === "loading" || status === "connecting" || status === "retrying") {
     return (
-      <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: "rgba(0, 0, 0, 0.75)" }}>
-        <div className="text-center">
-          <div className="relative mx-auto mb-4 w-16 h-16">
-            <div className="absolute inset-0 rounded-full border-[3px] border-red-600/20" />
-            <div className="absolute inset-0 rounded-full border-[3px] border-t-red-600 animate-spin" />
-          </div>
-          <p className="text-sm font-medium" style={{ color: "#e4e4e7" }}>
-            {status === "connecting" && "Establishing connection..."}
-            {status === "loading" && "Preparing stream..."}
-            {status === "retrying" && "Reconnecting..."}
+      <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70">
+        <div className="text-center text-white">
+          <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-red-500" />
+          <p className="text-sm font-medium">
+            {status === "connecting" && "Starting the stream…"}
+            {status === "loading" && "Preparing video…"}
+            {status === "retrying" && "Reconnecting…"}
           </p>
-          <p className="text-xs mt-1" style={{ color: "#71717a" }}>This may take a few seconds</p>
+          <p className="mt-1 text-xs text-white/50">This can take up to 15 seconds</p>
         </div>
       </div>
     );
@@ -218,6 +201,8 @@ export default function IptvWatchPage() {
   const [channel, setChannel] = useState<Channel | null>(null);
   const [playerStatus, setPlayerStatus] = useState<PlayerStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
+  // Bumped by "Try again" to restart the player
+  const [attempt, setAttempt] = useState(0);
 
   // ============================================================
   // LOAD CHANNEL INFO FROM VPS CACHE
@@ -227,16 +212,14 @@ export default function IptvWatchPage() {
 
     async function loadChannelInfo() {
       try {
-        const res = await fetch(`${VPS_URL}/api/channels-all`, {
+        const res = await fetch(`${IPTV_API_URL}/api/channel/${channelId}`, {
           signal: AbortSignal.timeout(5000),
         });
-        const data = await res.json();
+        const data = res.ok ? await res.json() : null;
 
         if (cancelled) return;
 
-        const channels: Channel[] = data.channels || [];
-        const found = channels.find((ch) => Number(ch.id) === channelId);
-
+        const found: Channel | undefined = data?.channel;
         setChannel(found || { id: channelId, name: `Channel ${channelId}` });
       } catch {
         if (!cancelled) {
@@ -265,15 +248,21 @@ export default function IptvWatchPage() {
       setErrorMessage("");
       setPlayerStatus("connecting");
 
-      try {
-        // Notify VPS server to start the stream
-        await fetch(`${VPS_URL}/watch/${channelId}${forceTranscode ? "?forceTranscode=1" : ""}`, {
-          method: "GET",
-          signal: AbortSignal.timeout(5000),
-        }).catch(() => {}); // Ignore errors — stream may already be running
-      } catch {}
+      // Ask the server to start the stream. A refusal (e.g. busy, or ffmpeg missing)
+      // is reported straight away instead of waiting for a playlist that won't come.
+      const startRes = await fetch(`${IPTV_API_URL}/watch/${channelId}${forceTranscode ? "?forceTranscode=1" : ""}`, {
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+      if (startRes && !startRes.ok) {
+        const body = await startRes.json().catch(() => null);
+        if (!cancelledRef.current) {
+          setPlayerStatus("error");
+          setErrorMessage(body?.error || "The server couldn't start this channel.");
+        }
+        return;
+      }
 
-      const playlist = `${HLS_BASE}/hls/${channelId}.m3u8`;
+      const playlist = `${IPTV_API_URL}/hls/${channelId}.m3u8`;
 
       setPlayerStatus("connecting");
       const ready = await waitForPlaylist(playlist);
@@ -314,8 +303,8 @@ export default function IptvWatchPage() {
         maxBufferLength: 60,
         maxMaxBufferLength: 120,
         maxBufferHole: 1,
-        liveSyncDurationCount: 6,
-        liveMaxLatencyDurationCount: 15,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
         manifestLoadingTimeOut: 10000,
         manifestLoadingMaxRetry: 4,
         levelLoadingTimeOut: 10000,
@@ -337,7 +326,7 @@ export default function IptvWatchPage() {
       });
 
       // Error handler
-      hls.on(Hls.Events.ERROR, async (_event: string, data: any) => {
+      hls.on(Hls.Events.ERROR, async (_event, data) => {
         if (!data.fatal) {
           // Non-fatal — let HLS.js handle it
           return;
@@ -368,7 +357,7 @@ export default function IptvWatchPage() {
           setPlayerStatus("retrying");
 
           // Notify server to clean up
-          await fetch(`${VPS_URL}/leave/${channelId}`).catch(() => {});
+          await fetch(`${IPTV_API_URL}/leave/${channelId}`).catch(() => {});
 
           // Wait 2 seconds then retry
           await new Promise((r) => setTimeout(r, 2000));
@@ -398,14 +387,14 @@ export default function IptvWatchPage() {
     return () => {
       cancelledRef.current = true;
 
-      fetch(`${VPS_URL}/leave/${channelId}`).catch(() => {});
+      fetch(`${IPTV_API_URL}/leave/${channelId}`).catch(() => {});
 
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     };
-  }, [channelId]);
+  }, [channelId, attempt]);
 
   // ============================================================
   // KEYBOARD SHORTCUTS
@@ -431,7 +420,8 @@ export default function IptvWatchPage() {
           break;
         case " ":
           e.preventDefault();
-          video.paused ? video.play() : video.pause();
+          if (video.paused) video.play();
+          else video.pause();
           break;
       }
     }
@@ -444,52 +434,35 @@ export default function IptvWatchPage() {
   // RENDER
   // ============================================================
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#0a0a0f", color: "#e4e4e7" }}>
-      <Header />
-
-      <main className="flex-1 mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
-        {/* ===== TOP BAR ===== */}
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <BackButton />
-          <StatusBadge status={playerStatus} />
+    <IptvPage title="Live TV" icon={<Tv className="h-5 w-5" />} backHref="/iptv/channels">
+      <div className="mx-auto max-w-5xl">
+        <div className="relative overflow-hidden rounded-2xl bg-black shadow-2xl">
+          <PlayerOverlay status={playerStatus} error={errorMessage} onRetry={() => setAttempt((a) => a + 1)} />
+          <video ref={videoRef} controls autoPlay muted playsInline className="block aspect-video w-full" />
         </div>
 
-        {/* ===== CHANNEL INFO ===== */}
-        <ChannelInfoCard channel={channel} />
+        <ChannelInfo channel={channel} status={playerStatus} />
 
-        {/* ===== VIDEO PLAYER ===== */}
-        <div
-          className="relative rounded-2xl overflow-hidden shadow-2xl"
-          style={{ backgroundColor: "#000", border: "1px solid #27272a", boxShadow: "0 0 60px rgba(239, 68, 68, 0.05)" }}
-        >
-          <PlayerOverlay status={playerStatus} error={errorMessage} />
-
-          <video
-            ref={videoRef}
-            controls
-            autoPlay
-            muted
-            playsInline
-            className="w-full aspect-video block"
-            style={{ minHeight: "360px" }}
-            poster="/player-poster.png"
-          />
+        <div className="mt-3 hidden flex-wrap items-center justify-center gap-4 text-xs sm:flex" style={{ color: "var(--text-muted)" }}>
+          <Shortcut keyLabel="F" action="fullscreen" />
+          <Shortcut keyLabel="M" action="mute" />
+          <Shortcut keyLabel="Space" action="play / pause" />
         </div>
+      </div>
+    </IptvPage>
+  );
+}
 
-        {/* ===== PLAYER CONTROLS HINT ===== */}
-        <div className="mt-3 flex items-center justify-center gap-4 text-[10px] sm:text-xs flex-wrap" style={{ color: "#52525b" }}>
-          <span>Press <kbd className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: "#1a1a2e", border: "1px solid #27272a" }}>F</kbd> for fullscreen</span>
-          <span>Press <kbd className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: "#1a1a2e", border: "1px solid #27272a" }}>M</kbd> to mute</span>
-          <span>Press <kbd className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: "#1a1a2e", border: "1px solid #27272a" }}>Space</kbd> to play/pause</span>
-        </div>
-
-        {/* ===== FOOTER ===== */}
-        <div className="mt-6 text-center pb-4">
-          <p className="text-[11px]" style={{ color: "#3f3f46" }}>
-            Stream via seatv.xyz &nbsp;•&nbsp; HLS delivery by bravestream.live
-          </p>
-        </div>
-      </main>
-    </div>
+function Shortcut({ keyLabel, action }: { keyLabel: string; action: string }) {
+  return (
+    <span>
+      <kbd
+        className="mr-1 rounded px-1.5 py-0.5 font-mono text-[10px]"
+        style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-primary)" }}
+      >
+        {keyLabel}
+      </kbd>
+      {action}
+    </span>
   );
 }

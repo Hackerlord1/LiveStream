@@ -34,7 +34,7 @@ export default function AdSpace({
 
   const adImage = imageSrc || defaultImages[type];
 
-  const AdContent = () => (
+  const adContent = (
     <div className={`${sizes[type]} ${className} relative rounded-lg overflow-hidden`}
       style={{
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
@@ -87,10 +87,10 @@ export default function AdSpace({
         rel="noopener noreferrer sponsored"
         className="block"
       >
-        <AdContent />
+        {adContent}
       </a>
     );
   }
 
-  return <AdContent />;
+  return adContent;
 }

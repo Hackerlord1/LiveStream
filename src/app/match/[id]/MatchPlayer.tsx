@@ -90,9 +90,13 @@ const generateRandomUsername = (): string => {
 };
 
 const sanitizeMessage = (text: string): string =>
-    text.trim().substring(0, CHAT_CONFIG.MAX_MESSAGE_LENGTH)
-        .replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    text.trim().substring(0, CHAT_CONFIG.MAX_MESSAGE_LENGTH);
+
+// Older messages were stored HTML-escaped; decode them so they display as typed.
+// The result is rendered as a text node, so it is never interpreted as HTML.
+const decodeLegacyEntities = (text: string): string =>
+    text.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#039;/g, "'");
 
 const formatViewers = (viewers: number): string => {
     if (viewers >= 1_000_000) return `${(viewers / 1_000_000).toFixed(1)}M`;
@@ -191,8 +195,9 @@ const ChatMessageItem = ({ message, isOwnMessage }: ChatMessageItemProps) => (
                 ? { backgroundColor: 'var(--warning-bg)', color: 'var(--text-primary)', border: '1px solid var(--warning-text)' }
                 : { backgroundColor: 'var(--surface-secondary)', color: 'var(--text-primary)' }
             ) : undefined}
-            dangerouslySetInnerHTML={{ __html: message.message }}
-        />
+        >
+            {decodeLegacyEntities(message.message)}
+        </div>
     </li>
 );
 
@@ -367,7 +372,6 @@ export default function MatchPlayer({ match }: MatchPlayerProps) {
     }));
 
     const isConnected = convexMessages !== undefined;
-    const connectionError = convexMessages === undefined ? null : null; // Convex handles errors internally
 
     useEffect(() => { 
         setIsMounted(true); 
@@ -981,9 +985,6 @@ useEffect(() => {
                                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getUserColor(username) }}></div>
                                                 <span className="text-xs font-medium" style={{ color: getUserColor(username) }}>{username}</span>
                                             </div>
-                                            {connectionError && (
-                                                <span className="text-[10px]" style={{ color: 'var(--warning-text)' }}>⚠️ {connectionError}</span>
-                                            )}
                                         </div>
 
                                         {/* Messages */}

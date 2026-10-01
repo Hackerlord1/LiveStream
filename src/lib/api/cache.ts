@@ -173,8 +173,4 @@ export const apiCache = new ApiCache();
 
 // Export class for custom instances
 export { ApiCache };
-
-// Convenience function to clear cache (exported for use in components)
-export function clearApiCache(): void {
-    apiCache.clear();
-}
+

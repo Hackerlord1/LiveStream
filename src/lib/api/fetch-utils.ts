@@ -11,13 +11,6 @@ export function isAbortError(error: unknown): boolean {
     return false;
 }
 
-export function isNetworkError(error: unknown): boolean {
-    if (error instanceof Error) {
-        return error.message.includes('Failed to fetch') || error.message.includes('Network');
-    }
-    return false;
-}
-
 // ========== FETCH WITH RETRY ==========
 
 interface FetchOptions {
@@ -83,19 +76,4 @@ export async function fetchWithRetry(
 }
 
 // ========== UTILITY FUNCTIONS ==========
-
-export async function safeParseJSON<T>(response: Response): Promise<T | null> {
-    try {
-        return await response.json() as T;
-    } catch {
-        return null;
-    }
-}
-
-export function buildUrl(base: string, params: Record<string, string>): string {
-    const url = new URL(base);
-    Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
-    });
-    return url.toString();
-}
+

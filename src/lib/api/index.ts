@@ -34,7 +34,7 @@ export {
 } from './config';
 
 // ========== CACHE ==========
-export { apiCache, clearApiCache, ApiCache } from './cache';
+export { apiCache, ApiCache } from './cache';
 
 // ========== LOGGER ==========
 export { logger, Logger } from './logger';
@@ -43,9 +43,6 @@ export { logger, Logger } from './logger';
 export {
     fetchWithRetry,
     isAbortError,
-    isNetworkError,
-    safeParseJSON,
-    buildUrl,
 } from './fetch-utils';
 
 // ========== TRANSFORMERS ==========
@@ -61,16 +58,10 @@ export {
 // ========== CHANNELS ==========
 export {
     fetchAllChannels,
-    fetchChannelsByCategory,
-    fetchChannelsByCountry,
     searchChannels,
     getChannelCategories,
     getChannelCountries,
     getChannelLanguages,
-    getTopChannelsByViewers,
-    getOnlineChannels,
-    groupChannelsByCountry,
-    groupChannelsByCategory,
 } from './channels';
 
 // ========== MATCHES ==========
@@ -98,8 +89,4 @@ export {
     isProperlyFormatted,
     getSafeEmbedUrl,
     testStreamUrl,
-    getBestStreamUrl,
 } from './streaming';
-
-// ========== MOCK DATA (for testing) ==========
-export { getMockChannels, getMockMatches } from './mock-data';

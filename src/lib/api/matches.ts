@@ -5,10 +5,8 @@ import { logger } from './logger';
 import { apiCache } from './cache';
 import { fetchWithRetry } from './fetch-utils';
 import { transformMatchData, sortMatchesByRelevance } from './transformers';
-import { getMockMatches } from './mock-data';
 import type { Match, SportType, ApiResponse, MatchFilters } from './types';
 import { 
-        normalizeTeamName, 
         findMatchByTeams,
         getTeamSearchVariations 
     } from './team-normalization';
@@ -36,7 +34,7 @@ export async function fetchAllMatches(): Promise<Match[]> {
 
         if (!response.ok) {
             logger.error(`Sports API responded with ${response.status}`);
-            return useFallbackMatches();
+            return emptyMatchesFallback();
         }
 
         const data: ApiResponse = await response.json();
@@ -45,7 +43,7 @@ export async function fetchAllMatches(): Promise<Match[]> {
         // Validate response structure
         if (!data || typeof data !== 'object') {
             logger.error('Invalid API response structure');
-            return useFallbackMatches();
+            return emptyMatchesFallback();
         }
 
         const allMatches = extractAllMatches(data);
@@ -53,7 +51,7 @@ export async function fetchAllMatches(): Promise<Match[]> {
         // Ensure we have an array
         if (!Array.isArray(allMatches)) {
             logger.error('extractAllMatches did not return an array');
-            return useFallbackMatches();
+            return emptyMatchesFallback();
         }
 
         const sortedMatches = sortMatchesByRelevance(allMatches);
@@ -71,7 +69,7 @@ export async function fetchAllMatches(): Promise<Match[]> {
         return sortedMatches;
     } catch (error: unknown) {
         logger.error('Error fetching matches:', error);
-        return useFallbackMatches();
+        return emptyMatchesFallback();
     }
 }
 
@@ -148,7 +146,7 @@ function extractAllMatches(data: ApiResponse): Match[] {
     return allMatches;
 }
 
-function useFallbackMatches(): Match[] {
+function emptyMatchesFallback(): Match[] {
     logger.warn('API unavailable — returning empty matches');
     return [];
 }
@@ -409,13 +407,11 @@ export async function getMatchById(id: string): Promise<Match | null> {
                 
                 for (let i = 1; i <= Math.min(3, awayWords.length); i++) {
                     const awayPart = awayWords.slice(0, i).join(' ');
-                    const tournamentPart = awayWords.slice(i).join(' ');
                     
                     console.log(`🔧 Attempt ${i}: Home="${homePart}", Away="${awayPart}"`);
                     
                     // Try to find using normalization
-                    let match: Match | null | undefined;
-                    match = findMatchByTeams(homePart, awayPart, matches);
+                    const match = findMatchByTeams(homePart, awayPart, matches);
                     
                     if (match) {
                         console.log(`✅ Found match using normalization`);

@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# editor
+.idea/
+
+# runtime output from server/
+server/hls/
+!.env.example
+server/cache/
+
+# server dependencies
+server/node_modules/

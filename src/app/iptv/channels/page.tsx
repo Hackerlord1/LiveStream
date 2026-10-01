@@ -1,328 +1,187 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Header from "@/components/Header";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { SearchX, Tv, WifiOff } from "lucide-react";
+import { useCatalogue } from "@/hooks/use-catalogue";
+import { formatCount, isHd, splitTag } from "@/lib/iptv-format";
+import { Badge, EmptyState, FilterChips, IptvPage, LoadProgress, RetryButton, SearchBox, SkeletonGrid } from "@/components/iptv/ui";
 
-const VPS_URL = "https://api.bravestream.live"; // Replace with your VPS URL
+interface Channel {
+  id: string;
+  number?: string | number;
+  name?: string;
+  logo?: string;
+  hd?: string | number;
+  genreId?: string | number;
+}
+
+interface ChannelsResponse {
+  channels: Channel[];
+  genres: { id: string; title: string }[];
+}
+
+const MAX_GENRE_CHIPS = 40;
+const MIN_TILE_WIDTH = 130;
 
 export default function IptvChannelsPage() {
-  const [allChannels, setAllChannels] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [cacheStatus, setCacheStatus] = useState({
-    ready: false,
-    progress: { percent: 0, loaded: 0, total: 0 },
-  });
+  const { data, error, status, retry } = useCatalogue<ChannelsResponse>("channels", "/api/channels-all");
+  const channels = useMemo(() => data?.channels ?? [], [data]);
+
   const [search, setSearch] = useState("");
-  const [error, setError] = useState("");
+  const [genre, setGenre] = useState("all");
+
+  const genreOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ch of channels) {
+      const id = String(ch.genreId ?? "");
+      if (id) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    const named = (data?.genres ?? [])
+      .filter((g) => g.id !== "*" && counts.has(String(g.id)))
+      .map((g) => ({ id: String(g.id), label: g.title, count: counts.get(String(g.id)) }))
+      .sort((a, b) => (b.count || 0) - (a.count || 0))
+      .slice(0, MAX_GENRE_CHIPS);
+    return [{ id: "all", label: "All", count: channels.length }, ...named];
+  }, [channels, data?.genres]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return channels.filter(
+      (ch) =>
+        (genre === "all" || String(ch.genreId) === genre) &&
+        (!q || (ch.name || "").toLowerCase().includes(q) || String(ch.number ?? "") === q)
+    );
+  }, [channels, search, genre]);
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const [columns, setColumns] = useState(7);
-
-  // ✅ Responsive columns
+  const [columns, setColumns] = useState(4);
   useEffect(() => {
-    function updateColumns() {
-      const w = window.innerWidth;
-      if (w < 400) setColumns(2);
-      else if (w < 640) setColumns(3);
-      else if (w < 768) setColumns(4);
-      else if (w < 1024) setColumns(5);
-      else if (w < 1280) setColumns(6);
-      else setColumns(7);
-    }
-    updateColumns();
-    window.addEventListener("resize", updateColumns);
-    return () => window.removeEventListener("resize", updateColumns);
-  }, []);
-
-  // ✅ FETCH channels
-  useEffect(() => {
-    let mounted = true;
-    let pollInterval: NodeJS.Timeout;
-
-    async function fetchData() {
-      try {
-        console.log(`Fetching from: ${VPS_URL}/api/channels-all`);
-        const res = await fetch(`${VPS_URL}/api/channels-all`);
-        console.log(`Response status: ${res.status}`);
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-
-        const data = await res.json();
-        console.log(`Channels received:`, data);
-
-        if (!mounted) return;
-
-        if (data.channels && data.channels.length > 0) {
-          setAllChannels(data.channels);
-          setLoading(false);
-          setError("");
-        }
-
-        setCacheStatus({
-          ready: data.ready,
-          progress: {
-            percent:
-              data.total > 0
-                ? Math.round((data.channels.length / data.total) * 100)
-                : 0,
-            loaded: data.channels.length,
-            total: data.total,
-          },
-        });
-
-        if (data.ready) {
-          clearInterval(pollInterval);
-        }
-      } catch (err) {
-        console.error("Fetch error:", err);
-        if (!mounted) return;
-        setError(`Failed to load channels: ${err instanceof Error ? err.message : "Unknown error"}`);
-        setLoading(false);
-      }
-    }
-
-    fetchData();
-    pollInterval = setInterval(fetchData, 2000);
-
-    return () => {
-      mounted = false;
-      clearInterval(pollInterval);
-    };
-  }, []);
-
-  // ✅ Search
-  const filteredChannels = useMemo(() => {
-    if (!search.trim()) return allChannels;
-    const q = search.toLowerCase();
-    return allChannels.filter((ch) => {
-      const name = (ch.name || "").toLowerCase();
-      const number = (ch.number || "").toString();
-      return name.includes(q) || number === q;
+    const el = parentRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setColumns(Math.max(2, Math.min(10, Math.floor(entry.contentRect.width / MIN_TILE_WIDTH))));
     });
-  }, [allChannels, search]);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-  const totalRows = Math.ceil(filteredChannels.length / columns);
-
-  const rowVirtualizer = useVirtualizer({
-    count: totalRows,
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is not compiler-compatible
+  const virtualizer = useVirtualizer({
+    count: Math.ceil(visible.length / columns),
     getScrollElement: () => parentRef.current,
-    estimateSize: () => {
-      if (columns <= 3) return 120;
-      if (columns <= 5) return 140;
-      return 150;
-    },
-    overscan: 5,
+    estimateSize: () => 150,
+    overscan: 4,
   });
 
-  // ✅ LOADING state
-  if (loading && allChannels.length === 0) {
-    return (
-      <div
-        className="h-screen flex flex-col"
-        style={{ backgroundColor: "#0a0a0f", color: "#e4e4e7" }}
-      >
-        <Header />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-red-600 mx-auto mb-3" />
-            <p style={{ color: "#a1a1aa" }}>Connecting to server...</p>
+  useEffect(() => {
+    parentRef.current?.scrollTo({ top: 0 });
+  }, [search, genre]);
+
+  const subtitle = data
+    ? visible.length === channels.length
+      ? `${formatCount(channels.length)} live channels`
+      : `${formatCount(visible.length)} of ${formatCount(channels.length)} channels`
+    : undefined;
+
+  let body;
+  if (!data && error) {
+    body = (
+      <EmptyState
+        icon={<WifiOff className="h-6 w-6" />}
+        title="Can't reach the server"
+        message="We couldn't load channels right now."
+        action={<RetryButton onClick={retry} />}
+      />
+    );
+  } else if (!data || (channels.length === 0 && !status?.ready)) {
+    body = <SkeletonGrid variant="tile" count={24} />;
+  } else if (visible.length === 0) {
+    body = (
+      <EmptyState
+        icon={<SearchX className="h-6 w-6" />}
+        title="No channels found"
+        message={search ? `Nothing matches “${search}”.` : "Try another category."}
+      />
+    );
+  } else {
+    body = (
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {virtualizer.getVirtualItems().map((row) => (
+          <div
+            key={row.key}
+            data-index={row.index}
+            ref={virtualizer.measureElement}
+            className="absolute left-0 top-0 w-full pb-3"
+            style={{ transform: `translateY(${row.start}px)` }}
+          >
+            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+              {visible.slice(row.index * columns, row.index * columns + columns).map((ch) => (
+                <ChannelTile key={ch.id} channel={ch} />
+              ))}
+            </div>
           </div>
-        </div>
+        ))}
       </div>
     );
   }
 
   return (
-    <div
-      className="h-screen flex flex-col overflow-hidden"
-      style={{ backgroundColor: "#0a0a0f", color: "#e4e4e7" }}
+    <IptvPage
+      title="Live Channels"
+      icon={<Tv className="h-5 w-5" />}
+      subtitle={subtitle}
+      fullHeight
+      toolbar={
+        <>
+          <LoadProgress status={status} noun="channels" />
+          <SearchBox value={search} onChange={setSearch} placeholder="Search by name or channel number…" />
+          {genreOptions.length > 1 && <FilterChips options={genreOptions} value={genre} onChange={setGenre} />}
+        </>
+      }
     >
-      <Header />
+      <div ref={parentRef} className="h-full overflow-y-auto px-1 pt-1" style={{ scrollbarWidth: "thin" }}>
+        {body}
+      </div>
+    </IptvPage>
+  );
+}
 
-      {/* HEADER */}
-      <div className="px-3 sm:px-4 py-3 flex-shrink-0">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3 mb-3">
-            <Link
-              href="/iptv"
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200"
-              style={{
-                backgroundColor: "#1a1a2e",
-                color: "#a1a1aa",
-                border: "1px solid #27272a",
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-              Back
-            </Link>
+function ChannelTile({ channel }: { channel: Channel }) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const { tag, title } = splitTag(channel.name);
 
-            <h1 className="text-xl sm:text-2xl font-bold flex-shrink-0">
-              📺 Channels
-            </h1>
-
-            <span
-              className="text-xs sm:text-sm flex-shrink-0"
-              style={{ color: "#a1a1aa" }}
-            >
-              ({filteredChannels.length.toLocaleString()})
-            </span>
-
-            {!cacheStatus.ready && (
-              <span
-                className="flex items-center gap-2 text-xs flex-shrink-0"
-                style={{ color: "#f59e0b" }}
-              >
-                <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                Loading more… {cacheStatus.progress.percent}%
-              </span>
-            )}
-          </div>
-
-          {error && (
-            <div
-              className="mb-2 p-3 rounded-lg text-sm flex items-center gap-2"
-              style={{
-                backgroundColor: "rgba(239, 68, 68, 0.15)",
-                color: "#fca5a5",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              {error}
-            </div>
-          )}
-
-          <input
-            type="text"
-            placeholder="Search channels..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-colors duration-200 focus:ring-2 focus:ring-red-600/30"
-            style={{
-              backgroundColor: "#1a1a2e",
-              border: "1px solid #27272a",
-              color: "#e4e4e7",
-            }}
+  return (
+    <Link
+      href={`/iptv/watch/${channel.id}`}
+      title={channel.name}
+      className="group block overflow-hidden rounded-xl transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
+      style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-secondary)" }}
+    >
+      <div className="relative flex aspect-[4/3] items-center justify-center p-3" style={{ backgroundColor: "var(--surface-secondary)" }}>
+        {channel.logo && !logoFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
+          <img
+            src={channel.logo}
+            alt=""
+            loading="lazy"
+            onError={() => setLogoFailed(true)}
+            className="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
           />
-        </div>
+        ) : (
+          <span className="text-lg font-bold tracking-tight" style={{ color: "var(--text-muted)" }}>
+            {title.slice(0, 3).toUpperCase()}
+          </span>
+        )}
+        <div className="absolute right-1.5 top-1.5 flex gap-1">{isHd(channel.hd) && <Badge tone="red">HD</Badge>}</div>
       </div>
-
-      {/* GRID */}
-      <div className="flex-1 overflow-hidden px-2 sm:px-4 pb-4">
-        <div className="max-w-7xl mx-auto h-full">
-          <div
-            ref={parentRef}
-            className="h-full overflow-auto rounded-xl"
-            style={{
-              scrollbarWidth: "thin",
-              scrollbarColor: "#27272a transparent",
-            }}
-          >
-            <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                width: "100%",
-                position: "relative",
-              }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const start = virtualRow.index * columns;
-                const rowChannels = filteredChannels.slice(
-                  start,
-                  start + columns
-                );
-
-                return (
-                  <div
-                    key={virtualRow.key}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <div
-                      className="grid px-2"
-                      style={{
-                        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                        rowGap: columns >= 6 ? "16px" : "12px",
-                        columnGap: columns >= 6 ? "14px" : "10px",
-                      }}
-                    >
-                      {rowChannels.map((channel: any) => (
-                        <Link
-                          key={`${channel.id}_${channel.number}`}
-                          href={`/iptv/watch/${channel.id}`}
-                          title={channel.name}
-                          className="block rounded-xl text-center p-2.5 no-underline transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
-                          style={{
-                            backgroundColor: "#1a1a2e",
-                            border: "1px solid #27272a",
-                            color: "#e4e4e7",
-                          }}
-                        >
-                          <div className="w-full h-10 sm:h-14 flex items-center justify-center mb-1">
-                            {channel.logo ? (
-                              <img
-                                src={channel.logo}
-                                alt=""
-                                loading="lazy"
-                                className="max-h-full max-w-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display =
-                                    "none";
-                                }}
-                              />
-                            ) : (
-                              <span className="text-lg sm:text-xl">📺</span>
-                            )}
-                          </div>
-                          <p className="font-semibold text-[9px] sm:text-[10px] leading-tight line-clamp-2">
-                            {channel.name}
-                          </p>
-                          <p
-                            className="text-[9px] sm:text-[10px] mt-0.5"
-                            style={{ color: "#a1a1aa" }}
-                          >
-                            Ch. {channel.number}
-                          </p>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      <div className="p-2">
+        <p className="line-clamp-2 text-[11px] font-semibold leading-snug group-hover:text-red-500">{title}</p>
+        <p className="mt-0.5 truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
+          {[channel.number && `CH ${channel.number}`, tag].filter(Boolean).join(" · ")}
+        </p>
       </div>
-    </div>
+    </Link>
   );
 }

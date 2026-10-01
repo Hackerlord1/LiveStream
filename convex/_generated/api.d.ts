@@ -8,8 +8,6 @@
  * @module
  */
 
-import type * as crons from "../crons.js";
-import type * as iptv from "../iptv.js";
 import type * as messages from "../messages.js";
 
 import type {
@@ -19,8 +17,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  crons: typeof crons;
-  iptv: typeof iptv;
   messages: typeof messages;
 }>;
 

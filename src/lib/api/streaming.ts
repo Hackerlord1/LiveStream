@@ -140,30 +140,4 @@ export async function testStreamUrl(url: string): Promise<boolean> {
         return false;
     }
 }
-
-/**
- * Get best available stream URL for a channel
- */
-export async function getBestStreamUrl(channel: ApiChannel): Promise<string> {
-    const urls = [
-        getEmbedUrl(channel),
-        getSafeEmbedUrl(channel),
-        getIframeEmbedUrl(channel),
-    ];
-
-    // Remove duplicates
-    const uniqueUrls = [...new Set(urls)];
-
-    // Test each URL and return first working one
-    for (const url of uniqueUrls) {
-        const isWorking = await testStreamUrl(url);
-        if (isWorking) {
-            logger.debug('Found working stream URL:', url);
-            return url;
-        }
-    }
-
-    // Return primary URL as fallback
-    logger.warn('No working stream URL found, using default');
-    return uniqueUrls[0];
-}
+

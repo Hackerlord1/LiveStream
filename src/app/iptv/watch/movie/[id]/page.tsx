@@ -1,74 +1,76 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import Header from "@/components/Header";
+import { Film, Play, SearchX } from "lucide-react";
+import { fetchIptv } from "@/lib/iptv-client";
+import { splitTag } from "@/lib/iptv-format";
+import { EmptyState, IptvPage, RetryButton } from "@/components/iptv/ui";
+import DetailHero, { DetailSkeleton, type DetailItem } from "@/components/iptv/DetailHero";
+import VodPlayer from "@/components/iptv/VodPlayer";
 
-const WRAPPER_URL = "https://neighborly-perch-272.convex.cloud/api/action";
-
-async function callWrapper(path: string, args: Record<string, any> = {}) {
-  const res = await fetch(WRAPPER_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, args }),
-  });
-  const data = await res.json();
-  return data.value;
-}
-
-export default function MovieWatchPage() {
+export default function MovieDetailPage() {
   const params = useParams();
-  const movieId = Number(params.id);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const movieId = String(params.id);
 
-  const [movie, setMovie] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [movie, setMovie] = useState<DetailItem | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const vodData = await callWrapper("iptv:getVodList", { page: 1 });
-        const movies = vodData?.js?.data || [];
-        const found = movies.find((m: any) => m.id === movieId);
-        setMovie(found || { name: `Movie ${movieId}` });
-      } catch (e) {
-        setError("Failed to load movie info");
-      }
-      setLoading(false);
-    }
-    load();
-  }, [movieId]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#000' }}>
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600" />
-      </div>
-    );
-  }
+    let cancelled = false;
+    fetchIptv<{ movie: DetailItem }>(`/api/vod/${encodeURIComponent(movieId)}`)
+      .then((data) => {
+        if (cancelled) return;
+        setMovie(data.movie);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [movieId, attempt]);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#0a0a0a', color: '#fff' }}>
-      <Header />
-      <main className="max-w-5xl mx-auto px-4 py-4">
-        <Link href="/iptv/vod" className="text-sm hover:underline mb-4 inline-block" style={{ color: '#aaa' }}>
-          ← Back to Movies
-        </Link>
-        <h2 className="text-2xl font-bold mb-4">{movie?.name || `Movie ${movieId}`}</h2>
-        {movie?.year && <p className="text-sm mb-2" style={{ color: '#888' }}>{movie.year}</p>}
-        {movie?.descr && <p className="text-sm mb-4" style={{ color: '#aaa' }}>{movie.descr}</p>}
-
-        {error && (
-          <div className="mb-4 p-4 rounded-lg" style={{ backgroundColor: '#2d0000', color: '#ff8888' }}>{error}</div>
-        )}
-
-        <div className="rounded-xl overflow-hidden bg-black mb-6">
-          <video ref={videoRef} controls autoPlay muted playsInline className="w-full aspect-video" style={{ maxHeight: '70vh' }} />
+    <IptvPage title="Movie" icon={<Film className="h-5 w-5" />} backHref="/iptv/vod">
+      {movie ? (
+        <div className="space-y-6">
+          {playing && (
+            <VodPlayer
+              sourcePath={`/api/vod/${encodeURIComponent(movieId)}/source`}
+              resumeId={`vod:${movieId}`}
+              title={splitTag(movie.name).title}
+            />
+          )}
+          <DetailHero item={movie}>
+            {!playing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPlaying(true);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white shadow-lg transition-transform hover:scale-105"
+                style={{ backgroundColor: "var(--brand-red)" }}
+              >
+                <Play className="h-5 w-5 fill-current" /> Play movie
+              </button>
+            )}
+          </DetailHero>
         </div>
-      </main>
-    </div>
+      ) : failed ? (
+        <EmptyState
+          icon={<SearchX className="h-6 w-6" />}
+          title="Movie not found"
+          message="It may have been removed, or the catalogue is still loading."
+          action={<RetryButton onClick={() => setAttempt((a) => a + 1)} />}
+        />
+      ) : (
+        <DetailSkeleton />
+      )}
+    </IptvPage>
   );
 }

@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     const { error: sendError } = await resend.emails.send({
       from: 'Forwarded <noreply@inbound.bravestream.live>',
-      to: ['hemankipkoechchir@gmail.com'],
+      to: [process.env.CONTACT_TO_EMAIL || 'hemankipkoechchir@gmail.com'],
       subject: `[Forwarded] ${email.subject || '(No subject)'}`,
       html: `
         <h2>New Email Received</h2>

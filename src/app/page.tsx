@@ -382,13 +382,9 @@ export default function Home() {
     const [showDonateBanner, setShowDonateBanner] = useState(true);
 
     // ========== FEATURED CHANNELS ==========
-    const [featuredChannels, setFeaturedChannels] = useState<any[]>([]);
+    const [featuredChannels, setFeaturedChannels] = useState<{ id: string | number; number?: string | number; name?: string; logo?: string }[]>([]);
 
     const paypalDonateUrl = `https://www.paypal.com/donate?business=txthkm0%40gmail.com&currency_code=USD&item_name=Support+BraveStream`;
-
-    useEffect(() => {
-        loadMatches();
-    }, []);
 
     // ========== LOAD FEATURED CHANNELS ==========
     useEffect(() => {
@@ -397,7 +393,7 @@ export default function Home() {
                 const res = await fetch("https://hls.bravestream.live/api/channels/range?start=73&end=144");
                 const data = await res.json();
                 if (data.channels) setFeaturedChannels(data.channels);
-            } catch (e) {
+            } catch {
                 // Silently fail - featured channels are optional
             }
         }
@@ -437,6 +433,10 @@ export default function Home() {
         setLoading(false);
     }
 };
+
+    useEffect(() => {
+        loadMatches();
+    }, []);
 
     const tournaments = useMemo(() => {
         if (!Array.isArray(matches)) return [];
@@ -578,7 +578,7 @@ export default function Home() {
                         </span>
                     </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-                            {featuredChannels.map((ch: any) => (
+                            {featuredChannels.map((ch) => (
                                 <Link
                                     key={ch.id}
                                     href={`/iptv/watch/${ch.id}`}

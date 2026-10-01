@@ -32,10 +32,7 @@ import {
     getChannelCategories,
     getChannelCountries,
     getChannelLanguages,
-    getTopChannelsByViewers,
-    getOnlineChannels,
     searchChannels,
-    groupChannelsByCountry,
 } from '@/lib/api';
 
 // ========== TYPES ==========
@@ -453,8 +450,6 @@ export default function ChannelsPage() {
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [isSearching, setIsSearching] = useState(false);
 
-    useEffect(() => { loadChannels(); loadUserData(); }, []);
-
     const loadChannels = async () => {
         try {
             setLoading(true); setError(null);
@@ -475,6 +470,8 @@ export default function ChannelsPage() {
             if (savedRecent) setRecentlyViewed(JSON.parse(savedRecent));
         } catch (err) { console.error('Error loading user data:', err); }
     };
+
+    useEffect(() => { loadChannels(); loadUserData(); }, []);
 
     const categories = useMemo(() => getChannelCategories(channels), [channels]);
     const countries = useMemo(() => getChannelCountries(channels), [channels]);
