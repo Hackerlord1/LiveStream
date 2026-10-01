@@ -1,0 +1,13 @@
+# Caddy: serves https://api.bravestream.live directly from this computer.
+# It gets and renews the HTTPS certificate automatically (needs ports 80 and 443
+# forwarded to this computer) and passes requests to the stream server on :3477.
+#
+# Run:  caddy run --config C:\bravestream\server\Caddyfile
+
+api.bravestream.live {
+	# No `encode` here: the stream server already gzips its JSON, and video doesn't compress
+	reverse_proxy localhost:3477 {
+		# Send video/audio to the viewer as it's produced instead of buffering it
+		flush_interval -1
+	}
+}

@@ -5,7 +5,7 @@ BraveStream has two parts that run in different places:
 | Part | What it does | Where it runs |
 | --- | --- | --- |
 | **Website** (`src/`) | The Next.js site visitors use. Live match chat uses Convex (`convex/messages.ts`). | Your web host (e.g. Vercel) |
-| **Stream server** (`server/`) | Talks to the IPTV portal, keeps the channel/movie/series lists, restreams live TV, plays movies, episodes and radio. | An always-on computer, reachable as `https://api.bravestream.live` through a Cloudflare Tunnel |
+| **Stream server** (`server/`) | Talks to the IPTV portal, keeps the channel/movie/series lists, restreams live TV, plays movies, episodes and radio. | An always-on computer, reachable as `https://api.bravestream.live` (directly via Caddy, or through a Cloudflare Tunnel) |
 
 The website calls the stream server for everything IPTV. If the stream server is down,
 IPTV pages show "Can't reach the server" (and browsers may report a CORS error; see
@@ -26,8 +26,7 @@ for **Windows (PowerShell)**; Linux equivalents follow each step where they diff
 - **The computer must not sleep.** Windows: *Settings → System → Power* → set *Sleep* to
   **Never** (when plugged in). Also set *Settings → Windows Update → Advanced options →
   Active hours* so updates don't restart it during matches.
-- **No router or firewall changes are needed.** The Cloudflare Tunnel connects outwards, so
-  nothing on your network is opened up and your home IP stays hidden.
+- **You'll need access to your router** to forward two ports (step 8).
 
 ### 2. Install the tools
 
@@ -36,7 +35,16 @@ winget install OpenJS.NodeJS.LTS Gyan.FFmpeg Git.Git Cloudflare.cloudflared
 ```
 
 Then **close and reopen PowerShell** (or restart the computer) so the new programs are on
-the PATH. Check each one:
+the PATH. Until you do, you'll get errors like `git : The term 'git' is not recognized`.
+
+Windows blocks PowerShell scripts by default, which stops `npm` and `pm2` with *"running
+scripts is disabled on this system"*. Allow them for your user once (answer **Y**):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Check each tool:
 
 ```powershell
 node -v          # v20 or newer
@@ -137,22 +145,80 @@ pm2 startup   # then run the command it prints
 ```
 </details>
 
-### 8. Connect `api.bravestream.live` with a Cloudflare Tunnel
+### 8. Make `api.bravestream.live` reach this computer
 
-The easiest way is a tunnel managed from the Cloudflare dashboard:
+Viewers connect **directly** to this computer: no tunnel or relay in between, so the only
+limit is your own upload speed. [Caddy](https://caddyserver.com) handles HTTPS (free
+certificate, renewed automatically) and passes requests to the stream server.
 
-1. Go to **Cloudflare dashboard → Zero Trust → Networks → Tunnels**.
-2. If a tunnel for `api.bravestream.live` already exists (from the old VPS), open it.
-   Otherwise click **Create a tunnel**, choose **Cloudflared**, and name it `bravestream`.
-3. Under **Install and run a connector**, pick **Windows**. Copy the command it shows
-   (`cloudflared.exe service install <long token>`) and run it in an
-   **Administrator** PowerShell. This installs the tunnel as a Windows service that starts
-   on boot.
-4. Under **Public Hostname**, add (or edit) the route:
-   - Subdomain `api`, domain `bravestream.live`
-   - Service **HTTP**, URL `localhost:3477`
-5. Save. The tunnel should show **Healthy** within a minute.
-6. If the old VPS connector is still listed, delete it, since that machine is gone.
+**Requirement:** your internet connection has a public IP. Compare the *WAN/Internet IP* on
+your router's admin page with <https://whatismyip.com>. They must match. (If they don't,
+you're behind CGNAT: use [the Cloudflare Tunnel instead](#alternative-cloudflare-tunnel).)
+
+**8.1 Give this computer a fixed local IP.** Run `ipconfig` and note the *IPv4 Address*
+(e.g. `192.168.1.50`). In your router, add a **DHCP reservation** for it so it never
+changes.
+
+**8.2 Forward ports on the router.** Forward **TCP 80** and **TCP 443** to that IP.
+Do **not** forward 3477; the stream server stays private behind Caddy.
+
+**8.3 Allow the ports in Windows Firewall** (Administrator PowerShell):
+
+```powershell
+New-NetFirewallRule -DisplayName "Caddy HTTP/HTTPS" -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow
+```
+
+**8.4 Point the domain at your IP.** The domain's DNS is on Cloudflare. In
+*Cloudflare dashboard → bravestream.live → DNS → Records*:
+- Delete the existing `api` record (it points at the old tunnel).
+- Add an **A** record: name `api`, IPv4 = your public IP, **Proxy status: DNS only
+  (grey cloud)**. The grey cloud matters: with an orange cloud, traffic would still go
+  through Cloudflare.
+- In *Zero Trust → Networks → Tunnels*, delete the old tunnel so it can't re-create the
+  record.
+
+**8.5 Install and test Caddy.**
+
+```powershell
+winget install CaddyServer.Caddy
+```
+
+Reopen PowerShell, then:
+
+```powershell
+caddy run --config C:\bravestream\server\Caddyfile
+```
+
+The first run obtains the certificate (a few seconds). Then test from a **phone on mobile
+data** (not your Wi-Fi): <https://api.bravestream.live/health> should show
+`"status":"ok"`. Stop Caddy with Ctrl+C.
+
+**8.6 Keep Caddy running with pm2**, alongside the stream server:
+
+```powershell
+pm2 start caddy --name caddy --interpreter none -- run --config C:\bravestream\server\Caddyfile
+pm2 save
+```
+
+> **pm2 on Windows starts when you log in**, not at power-on. Set the server computer to sign
+> in automatically (`netplwiz` → untick *Users must enter a user name and password*), or
+> just leave it signed in.
+
+> **If your public IP changes** (many home connections get a new one occasionally), the
+> `api` record must be updated, or the site loses the server. Ask your ISP for a static
+> IP, or set up a dynamic-DNS updater.
+
+#### Alternative: Cloudflare Tunnel
+
+Use this only if you're behind CGNAT (no public IP). It needs no router changes, but all
+video passes through Cloudflare, whose free plan restricts heavy video use.
+
+1. *Cloudflare dashboard → Zero Trust → Networks → Tunnels → Create a tunnel* (Cloudflared).
+2. Under *Install and run a connector* pick **Windows**, and run the
+   `cloudflared.exe service install <token>` command it shows in an **Administrator**
+   PowerShell.
+3. Under *Public Hostname*: subdomain `api`, domain `bravestream.live`, service **HTTP**
+   `localhost:3477`. Save. It should show **Healthy**.
 
 Check from any device: <https://api.bravestream.live/health> should show `"status":"ok"`.
 
