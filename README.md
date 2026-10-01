@@ -4,7 +4,7 @@ BraveStream has two parts that run in different places:
 
 | Part | What it does | Where it runs |
 | --- | --- | --- |
-| **Website** (`src/`) | The Next.js site visitors use. Live match chat uses Convex (`convex/messages.ts`). | Your web host (e.g. Vercel) |
+| **Website** (`src/`) | The Next.js site visitors use. Live match chat uses Convex (`convex/messages.ts`). | The server computer (Next.js on :3000, behind Caddy), as `https://bravestream.live` |
 | **Stream server** (`server/`) | Talks to the IPTV portal, keeps the channel/movie/series lists, restreams live TV, plays movies, episodes and radio. | An always-on computer, reachable as `https://api.bravestream.live` (directly via Caddy, or through a Cloudflare Tunnel) |
 
 The website calls the stream server for everything IPTV. If the stream server is down,
@@ -202,12 +202,8 @@ The first run obtains the certificate (a few seconds). Then test from a **phone 
 data** (not your Wi-Fi): <https://api.bravestream.live/health> should show
 `"status":"ok"`. Stop Caddy with Ctrl+C.
 
-**8.6 Keep Caddy running with pm2**, alongside the stream server:
-
-```powershell
-pm2 start caddy --name caddy --interpreter none -- run --config C:\bravestream\server\Caddyfile
-pm2 save
-```
+**8.6 Keep it running:** Caddy is started by pm2 together with the website and stream
+server in step 9.3.
 
 > **pm2 on Windows starts when you log in**, not at power-on. Set the server computer to sign
 > in automatically (`netplwiz` → untick *Users must enter a user name and password*), or
@@ -231,20 +227,61 @@ video passes through Cloudflare, whose free plan restricts heavy video use.
 
 Check from any device: <https://api.bravestream.live/health> should show `"status":"ok"`.
 
-### 9. Point the website at the server
+### 9. Run the website on this computer too
 
-On the website's host (e.g. *Vercel → Project → Settings → Environment Variables*), make sure
-`NEXT_PUBLIC_API_URL` is `https://api.bravestream.live` (that's also the default if it's
-unset), then redeploy. Open the site's IPTV section and play a channel to confirm.
+The website (`bravestream.live`) runs on the same computer, behind the same Caddy, so the
+whole site is self-hosted with no third-party CPU or bandwidth limits.
+
+**9.1 Website settings.** Copy your `.env.local` (Convex, Resend, sports API keys) into
+`C:\bravestream\`. `NEXT_PUBLIC_API_URL` can stay unset: it defaults to
+`https://api.bravestream.live`.
+
+**9.2 Build it** (takes a few minutes):
+
+```powershell
+cd C:\bravestream
+npm ci
+npm run build
+```
+
+**9.3 Run everything with pm2.** The root `ecosystem.config.js` runs the website (port
+3000), the stream server (3477) and Caddy together. If you started any of them with pm2
+before, remove those first:
+
+```powershell
+pm2 delete all
+cd C:\bravestream
+pm2 start ecosystem.config.js
+pm2 save
+pm2 status
+```
+
+All three (`bravestream-web`, `bravestream-server`, `caddy`) should be **online**. Check
+<http://localhost:3000> on this computer.
+
+**9.4 Point the domain here.**
+1. *Cloudflare → Workers & Pages →* (the old site's Worker) *→ Settings → Domains & Routes*:
+   remove `bravestream.live` and `www.bravestream.live`, so Cloudflare stops serving the
+   old site.
+2. *Cloudflare → bravestream.live → DNS → Records*:
+   - Delete the existing `www` A and AAAA records.
+   - Add **A** `@` (the root, `bravestream.live`) → your public IP, **DNS only** (grey cloud).
+   - Add **A** `www` → your public IP, **DNS only** (grey cloud).
+   - Leave everything else alone (email MX/TXT records, the `*` wildcard, `api`).
+3. `pm2 restart caddy` so it fetches certificates for the root domain and `www` straight away.
+
+Then open <https://bravestream.live> from a phone on mobile data.
 
 ### 10. Updating later
 
 ```powershell
 cd C:\bravestream
 git pull
+npm ci
+npm run build
 cd server
 npm install
-pm2 restart bravestream-server
+pm2 restart all
 ```
 
 ---
