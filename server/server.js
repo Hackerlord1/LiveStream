@@ -278,7 +278,8 @@ async function startStream(channelId, forceReencode = false) {
 
       const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode);
       const ffmpeg = spawn(FFMPEG, args, {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true, // no console window per ffmpeg on Windows
       });
 
       let lastOutput = Date.now();
@@ -606,7 +607,7 @@ const server = http.createServer(async (req, res) => {
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
         "-i", upstreamUrl,
         "-vn", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "pipe:1",
-      ], { stdio: ["ignore", "pipe", "pipe"] });
+      ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
       activeRadioProxies++;
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache" });
       ffmpeg.stdout.pipe(res);

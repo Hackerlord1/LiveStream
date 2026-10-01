@@ -7,7 +7,7 @@ const path = require("path");
 
 function isAvailable(bin) {
   try {
-    return spawnSync(bin, ["-version"], { stdio: "ignore", timeout: 10000 }).status === 0;
+    return spawnSync(bin, ["-version"], { stdio: "ignore", timeout: 10000, windowsHide: true }).status === 0;
   } catch {
     return false;
   }
@@ -58,7 +58,7 @@ function supportsOption(option, value) {
     const result = spawnSync(
       FFMPEG,
       ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "nullsrc=d=0.04", option, value, "-f", "null", "-"],
-      { stdio: "ignore", timeout: 10000 }
+      { stdio: "ignore", timeout: 10000, windowsHide: true }
     );
     return result.status === 0;
   } catch {

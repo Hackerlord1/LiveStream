@@ -203,7 +203,7 @@ function ffprobe(url) {
     execFile(
       FFPROBE,
       ["-v", "error", "-user_agent", portal.USER_AGENT, "-print_format", "json", "-show_format", "-show_streams", url],
-      { timeout: 30000, maxBuffer: 5 * 1024 * 1024 },
+      { timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true },
       (err, stdout, stderr) => {
         if (err) {
           // ffprobe's own explanation, not just "Command failed: <command line>"
@@ -292,7 +292,7 @@ async function streamRemux(res, key, createLink, info, start) {
     "-c:a", "aac", "-b:a", "160k", "-ac", "2",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4", "pipe:1",
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+  ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
   activeSessions++;
   res.writeHead(200, { "Content-Type": "video/mp4", "Cache-Control": "no-cache" });
