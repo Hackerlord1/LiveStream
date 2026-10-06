@@ -7,6 +7,7 @@ const { spawn, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const crypto = require("crypto");
 const portal = require("./portal");
 const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
 const vod = require("./vod");
@@ -124,6 +125,87 @@ async function getSeasons(seriesId) {
 }
 
 // =============================
+// CHANNEL LOGOS
+// =============================
+// Almost all portal logos are plain-HTTP links, which browsers block on the HTTPS site.
+// /api/logo/<channel id> fetches the logo once, keeps it in server/cache/logos/, and
+// serves it over HTTPS. Only logos of known channels/stations are fetched (no open proxy).
+const LOGO_DIR = path.join(__dirname, "cache", "logos");
+const LOGO_MAX_BYTES = 1024 * 1024;
+const LOGO_FAILURE_TTL_MS = 60 * 60 * 1000;
+const logoFailures = new Map(); // source url -> time it failed (don't retry broken logos constantly)
+const logoFetches = new Map();  // source url -> in-flight fetch, shared by concurrent requests
+// A logo host that doesn't answer at all (some provider logo servers are down) is skipped for a
+// while, so its other logos fail instantly instead of each waiting for the timeout
+const LOGO_HOST_DOWN_MS = 10 * 60 * 1000;
+const logoHostsDown = new Map(); // host -> time it timed out
+
+function logoUrlFor(item) {
+  return item?.logo ? `/api/logo/${item.id}` : "";
+}
+
+function imageType(buf) {
+  if (buf[0] === 0x89 && buf[1] === 0x50) return "image/png";
+  if (buf[0] === 0xff && buf[1] === 0xd8) return "image/jpeg";
+  if (buf[0] === 0x47 && buf[1] === 0x49) return "image/gif";
+  if (buf.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (/^\s*</.test(buf.subarray(0, 64).toString("utf8"))) return "image/svg+xml";
+  return null;
+}
+
+async function fetchLogo(src) {
+  const res = await fetch(src, { headers: { "User-Agent": portal.USER_AGENT }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`logo host returned ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length === 0 || buf.length > LOGO_MAX_BYTES || !imageType(buf)) throw new Error("not an image");
+  return buf;
+}
+
+async function serveLogo(req, res, id) {
+  const item = findChannel(id) || catalogue.radio.items.find((s) => String(s.id) === String(id));
+  const src = String(item?.logo || "").trim();
+  if (!/^https?:\/\//.test(src)) {
+    res.writeHead(404);
+    return res.end();
+  }
+
+  const file = path.join(LOGO_DIR, crypto.createHash("sha1").update(src).digest("hex"));
+  let buf = await fs.promises.readFile(file).catch(() => null);
+
+  if (!buf) {
+    const failedAt = logoFailures.get(src);
+    const host = new URL(src).host;
+    const hostDownAt = logoHostsDown.get(host);
+    if ((failedAt && Date.now() - failedAt < LOGO_FAILURE_TTL_MS) || (hostDownAt && Date.now() - hostDownAt < LOGO_HOST_DOWN_MS)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    if (!logoFetches.has(src)) {
+      logoFetches.set(src, fetchLogo(src).finally(() => logoFetches.delete(src)));
+    }
+    try {
+      buf = await logoFetches.get(src);
+      await fs.promises.mkdir(LOGO_DIR, { recursive: true });
+      await fs.promises.writeFile(file, buf).catch(() => {});
+    } catch (err) {
+      logoFailures.set(src, Date.now());
+      // Timeouts / unreachable host (not a plain 404): mark the whole host as down for a while
+      if (err.name === "TimeoutError" || err instanceof TypeError) logoHostsDown.set(host, Date.now());
+      res.writeHead(404);
+      return res.end();
+    }
+  }
+
+  res.writeHead(200, {
+    "Content-Type": imageType(buf),
+    "Content-Length": buf.length,
+    // Logos rarely change; let browsers keep them for a week
+    "Cache-Control": "public, max-age=604800",
+  });
+  res.end(buf);
+}
+
+// =============================
 // RESPONSE HELPERS
 // =============================
 
@@ -133,7 +215,7 @@ function channelFields(ch) {
     id: ch.id,
     number: ch.number,
     name: ch.name,
-    logo: ch.logo,
+    logo: logoUrlFor(ch), // proxied over HTTPS (see serveLogo)
     hd: ch.hd,
     genreId: ch.tv_genre_id,
   };
@@ -680,6 +762,9 @@ const server = http.createServer(async (req, res) => {
     }
     return sendJson(req, res, 200, { games: gamesCache.data, ready: catalogue.channels.ready });
   }
+
+  const logoMatch = url.pathname.match(/^\/api\/logo\/(\d{1,10})$/);
+  if (logoMatch) return serveLogo(req, res, logoMatch[1]);
 
   const channelMatch = url.pathname.match(/^\/api\/channel\/(\d{1,10})$/);
   if (channelMatch) {

@@ -163,7 +163,7 @@ function buildGames(channels, genres, now = Date.now()) {
       end: schedule?.end ?? null,
       timeText: schedule ? null : parseTimeOnly(name),
       status,
-      logo: ch.logo || null,
+      logo: ch.logo ? `/api/logo/${ch.id}` : null, // proxied over HTTPS by the server
     };
     byKey.set(key, game);
     games.push(game);

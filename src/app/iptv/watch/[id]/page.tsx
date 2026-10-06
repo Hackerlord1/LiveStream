@@ -11,7 +11,7 @@ import { readLiveQuality, writeLiveQuality } from "@/lib/quality";
 // ============================================================
 // CONFIGURATION
 // ============================================================
-import { IPTV_API_URL } from "@/lib/iptv-client";
+import { apiAsset, IPTV_API_URL } from "@/lib/iptv-client";
 const PLAYLIST_TIMEOUT = 15000;
 const PLAYLIST_RETRY_INTERVAL = 1000;
 const MIN_SEGMENTS = 2;
@@ -109,7 +109,7 @@ function ChannelInfo({ channel, status }: { channel: Channel | null; status: Pla
       >
         {channel?.logo && !logoFailed ? (
           // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
-          <img src={channel.logo} alt="" className="max-h-full max-w-full object-contain p-1.5" onError={() => setLogoFailed(true)} />
+          <img src={apiAsset(channel.logo)} alt="" className="max-h-full max-w-full object-contain p-1.5" onError={() => setLogoFailed(true)} />
         ) : (
           <Tv className="h-6 w-6" style={{ color: "var(--text-muted)" }} />
         )}

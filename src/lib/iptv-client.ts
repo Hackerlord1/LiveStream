@@ -1,6 +1,12 @@
 // Base URL of the stream/API server (server/server.js), e.g. via Cloudflare Tunnel.
 export const IPTV_API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://api.bravestream.live").replace(/\/+$/, "");
 
+/** Turns a server-relative path (e.g. a channel logo "/api/logo/123") into a full URL. */
+export function apiAsset(pathOrUrl: string | undefined): string {
+  if (!pathOrUrl) return "";
+  return pathOrUrl.startsWith("/") ? `${IPTV_API_URL}${pathOrUrl}` : pathOrUrl;
+}
+
 /** A failed request; `serverMessage` is the server's own explanation, when it sent one. */
 export class IptvError extends Error {
   constructor(

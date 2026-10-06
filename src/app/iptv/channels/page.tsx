@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SearchX, Tv, WifiOff } from "lucide-react";
 import { useCatalogue } from "@/hooks/use-catalogue";
+import { apiAsset } from "@/lib/iptv-client";
 import { formatCount, isHd, splitTag } from "@/lib/iptv-format";
 import { Badge, EmptyState, FilterChips, IptvPage, LoadProgress, RetryButton, SearchBox, SkeletonGrid } from "@/components/iptv/ui";
 
@@ -163,7 +164,7 @@ function ChannelTile({ channel }: { channel: Channel }) {
         {channel.logo && !logoFailed ? (
           // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
           <img
-            src={channel.logo}
+            src={apiAsset(channel.logo)}
             alt=""
             loading="lazy"
             onError={() => setLogoFailed(true)}
