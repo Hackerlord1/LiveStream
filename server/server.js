@@ -334,6 +334,9 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, ladder = null)
     "-correct_ts_overflow", "1",
     "-copytb", "0",
     "-multiple_requests", "1",
+    // Real-time input speed: some channels arrive faster than real time, which made the
+    // stream run ahead of viewers and players skip forward (see tools.liveReadRateArgs)
+    ...tools.liveReadRateArgs,
     "-i", streamUrl,
   );
 

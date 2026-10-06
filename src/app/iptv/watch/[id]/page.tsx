@@ -12,7 +12,8 @@ import { readLiveQuality, writeLiveQuality } from "@/lib/quality";
 // CONFIGURATION
 // ============================================================
 import { apiAsset, IPTV_API_URL } from "@/lib/iptv-client";
-const PLAYLIST_TIMEOUT = 15000;
+// A channel's very first start also probes its resolution, so allow well over the ~15-20 s it can take
+const PLAYLIST_TIMEOUT = 45000;
 const PLAYLIST_RETRY_INTERVAL = 1000;
 const MIN_SEGMENTS = 2;
 
@@ -184,7 +185,7 @@ function PlayerOverlay({ status, error, onRetry }: { status: PlayerStatus; error
             {status === "loading" && "Preparing video…"}
             {status === "retrying" && "Reconnecting…"}
           </p>
-          <p className="mt-1 text-xs text-white/50">This can take up to 15 seconds</p>
+          <p className="mt-1 text-xs text-white/50">This can take up to 30 seconds the first time</p>
         </div>
       </div>
     );

@@ -66,6 +66,29 @@ function supportsOption(option, value) {
   }
 }
 
+/** Whether this ffmpeg accepts these input options (placed before -i). */
+function supportsInputOptions(args) {
+  if (!ffmpegOk) return false;
+  try {
+    const result = spawnSync(
+      FFMPEG,
+      ["-hide_banner", "-loglevel", "error", ...args, "-f", "lavfi", "-i", "nullsrc=d=0.04", "-f", "null", "-"],
+      { stdio: "ignore", timeout: 10000, windowsHide: true }
+    );
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+// Some channels are delivered faster than real time (bursts, or ~2x continuously). Encoding
+// them as fast as they arrive makes the stream run ahead of viewers, so players skip forward
+// to catch up. Read live input at real-time speed instead, with a short initial burst so
+// channels still start quickly (-readrate_initial_burst needs ffmpeg 6.1+; else plain -re).
+const liveReadRateArgs = supportsInputOptions(["-readrate", "1", "-readrate_initial_burst", "10"])
+  ? ["-readrate", "1", "-readrate_initial_burst", "10"]
+  : ["-re"];
+
 // After a provider reconnect the timestamps jump; by default ffmpeg fills the gap by
 // repeating frames ("More than 1000 frames duplicated"), which viewers see as a freeze.
 const fpsPassthroughArgs = supportsOption("-fps_mode", "passthrough") ? ["-fps_mode", "passthrough"] : [];
@@ -88,4 +111,4 @@ if (!ffmpegOk || !ffprobeOk) {
 
 const MISSING_MESSAGE = "Playback isn't available right now: the server is missing ffmpeg.";
 
-module.exports = { FFMPEG, FFPROBE, ffmpegOk, ffprobeOk, fpsPassthroughArgs, MISSING_MESSAGE };
+module.exports = { FFMPEG, FFPROBE, ffmpegOk, ffprobeOk, fpsPassthroughArgs, liveReadRateArgs, MISSING_MESSAGE };
