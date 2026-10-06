@@ -278,11 +278,12 @@ async function streamDirect(req, res, key, createLink) {
   await proxyResilient(req, res, key, createLink);
 }
 
+// Only used for the lower qualities a viewer picks; "Original" is never re-encoded
 function videoKbpsFor(height) {
-  if (height >= 1080) return 4500;
-  if (height >= 720) return 2500;
-  if (height >= 480) return 1200;
-  return 700;
+  if (height >= 1080) return 5000;
+  if (height >= 720) return 3000;
+  if (height >= 480) return 1500;
+  return 800;
 }
 
 /** "original" plus every standard quality smaller than the source. */

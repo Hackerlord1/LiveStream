@@ -336,6 +336,9 @@ node server.js         # http://localhost:3477
 `server/cache/` immediately, then refreshes them from the portal in the background every
 `CATALOGUE_REFRESH_HOURS` (default 6). A refreshed list only replaces the old one once it's
 complete. The very first run (no cache) downloads everything, which takes 20–30 minutes.
+**Switching portal** (new `IPTV_PORTAL_URL` or `IPTV_MAC` in `server/.env`): just restart. Caches remember
+which portal they came from, so the old ones are ignored and everything downloads fresh. To force
+a fresh download for the same portal, delete `server/cache/` and restart.
 
 **Live TV.** One portal connection per channel, shared by every viewer of that channel.
 ffmpeg re-encodes it to H.264/AAC HLS with 4-second segments. Re-encoding gives clean

@@ -358,11 +358,12 @@ export default function IptvWatchPage() {
           .map((level, index) => ({ index, height: level.height }))
           .sort((a, b) => b.height - a.height);
         setLevels(available);
-        // Apply the viewer's saved choice, if this channel offers it
+        // Viewer's saved choice: "auto", a height this channel offers, or (default) the best
         const saved = readLiveQuality();
         const match = available.find((l) => String(l.height) === saved);
-        hls.currentLevel = match ? match.index : -1;
-        setQuality(match ? saved : "auto");
+        const chosen = saved === "auto" ? null : match ?? available[0];
+        hls.currentLevel = chosen ? chosen.index : -1;
+        setQuality(chosen ? String(chosen.height) : "auto");
         setPlayerStatus("playing");
         video.play().catch(() => {
           // Autoplay blocked — user needs to click play
@@ -495,7 +496,9 @@ export default function IptvWatchPage() {
             options={[{ value: "auto", label: "Auto" }, ...levels.map((l) => ({ value: String(l.height), label: `${l.height}p` }))]}
             value={quality}
             onChange={chooseQuality}
-            note={quality === "auto" && activeHeight ? `Playing ${activeHeight}p` : undefined}
+            note={quality === "auto"
+              ? (activeHeight ? `Playing ${activeHeight}p` : undefined)
+              : "Buffering? Choose Auto or a lower quality"}
           />
         )}
 

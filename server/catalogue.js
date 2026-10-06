@@ -7,9 +7,17 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const portal = require("./portal");
 
 const CACHE_DIR = path.join(__dirname, "cache");
+// Identifies the portal account a cache came from (a hash, so the MAC isn't stored).
+// Switching to a different portal or MAC makes old caches be ignored automatically.
+const PORTAL_FINGERPRINT = crypto
+  .createHash("sha256")
+  .update(`${portal.PORTAL_URL}|${(process.env.IPTV_MAC || "").toUpperCase()}`)
+  .digest("hex")
+  .slice(0, 16);
 const REFRESH_HOURS = Number(process.env.CATALOGUE_REFRESH_HOURS) || 6;
 
 const VOD_LIST_PARAMS = {
@@ -58,6 +66,10 @@ function loadFromDisk(kind) {
   try {
     const saved = JSON.parse(fs.readFileSync(cachePath(kind), "utf8"));
     if (!Array.isArray(saved.items) || saved.items.length === 0) return;
+    if (saved.portal !== PORTAL_FINGERPRINT) {
+      console.log(`💾 ${kind}: cache is from a different portal (or an older version), downloading fresh`);
+      return;
+    }
     Object.assign(catalogue[kind], {
       items: saved.items,
       categories: saved.categories || [],
@@ -75,7 +87,7 @@ async function saveToDisk(kind) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   // Write then rename, so a crash mid-write never leaves a corrupt cache
   const tmp = `${cachePath(kind)}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify({ items, categories, updatedAt }));
+  await fs.promises.writeFile(tmp, JSON.stringify({ portal: PORTAL_FINGERPRINT, items, categories, updatedAt }));
   await fs.promises.rename(tmp, cachePath(kind));
 }
 

@@ -180,12 +180,22 @@ const LIVE_QUALITIES = (process.env.LIVE_QUALITIES || "1080,720,480,360")
   .split(",").map((h) => Number(h.trim())).filter((h) => h >= 144 && h <= 2160)
   .sort((a, b) => b - a);
 
+// Bitrates for the lower qualities. The ultrafast preset needs generous bitrates to look
+// clean in fast motion (sport), so these are deliberately on the high side.
 function videoKbpsFor(height) {
-  if (height >= 1080) return 4500;
-  if (height >= 720) return 2500;
-  if (height >= 576) return 1600;
-  if (height >= 480) return 1200;
-  return 700;
+  if (height >= 1080) return 6000;
+  if (height >= 720) return 3500;
+  if (height >= 576) return 2200;
+  if (height >= 480) return 1600;
+  return 900;
+}
+
+// The best quality is encoded at constant quality (CRF, as before qualities existed),
+// with only this ceiling so a busy scene can't flood viewers' connections
+function topMaxKbpsFor(height) {
+  if (height >= 1080) return 9000;
+  if (height >= 720) return 6000;
+  return 4000;
 }
 
 // Source height per channel, probed once (avoids encoding e.g. a "1080p" that is really 720p)
@@ -267,6 +277,12 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, ladder = null)
       "-sc_threshold", "0",
     );
     ladder.forEach((h, i) => {
+      if (i === 0) {
+        // Best quality: same constant-quality encoding as a single-quality stream
+        const cap = topMaxKbpsFor(h);
+        baseArgs.push("-crf:v:0", "23", "-maxrate:v:0", `${cap}k`, "-bufsize:v:0", `${cap * 2}k`);
+        return;
+      }
       const kbps = videoKbpsFor(h);
       baseArgs.push(`-b:v:${i}`, `${kbps}k`, `-maxrate:v:${i}`, `${Math.round(kbps * 1.1)}k`, `-bufsize:v:${i}`, `${kbps * 2}k`);
     });
