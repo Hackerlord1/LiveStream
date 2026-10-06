@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SearchX, Tv, WifiOff } from "lucide-react";
 import { useCatalogue } from "@/hooks/use-catalogue";
+import { useListMemory } from "@/hooks/use-list-memory";
 import { apiAsset } from "@/lib/iptv-client";
 import { formatCount, isHd, splitTag } from "@/lib/iptv-format";
 import { Badge, EmptyState, FilterChips, IptvPage, LoadProgress, RetryButton, SearchBox, SkeletonGrid } from "@/components/iptv/ui";
@@ -80,6 +81,20 @@ export default function IptvChannelsPage() {
     parentRef.current?.scrollTo({ top: 0 });
   }, [search, genre]);
 
+  // Coming back from a channel returns to the same spot, search and genre
+  const { onScroll } = useListMemory({
+    key: "channels",
+    filters: { search, genre },
+    applyFilters: (f) => {
+      setSearch(f.search ?? "");
+      setGenre(f.genre ?? "all");
+    },
+    virtualizer,
+    scrollElement: parentRef,
+    columns,
+    itemCount: visible.length,
+  });
+
   const subtitle = data
     ? visible.length === channels.length
       ? `${formatCount(channels.length)} live channels`
@@ -142,7 +157,7 @@ export default function IptvChannelsPage() {
         </>
       }
     >
-      <div ref={parentRef} className="h-full overflow-y-auto px-1 pt-1" style={{ scrollbarWidth: "thin" }}>
+      <div ref={parentRef} onScroll={onScroll} className="h-full overflow-y-auto px-1 pt-1" style={{ scrollbarWidth: "thin" }}>
         {body}
       </div>
     </IptvPage>

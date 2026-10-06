@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ImageOff, SearchX, WifiOff } from "lucide-react";
 import { useCatalogue } from "@/hooks/use-catalogue";
+import { useListMemory } from "@/hooks/use-list-memory";
 import { formatCount, formatRating, formatYear, isHd, splitTag } from "@/lib/iptv-format";
 import type { IptvCategory } from "@/lib/api/iptv-types";
 import { Badge, EmptyState, FilterChips, IptvPage, LoadProgress, RetryButton, SearchBox, SkeletonGrid } from "./ui";
@@ -108,6 +109,21 @@ export default function CatalogueBrowser({ kind, listKey, title, icon, noun, hre
     parentRef.current?.scrollTo({ top: 0 });
   }, [search, category, sort]);
 
+  // Coming back from a movie/series returns to the same spot, search, category and sort
+  const { onScroll } = useListMemory({
+    key: kind,
+    filters: { search, category, sort },
+    applyFilters: (f) => {
+      setSearch(f.search ?? "");
+      setCategory(f.category ?? "all");
+      if (f.sort === "added" || f.sort === "rating" || f.sort === "name") setSort(f.sort);
+    },
+    virtualizer,
+    scrollElement: parentRef,
+    columns,
+    itemCount: visible.length,
+  });
+
   const subtitle = data
     ? visible.length === items.length
       ? `${formatCount(items.length)} ${noun}`
@@ -190,7 +206,7 @@ export default function CatalogueBrowser({ kind, listKey, title, icon, noun, hre
         </>
       }
     >
-      <div ref={parentRef} className="h-full overflow-y-auto px-1 pt-1" style={{ scrollbarWidth: "thin" }}>
+      <div ref={parentRef} onScroll={onScroll} className="h-full overflow-y-auto px-1 pt-1" style={{ scrollbarWidth: "thin" }}>
         {body}
       </div>
     </IptvPage>

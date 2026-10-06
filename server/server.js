@@ -12,6 +12,7 @@ const portal = require("./portal");
 const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
 const vod = require("./vod");
 const { buildGames } = require("./games");
+const { relatedChannels } = require("./related");
 const tools = require("./tools");
 
 // Fixtures are derived from channel names; statuses (live/upcoming) depend on the clock
@@ -24,6 +25,8 @@ const FFMPEG = tools.FFMPEG;
 const MAX_RESTARTS = 3;
 // ...but a stream that ran this long counts as healthy and resets the count
 const HEALTHY_RUN_MS = 60 * 1000;
+// A running stream with no new frames for this long is reconnected
+const NO_FRAMES_TIMEOUT_MS = 20 * 1000;
 
 const HLS_DIR = path.join(__dirname, "hls");
 
@@ -474,6 +477,11 @@ async function startStream(channelId, forceReencode = false) {
       let streamStarted = false;
       let errorCount = 0;
       let hevcDetected = false;
+      // Frame counter from ffmpeg's progress lines. ffmpeg keeps printing progress even when
+      // the provider switches feeds mid-stream and no new frames arrive (viewers then see a
+      // frozen/blank picture with no sound), so "any output" alone doesn't prove it's healthy.
+      let lastFrames = -1;
+      let lastProgress = Date.now();
 
       // Last lines of ffmpeg output, printed if it exits unexpectedly
       const recentOutput = [];
@@ -481,6 +489,14 @@ async function startStream(channelId, forceReencode = false) {
       ffmpeg.stderr.on("data", (d) => {
         const logMessage = d.toString();
         lastOutput = Date.now();
+        const frameCounts = logMessage.match(/frame=\s*(\d+)/g);
+        if (frameCounts) {
+          const frames = Number(frameCounts[frameCounts.length - 1].replace(/\D/g, ""));
+          if (frames > lastFrames) {
+            lastFrames = frames;
+            lastProgress = Date.now();
+          }
+        }
         recentOutput.push(...logMessage.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("frame=")));
         if (recentOutput.length > 8) recentOutput.splice(0, recentOutput.length - 8);
         if (logMessage.includes("ffmpeg version") ||
@@ -578,6 +594,9 @@ async function startStream(channelId, forceReencode = false) {
           const tryReencode = !forceReencode && (reencodeAttempts[channelId] || 0) < 2;
           if (tryReencode) reencodeAttempts[channelId] = (reencodeAttempts[channelId] || 0) + 1;
           killAndRestart(`Stream stalled (${timeSinceLastOutput}ms without output)`, tryReencode || forceReencode);
+        } else if (lastFrames >= 0 && Date.now() - lastProgress > NO_FRAMES_TIMEOUT_MS) {
+          // Running, but no new frames: reconnect to pick up the provider's current feed
+          killAndRestart(`No new video for ${Math.round((Date.now() - lastProgress) / 1000)}s (feed changed or stuck)`, forceReencode);
         } else if (errorCount > 10 && !forceReencode) {
           killAndRestart("Too many stream errors", true);
         }
@@ -764,6 +783,14 @@ const server = http.createServer(async (req, res) => {
       };
     }
     return sendJson(req, res, 200, { games: gamesCache.data, ready: catalogue.channels.ready });
+  }
+
+  const relatedMatch = url.pathname.match(/^\/api\/channel\/(\d{1,10})\/related$/);
+  if (relatedMatch) {
+    const channel = findChannel(relatedMatch[1]);
+    if (!channel) return sendJson(req, res, 404, { error: "Channel not found" });
+    const related = relatedChannels(channel, catalogue.channels.items, 16).map(channelFields);
+    return sendJson(req, res, 200, { related });
   }
 
   const logoMatch = url.pathname.match(/^\/api\/logo\/(\d{1,10})$/);

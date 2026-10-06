@@ -3,9 +3,10 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Loader2, RefreshCw, Tv, WifiOff } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
 import { splitTag } from "@/lib/iptv-format";
 import { Badge, IptvPage, QualityPicker } from "@/components/iptv/ui";
+import RelatedChannels from "@/components/iptv/RelatedChannels";
 import { readLiveQuality, writeLiveQuality } from "@/lib/quality";
 
 // ============================================================
@@ -29,6 +30,19 @@ interface Channel {
 }
 
 type PlayerStatus = "loading" | "connecting" | "playing" | "retrying" | "error" | "offline";
+
+/**
+ * Start playback with sound if the browser allows it (it usually does after the viewer
+ * clicked a channel); otherwise fall back to muted playback, and the page shows a
+ * "Tap for sound" button.
+ */
+function playWithSound(video: HTMLVideoElement) {
+  video.muted = false;
+  video.play().catch(() => {
+    video.muted = true;
+    video.play().catch(() => {});
+  });
+}
 
 // ============================================================
 // UTILITY: Wait for HLS playlist to be ready
@@ -216,6 +230,15 @@ export default function IptvWatchPage() {
   const [levels, setLevels] = useState<{ index: number; height: number }[]>([]);
   const [quality, setQuality] = useState("auto");
   const [activeHeight, setActiveHeight] = useState<number | null>(null);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onVolume = () => setMuted(video.muted || video.volume === 0);
+    video.addEventListener("volumechange", onVolume);
+    return () => video.removeEventListener("volumechange", onVolume);
+  }, []);
 
   function chooseQuality(value: string) {
     setQuality(value);
@@ -314,7 +337,7 @@ export default function IptvWatchPage() {
           setErrorMessage("Playback failed. Please try again.");
         }, { once: true });
         setPlayerStatus("playing");
-        video.play().catch(() => {});
+        playWithSound(video);
         return;
       }
 
@@ -366,10 +389,7 @@ export default function IptvWatchPage() {
         hls.currentLevel = chosen ? chosen.index : -1;
         setQuality(chosen ? String(chosen.height) : "auto");
         setPlayerStatus("playing");
-        video.play().catch(() => {
-          // Autoplay blocked — user needs to click play
-          setPlayerStatus("playing");
-        });
+        playWithSound(video);
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -486,10 +506,25 @@ export default function IptvWatchPage() {
   // ============================================================
   return (
     <IptvPage title="Live TV" icon={<Tv className="h-5 w-5" />} backHref="/iptv/channels">
-      <div className="mx-auto max-w-5xl">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0">
         <div className="relative overflow-hidden rounded-2xl bg-black shadow-2xl">
           <PlayerOverlay status={playerStatus} error={errorMessage} onRetry={() => setAttempt((a) => a + 1)} />
-          <video ref={videoRef} controls autoPlay muted playsInline className="block aspect-video w-full" />
+          <video ref={videoRef} controls autoPlay playsInline className="block aspect-video w-full" />
+          {muted && playerStatus === "playing" && (
+            <button
+              type="button"
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                video.muted = false;
+                if (video.volume === 0) video.volume = 1;
+              }}
+              className="absolute left-3 top-3 z-20 inline-flex items-center gap-2 rounded-full bg-black/75 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur hover:bg-black/90"
+            >
+              <VolumeX className="h-4 w-4" /> Tap for sound
+            </button>
+          )}
         </div>
 
         {levels.length > 1 && (
@@ -510,6 +545,9 @@ export default function IptvWatchPage() {
           <Shortcut keyLabel="M" action="mute" />
           <Shortcut keyLabel="Space" action="play / pause" />
         </div>
+      </div>
+
+      <RelatedChannels channelId={channelId} />
       </div>
     </IptvPage>
   );
