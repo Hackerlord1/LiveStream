@@ -5,15 +5,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Loader2, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
 import { splitTag } from "@/lib/iptv-format";
-import { Badge, IptvPage, QualityPicker } from "@/components/iptv/ui";
+import { Badge, IptvPage } from "@/components/iptv/ui";
 import RelatedChannels from "@/components/iptv/RelatedChannels";
-import { readLiveQuality, writeLiveQuality } from "@/lib/quality";
+import ChannelGuide from "@/components/iptv/ChannelGuide";
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 import { apiAsset, IPTV_API_URL } from "@/lib/iptv-client";
-// A channel's very first start also probes its resolution, so allow well over the ~15-20 s it can take
+// A channel's first start can take ~15-20 s (longer when it falls back to re-encoding), so allow well over that
 const PLAYLIST_TIMEOUT = 45000;
 const PLAYLIST_RETRY_INTERVAL = 1000;
 const MIN_SEGMENTS = 2;
@@ -58,14 +58,7 @@ async function waitForPlaylist(url: string, timeoutMs = PLAYLIST_TIMEOUT): Promi
         continue;
       }
 
-      let text = await res.text();
-      // With several qualities this is a master playlist: check a quality's own playlist
-      if (text.includes("#EXT-X-STREAM-INF")) {
-        const variants = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#"));
-        const variant = variants[variants.length - 1]; // lowest quality is listed last
-        const variantRes = variant ? await fetch(new URL(variant, url), { cache: "no-store" }) : null;
-        text = variantRes?.ok ? await variantRes.text() : "";
-      }
+      const text = await res.text();
       const segmentCount = (text.match(/\.ts/g) || []).length;
 
       if (segmentCount >= MIN_SEGMENTS) {
@@ -226,10 +219,6 @@ export default function IptvWatchPage() {
   const [errorMessage, setErrorMessage] = useState("");
   // Bumped by "Try again" to restart the player
   const [attempt, setAttempt] = useState(0);
-  // Qualities the stream offers (highest first), the viewer's choice, and what's playing now
-  const [levels, setLevels] = useState<{ index: number; height: number }[]>([]);
-  const [quality, setQuality] = useState("auto");
-  const [activeHeight, setActiveHeight] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
@@ -239,14 +228,6 @@ export default function IptvWatchPage() {
     video.addEventListener("volumechange", onVolume);
     return () => video.removeEventListener("volumechange", onVolume);
   }, []);
-
-  function chooseQuality(value: string) {
-    setQuality(value);
-    writeLiveQuality(value);
-    const hls = hlsRef.current;
-    if (!hls) return;
-    hls.currentLevel = value === "auto" ? -1 : levels.find((l) => String(l.height) === value)?.index ?? -1;
-  }
 
   // ============================================================
   // LOAD CHANNEL INFO FROM VPS CACHE
@@ -327,9 +308,8 @@ export default function IptvWatchPage() {
       const HlsModule = await import("hls.js");
       const Hls = HlsModule.default;
 
-      // Older iPhones/iPads can't run hls.js; Safari plays HLS itself (and adapts quality on its own)
+      // Older iPhones/iPads can't run hls.js; Safari plays HLS itself
       if (!Hls.isSupported() && video.canPlayType("application/vnd.apple.mpegurl")) {
-        setLevels([]);
         video.src = playlist;
         video.addEventListener("error", () => {
           if (cancelledRef.current) return;
@@ -369,8 +349,6 @@ export default function IptvWatchPage() {
         levelLoadingMaxRetry: 4,
         fragLoadingTimeOut: 20000,
         fragLoadingMaxRetry: 6,
-        // Auto quality never picks more pixels than the player shows (phones skip 1080p)
-        capLevelToPlayerSize: true,
       });
 
       hlsRef.current = hls;
@@ -378,22 +356,8 @@ export default function IptvWatchPage() {
       // Success handler
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelledRef.current) return;
-        const available = hls.levels
-          .map((level, index) => ({ index, height: level.height }))
-          .sort((a, b) => b.height - a.height);
-        setLevels(available);
-        // Viewer's saved choice: "auto", a height this channel offers, or (default) the best
-        const saved = readLiveQuality();
-        const match = available.find((l) => String(l.height) === saved);
-        const chosen = saved === "auto" ? null : match ?? available[0];
-        hls.currentLevel = chosen ? chosen.index : -1;
-        setQuality(chosen ? String(chosen.height) : "auto");
         setPlayerStatus("playing");
         playWithSound(video);
-      });
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
-        setActiveHeight(hls.levels[data.level]?.height ?? null);
       });
 
       // Error handler
@@ -527,18 +491,8 @@ export default function IptvWatchPage() {
           )}
         </div>
 
-        {levels.length > 1 && (
-          <QualityPicker
-            options={[{ value: "auto", label: "Auto" }, ...levels.map((l) => ({ value: String(l.height), label: `${l.height}p` }))]}
-            value={quality}
-            onChange={chooseQuality}
-            note={quality === "auto"
-              ? (activeHeight ? `Playing ${activeHeight}p` : undefined)
-              : "Buffering? Choose Auto or a lower quality"}
-          />
-        )}
-
         <ChannelInfo channel={channel} status={playerStatus} />
+        <ChannelGuide channelId={channelId} />
 
         <div className="mt-3 hidden flex-wrap items-center justify-center gap-4 text-xs sm:flex" style={{ color: "var(--text-muted)" }}>
           <Shortcut keyLabel="F" action="fullscreen" />

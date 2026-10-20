@@ -3,7 +3,7 @@
 require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 
 const http = require("http");
-const { spawn, execFile } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
@@ -54,17 +54,20 @@ const healthChecks = {};
 const reencodeAttempts = {};
 // Channels seen carrying HEVC video (re-encoded from the start next time)
 const hevcChannels = new Set();
-// Live video is re-encoded by default: even 4-second segments and clean timestamps across
-// the provider's frequent reconnects. LIVE_VIDEO_MODE=copy saves CPU (HEVC is still
-// re-encoded) but copy-mode channels start slower and can freeze after reconnects.
-const LIVE_COPY = process.env.LIVE_VIDEO_MODE === "copy";
+// Channels whose copied video a viewer's player couldn't play (re-encoded from then on)
+const copyFailedChannels = new Set();
+// Live video is passed through untouched by default (the provider's original picture).
+// HEVC channels are still re-encoded, since browsers can't play HEVC. LIVE_VIDEO_MODE=reencode
+// re-encodes every channel: even segments and clean timestamps across the provider's
+// reconnects, at the cost of CPU and some picture quality.
+const LIVE_COPY = process.env.LIVE_VIDEO_MODE !== "reencode";
 const restartCount = {};
 
 // =============================
 // CLEANUP HLS FILES
 // =============================
-// Files ffmpeg writes per channel: <id>.m3u8 (playlist, or master playlist when there are
-// several qualities), <id>_720p.m3u8 (per-quality playlists), <id>_00012.ts / <id>_720p_00012.ts
+// Files ffmpeg writes per channel: <id>.m3u8 (playlist) and <id>_00012.ts (segments).
+// Also matches <id>_720p.m3u8 / <id>_720p_00012.ts left over from the old multi-quality encoding.
 const HLS_FILE_RE = /^(\d{1,10})(\.m3u8|_\d{3,4}p\.m3u8|_(?:\d{3,4}p_)?\d+\.ts)$/;
 
 function cleanupHLSFiles(channelId) {
@@ -107,6 +110,30 @@ async function fetchEpgData() {
     console.error(`❌ EPG fetch failed: ${err.message}`);
     return epgCache.data;
   }
+}
+
+// Per-channel programme guide. This portal answers get_epg_info (the all-channels EPG)
+// with an empty list, but get_short_epg works for most regular channels. It starts
+// hours in the past, so only programmes that haven't ended yet are kept.
+const channelEpgCache = new Map(); // channel id -> { programmes, expiresAt }
+const CHANNEL_EPG_TTL_MS = 5 * 60 * 1000;
+
+async function getChannelEpg(channelId) {
+  const cached = channelEpgCache.get(channelId);
+  if (cached && cached.expiresAt > Date.now()) return cached.programmes;
+  const data = await portal.portalGet({ type: "itv", action: "get_short_epg", ch_id: channelId, size: "10" });
+  const programmes = (Array.isArray(data?.js) ? data.js : [])
+    .map((p) => ({
+      title: String(p.name || "").trim(),
+      description: String(p.descr || "").trim(),
+      start: Number(p.start_timestamp) * 1000,
+      stop: Number(p.stop_timestamp) * 1000,
+    }))
+    .filter((p) => p.title && p.stop > p.start)
+    .sort((a, b) => a.start - b.start);
+  if (channelEpgCache.size > 2000) channelEpgCache.clear();
+  channelEpgCache.set(channelId, { programmes, expiresAt: Date.now() + CHANNEL_EPG_TTL_MS });
+  return programmes;
 }
 
 // A series' seasons (each with its episode numbers and the cmd used to play them).
@@ -257,63 +284,7 @@ function sendJson(req, res, status, body, extraHeaders = {}) {
   res.end(json);
 }
 
-// =============================
-// LIVE QUALITIES
-// =============================
-// Heights encoded for each live channel (never above the source). Fewer = less CPU.
-const LIVE_QUALITIES = (process.env.LIVE_QUALITIES || "1080,720,480,360")
-  .split(",").map((h) => Number(h.trim())).filter((h) => h >= 144 && h <= 2160)
-  .sort((a, b) => b - a);
-
-// Bitrates for the lower qualities. The ultrafast preset needs generous bitrates to look
-// clean in fast motion (sport), so these are deliberately on the high side.
-function videoKbpsFor(height) {
-  if (height >= 1080) return 6000;
-  if (height >= 720) return 3500;
-  if (height >= 576) return 2200;
-  if (height >= 480) return 1600;
-  return 900;
-}
-
-// The best quality is encoded at constant quality (CRF, as before qualities existed),
-// with only this ceiling so a busy scene can't flood viewers' connections
-function topMaxKbpsFor(height) {
-  if (height >= 1080) return 9000;
-  if (height >= 720) return 6000;
-  return 4000;
-}
-
-// Source height per channel, probed once (avoids encoding e.g. a "1080p" that is really 720p)
-const sourceHeights = new Map();
-
-function probeSourceHeight(url) {
-  return new Promise((resolve) => {
-    execFile(
-      tools.FFPROBE,
-      ["-v", "error", "-user_agent", portal.USER_AGENT, "-analyzeduration", "3000000", "-probesize", "3000000",
-        "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", url],
-      { timeout: 15000, windowsHide: true },
-      (err, stdout) => resolve(err ? null : Number(String(stdout).trim().split(/\s+/)[0]) || null)
-    );
-  });
-}
-
-/** Heights to encode for this channel: the source (capped at the top quality) plus every lower rung. */
-async function qualityLadder(channelId) {
-  if (!sourceHeights.has(channelId) && tools.ffprobeOk) {
-    try {
-      const { url } = await getStreamLink(channelId);
-      sourceHeights.set(channelId, await probeSourceHeight(url));
-    } catch {
-      sourceHeights.set(channelId, null);
-    }
-  }
-  const source = sourceHeights.get(channelId) || LIVE_QUALITIES[0];
-  const top = Math.min(source, LIVE_QUALITIES[0]);
-  return [top, ...LIVE_QUALITIES.filter((h) => h < top)];
-}
-
-function getFFmpegArgs(streamUrl, channelId, useReencode = false, ladder = null) {
+function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const baseArgs = [
     "-analyzeduration", "5000000",
@@ -343,56 +314,6 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false, ladder = null)
     "-i", streamUrl,
   );
 
-  // Re-encode mode with several qualities: one master playlist (<id>.m3u8, the same URL
-  // players always used) listing a variant per height. Players pick automatically or
-  // let the viewer choose.
-  if (useReencode && ladder && ladder.length > 1) {
-    const split = ladder.map((_, i) => `[s${i}]`).join("");
-    const scales = ladder.map((h, i) => `[s${i}]scale=-2:${h}[v${i}]`).join(";");
-    baseArgs.push(
-      "-filter_complex",
-      // Deinterlace only frames flagged interlaced (1080i broadcasts), then one scaled copy per quality
-      `[0:v:0]yadif=mode=0:deint=interlaced,split=${ladder.length}${split};${scales}`,
-    );
-    ladder.forEach((_, i) => baseArgs.push("-map", `[v${i}]`, "-map", "0:a:0?"));
-    baseArgs.push(
-      ...tools.fpsPassthroughArgs,
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-tune", "zerolatency",
-      "-pix_fmt", "yuv420p", // browsers can't decode 10-bit
-      "-g", "48",
-      "-sc_threshold", "0",
-    );
-    ladder.forEach((h, i) => {
-      if (i === 0) {
-        // Best quality: same constant-quality encoding as a single-quality stream
-        const cap = topMaxKbpsFor(h);
-        baseArgs.push("-crf:v:0", "23", "-maxrate:v:0", `${cap}k`, "-bufsize:v:0", `${cap * 2}k`);
-        return;
-      }
-      const kbps = videoKbpsFor(h);
-      baseArgs.push(`-b:v:${i}`, `${kbps}k`, `-maxrate:v:${i}`, `${Math.round(kbps * 1.1)}k`, `-bufsize:v:${i}`, `${kbps * 2}k`);
-    });
-    // Always AAC: browsers can't play the AC3/E-AC3/MP2 audio many channels carry
-    baseArgs.push("-c:a", "aac", "-ac", "2");
-    ladder.forEach((h, i) => baseArgs.push(`-b:a:${i}`, i === 0 ? "128k" : h <= 360 ? "64k" : "96k"));
-    baseArgs.push(
-      "-force_key_frames", "expr:gte(t,n_forced*4)",
-      "-f", "hls",
-      "-hls_time", "4",
-      "-hls_list_size", "15",
-      "-hls_flags", "delete_segments+append_list+omit_endlist+independent_segments",
-      "-hls_segment_type", "mpegts",
-      "-master_pl_name", `${channelId}.m3u8`,
-      "-var_stream_map", ladder.map((h, i) => `v:${i},a:${i},name:${h}p`).join(" "),
-      "-hls_segment_filename", path.join(HLS_DIR, `${channelId}_%v_%05d.ts`),
-      path.join(HLS_DIR, `${channelId}_%v.m3u8`),
-    );
-    return baseArgs;
-  }
-
-  // Single quality (copy mode, or LIVE_QUALITIES set to one height)
   // First video + first audio only (sources can carry DVB subtitles / data streams)
   baseArgs.push("-map", "0:v:0", "-map", "0:a:0?");
 
@@ -443,7 +364,7 @@ async function startStream(channelId, forceReencode = false) {
 
   // Channels already known to be HEVC go straight to re-encode (browsers can't play
   // HEVC), instead of opening a copy-mode connection only to throw it away
-  if (!LIVE_COPY || hevcChannels.has(channelId)) forceReencode = true;
+  if (!LIVE_COPY || hevcChannels.has(channelId) || copyFailedChannels.has(channelId)) forceReencode = true;
 
   if (!forceReencode) {
     reencodeAttempts[channelId] = 0;
@@ -453,10 +374,6 @@ async function startStream(channelId, forceReencode = false) {
 
   const initPromise = (async () => {
     try {
-      // Qualities to encode (probes the channel's resolution the first time)
-      const ladder = forceReencode ? await qualityLadder(channelId) : null;
-      if (ladder) console.log(`📐 ${channelId}: qualities ${ladder.map((h) => `${h}p`).join(", ")}`);
-
       const streamInfo = await getStreamLink(channelId);
 
       if (!streamInfo || !streamInfo.url) {
@@ -467,7 +384,7 @@ async function startStream(channelId, forceReencode = false) {
 
       console.log(`🔗 Got stream link for ${channelId}`);
 
-      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode, ladder);
+      const args = getFFmpegArgs(streamInfo.url, channelId, forceReencode);
       const ffmpeg = spawn(FFMPEG, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true, // no console window per ffmpeg on Windows
@@ -615,6 +532,8 @@ async function startStream(channelId, forceReencode = false) {
         handleExit("ffmpeg error", true);
       });
 
+      // Used by /watch?forceTranscode=1 when a player can't play this copy-mode stream
+      if (!forceReencode) ffmpeg.switchToReencode = () => killAndRestart("Player couldn't play the copied video", true);
       streams[channelId] = ffmpeg;
       healthChecks[channelId] = healthCheck;
       console.log(`▶️ ffmpeg launched for ${channelId} (${forceReencode ? "re-encode" : "copy"} mode)`);
@@ -793,6 +712,21 @@ const server = http.createServer(async (req, res) => {
     return sendJson(req, res, 200, { related });
   }
 
+  // What's on now and next: /api/channel/:id/epg (empty list when the channel has no guide)
+  const epgMatch = url.pathname.match(/^\/api\/channel\/(\d{1,10})\/epg$/);
+  if (epgMatch) {
+    const channel = findChannel(epgMatch[1]);
+    if (!channel) return sendJson(req, res, 404, { error: "Channel not found" });
+    try {
+      const now = Date.now();
+      const programmes = (await getChannelEpg(String(channel.id))).filter((p) => p.stop > now).slice(0, 6);
+      return sendJson(req, res, 200, { programmes });
+    } catch (err) {
+      console.error(`❌ EPG for ${channel.id} failed: ${err.message}`);
+      return sendJson(req, res, 502, { error: "Programme guide unavailable" });
+    }
+  }
+
   const logoMatch = url.pathname.match(/^\/api\/logo\/(\d{1,10})$/);
   if (logoMatch) return serveLogo(req, res, logoMatch[1]);
 
@@ -861,9 +795,9 @@ const server = http.createServer(async (req, res) => {
     try {
       if (action === "source") {
         const info = await vod.describe(key, createLink);
-        return sendJson(req, res, 200, { mode: info.mode, duration: info.duration, height: info.height, qualities: vod.qualitiesFor(info), stream: `/api/vod/${id}/stream` });
+        return sendJson(req, res, 200, { mode: info.mode, duration: info.duration, height: info.height, stream: `/api/vod/${id}/stream` });
       }
-      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"), url.searchParams.get("q") || "original");
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
     } catch (err) {
       if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
       console.error(`❌ Movie ${id} playback failed: ${err.message}`);
@@ -893,12 +827,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(req, res, 200, {
           mode: info.mode,
           height: info.height,
-          qualities: vod.qualitiesFor(info),
           duration: info.duration,
           stream: `/api/series/${encodeURIComponent(id)}/stream?${qs}`,
         });
       }
-      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"), url.searchParams.get("q") || "original");
+      return await vod.stream(req, res, key, createLink, url.searchParams.get("start"));
     } catch (err) {
       if (err.unavailable) return sendJson(req, res, 503, { error: err.message });
       console.error(`❌ Episode ${id} ${seasonId}/${episode} playback failed: ${err.message}`);
@@ -977,7 +910,17 @@ const server = http.createServer(async (req, res) => {
 
     viewers[id] = (viewers[id] || 0) + 1;
     console.log(`👁️ ${id}: ${viewers[id]} viewer(s)`);
-    
+
+    // The player couldn't play this channel's original (copied) video: re-encode it from now on
+    if (url.searchParams.get("forceTranscode") === "1" && LIVE_COPY && !copyFailedChannels.has(id)) {
+      copyFailedChannels.add(id);
+      const running = streams[id];
+      if (running && !(running instanceof Promise) && running.switchToReencode) {
+        running.switchToReencode();
+        return res.end(JSON.stringify({ ok: true, viewers: viewers[id] }));
+      }
+    }
+
     startStream(id).catch(err => {
       console.error(`Failed to start stream for viewer: ${err.message}`);
     });
@@ -1040,7 +983,7 @@ server.listen(PORT, () => {
 
 // ✅ Cleanup on server shutdown
 function gracefulShutdown(signal) {
-  console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+  console.log(`\n🛑 ${signal}: shutting down gracefully...`);
   
   Object.keys(stopTimers).forEach(id => {
     clearTimeout(stopTimers[id]);
@@ -1075,6 +1018,28 @@ function gracefulShutdown(signal) {
     console.error("⚠️ Forced shutdown after timeout");
     process.exit(1);
   }, 5000);
+}
+
+// =============================
+// DAILY RESTART
+// =============================
+// After RESTART_AFTER_HOURS of uptime the process exits and pm2 starts it again, which
+// reloads the catalogues and frees memory. It waits for a quiet moment (nobody watching
+// or listening, no catalogue loading), but restarts anyway once RESTART_MAX_WAIT_HOURS
+// more have passed. 0 turns it off, e.g. in development where nothing restarts the server.
+const RESTART_AFTER_HOURS = Number(process.env.RESTART_AFTER_HOURS ?? 24);
+const RESTART_MAX_WAIT_HOURS = 6;
+
+if (RESTART_AFTER_HOURS > 0) {
+  console.log(`🔁 Restarting after ${RESTART_AFTER_HOURS} h of uptime (at a quiet moment)`);
+  setInterval(() => {
+    const uptimeHours = process.uptime() / 3600;
+    if (uptimeHours < RESTART_AFTER_HOURS) return;
+    const busy = Object.values(viewers).some((n) => n > 0) || activeRadioProxies > 0 || vod.sessionCount() > 0
+      || Object.values(catalogueStatus()).some((c) => c.loading);
+    if (busy && uptimeHours < RESTART_AFTER_HOURS + RESTART_MAX_WAIT_HOURS) return;
+    gracefulShutdown(`scheduled restart after ${Math.round(uptimeHours)} h uptime${busy ? " (still busy, restarting anyway)" : ""}`);
+  }, 5 * 60 * 1000).unref();
 }
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

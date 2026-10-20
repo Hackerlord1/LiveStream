@@ -40,6 +40,12 @@ async function rawGet(params, bearer) {
   if (!res.ok) {
     throw new Error(`Portal ${params.type}/${params.action} returned ${res.status}`);
   }
+  // A rejected or expired token is answered with HTTP 200 and an empty body
+  if (!text.trim()) {
+    const err = new Error(`Portal ${params.type}/${params.action} returned an empty response (session rejected)`);
+    err.authFailed = true;
+    throw err;
+  }
   try {
     return JSON.parse(text);
   } catch {
@@ -88,30 +94,90 @@ async function portalGet(params) {
   }
 }
 
-/** Fetch every page of a paginated list, calling onPage with each page's items. */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Pages that still fail after the first pass are retried in later rounds, after these pauses
+const RETRY_ROUND_DELAYS_MS = [30000, 120000, 300000];
+// This many failed pages in a row means the portal is refusing us: pause, then log in again
+const FAILURE_STREAK_PAUSE = 10;
+const FAILURE_STREAK_PAUSE_MS = 60000;
+
+/**
+ * Fetch every page of a paginated list. onPage is called with the items so far.
+ * Returns { items, total, missingPages, failures }: missingPages are the pages that
+ * never came back, failures a sample of why (page, reason, time).
+ */
 async function fetchAllPages(params, { firstPage = 1, delayMs = 100, onPage } = {}) {
   const first = await portalGet({ ...params, p: String(firstPage) });
   const total = Number(first?.js?.total_items) || 0;
   const perPage = Number(first?.js?.max_page_items) || 14;
   const lastPage = firstPage + Math.ceil(total / perPage) - 1;
-  const all = [...(first?.js?.data || [])];
+  const pages = new Map([[firstPage, first?.js?.data || []]]);
+  const all = [...pages.get(firstPage)];
+  const failures = [];
   onPage?.(all, total);
 
-  for (let p = firstPage + 1; p <= lastPage; p++) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const data = await portalGet({ ...params, p: String(p) });
-        all.push(...(data?.js?.data || []));
-        onPage?.(all, total);
-        break;
-      } catch (err) {
-        if (attempt === 3) console.warn(`⚠️ ${params.type} page ${p} failed: ${err.message}`);
-        else await new Promise((r) => setTimeout(r, 1000 * attempt));
-      }
+  async function fetchPage(p) {
+    const data = await portalGet({ ...params, p: String(p) });
+    const items = data?.js?.data || [];
+    // An empty page that should have items is a refusal, not the end of the list
+    if (items.length === 0 && (p - firstPage) * perPage < total) {
+      throw new Error(`page came back empty (total_items=${data?.js?.total_items})`);
     }
-    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+    return items;
   }
-  return all;
+
+  async function pass(pageNumbers, round) {
+    const failed = [];
+    let streak = 0;
+    for (const p of pageNumbers) {
+      let lastErr;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const items = await fetchPage(p);
+          pages.set(p, items);
+          all.push(...items);
+          onPage?.(all, total);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 3) await sleep(1000 * attempt);
+        }
+      }
+      if (lastErr) {
+        failed.push(p);
+        streak++;
+        failures.push({ page: p, round, reason: lastErr.message, at: new Date().toISOString() });
+        if (failures.length > 20) failures.splice(1, 1); // keep the first failure and the latest ones
+        console.warn(`⚠️ ${params.type} page ${p} failed (round ${round}): ${lastErr.message}`);
+        if (streak % FAILURE_STREAK_PAUSE === 0) {
+          console.warn(`⏸️ ${params.type}: ${streak} pages in a row failed, pausing then logging in again`);
+          await sleep(FAILURE_STREAK_PAUSE_MS);
+          await getToken(true).catch((err) => console.warn(`⚠️ Portal login failed: ${err.message}`));
+        }
+      } else {
+        streak = 0;
+      }
+      if (delayMs) await sleep(delayMs);
+    }
+    return failed;
+  }
+
+  const rest = [];
+  for (let p = firstPage + 1; p <= lastPage; p++) rest.push(p);
+  let missing = await pass(rest, 1);
+
+  for (let i = 0; i < RETRY_ROUND_DELAYS_MS.length && missing.length; i++) {
+    console.log(`🔁 ${params.type}: retrying ${missing.length} missing pages in ${RETRY_ROUND_DELAYS_MS[i] / 1000}s`);
+    await sleep(RETRY_ROUND_DELAYS_MS[i]);
+    await getToken(true).catch(() => {});
+    missing = await pass(missing, i + 2);
+  }
+
+  // Retried pages arrive out of order; rebuild the list in page order
+  const items = [...pages.keys()].sort((a, b) => a - b).flatMap((p) => pages.get(p));
+  return { items, total, missingPages: missing, failures };
 }
 
 function stripFfmpegPrefix(cmd) {

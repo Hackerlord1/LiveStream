@@ -22,10 +22,6 @@ const portal = require("./portal");
 const { FFMPEG, FFPROBE, ffmpegOk, ffprobeOk, MISSING_MESSAGE } = require("./tools");
 
 const MAX_VOD_SESSIONS = Number(process.env.MAX_VOD_SESSIONS) || 10;
-// Lower-quality playback re-encodes per viewer (CPU-heavy), so cap how many run at once
-const MAX_VOD_TRANSCODES = Number(process.env.MAX_VOD_TRANSCODES) || 3;
-// Qualities offered below the original (only those smaller than the source are shown)
-const VOD_QUALITIES = [1080, 720, 480, 360];
 // A portal link (with its play_token) stays valid for minutes: reuse it briefly
 const PORTAL_LINK_TTL_MS = 2 * 60 * 1000;
 // The file-server URL it redirects to expires after ~30-40 s: reuse it only briefly,
@@ -36,7 +32,6 @@ const MAX_RESUME_FAILURES = 5;
 const PROBE_CACHE_MAX = 1000;
 
 let activeSessions = 0;
-let activeTranscodes = 0;
 const portalLinks = new Map();   // key -> { url, expiresAt }
 const resolvedLinks = new Map(); // key -> { url, expiresAt }
 const probeCache = new Map();    // key -> { mode, duration, video, audio, videoPlayable }
@@ -226,10 +221,37 @@ function ffprobe(url) {
   });
 }
 
+const PROVIDER_REFUSED_MESSAGE =
+  "The provider can't supply this title right now (its file server refused it). Try another episode or movie, or check back later.";
+
+/**
+ * Quick check that the provider's file server will actually serve the file. Some titles
+ * are broken on the provider's side (every request answered 400); without this, playback
+ * spent ~25 s retrying before showing a vague error.
+ */
+async function assertAvailable(key, createLink) {
+  for (const fresh of [false, true]) {
+    const url = await getLink(key, createLink, { fresh });
+    const res = await fetch(url, {
+      headers: { "User-Agent": portal.USER_AGENT, Range: "bytes=0-0" },
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+    res?.body?.cancel().catch(() => {});
+    // 509 = expired link and 429 = rate limit: those are worth a fresh link, not a verdict
+    if (!res || res.ok || res.status >= 500 || res.status === 429) return;
+    if (fresh) {
+      console.warn(`⚠️ ${key}: provider file server refused the file (${res.status})`);
+      throw Object.assign(new Error(PROVIDER_REFUSED_MESSAGE), { unavailable: true });
+    }
+  }
+}
+
 /** How the title will be played, plus its duration. Cached per title. */
 async function describe(key, createLink) {
   if (!ffprobeOk || !ffmpegOk) throw Object.assign(new Error(MISSING_MESSAGE), { unavailable: true });
   if (probeCache.has(key)) return probeCache.get(key);
+
+  await assertAvailable(key, createLink);
 
   // Probe through the resilient local source too, so a dropped connection
   // mid-probe is resumed instead of failing playback before it starts
@@ -278,38 +300,13 @@ async function streamDirect(req, res, key, createLink) {
   await proxyResilient(req, res, key, createLink);
 }
 
-// Only used for the lower qualities a viewer picks; "Original" is never re-encoded
-function videoKbpsFor(height) {
-  if (height >= 1080) return 5000;
-  if (height >= 720) return 3000;
-  if (height >= 480) return 1500;
-  return 800;
-}
-
-/** "original" plus every standard quality smaller than the source. */
-function qualitiesFor(info) {
-  const lower = info.height ? VOD_QUALITIES.filter((h) => h < info.height) : [];
-  return ["original", ...lower.map(String)];
-}
-
-/**
- * Repackages to fragmented MP4 starting at `start` seconds. With `targetHeight`, the
- * video is re-encoded down to that height at a capped bitrate (for slow connections).
- */
-async function streamRemux(res, key, createLink, info, start, targetHeight = null) {
+/** Repackages to fragmented MP4 starting at `start` seconds; the video is copied whenever browsers can play it. */
+async function streamRemux(res, key, createLink, info, start) {
   const source = await localSourceUrl(key, createLink);
-  let videoArgs;
-  if (targetHeight) {
-    const kbps = videoKbpsFor(targetHeight);
-    videoArgs = ["-vf", `scale=-2:${targetHeight}`, "-c:v", "libx264", "-preset", "veryfast",
-      "-b:v", `${kbps}k`, "-maxrate", `${Math.round(kbps * 1.1)}k`, "-bufsize", `${kbps * 2}k`, "-pix_fmt", "yuv420p"];
-  } else if (info.videoPlayable) {
-    videoArgs = ["-c:v", "copy"];
-  } else {
+  const videoArgs = info.videoPlayable
+    ? ["-c:v", "copy"]
     // HEVC / 10-bit: costly, but plays everywhere
-    videoArgs = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"];
-  }
-  const audioKbps = targetHeight && targetHeight <= 480 ? "96k" : "160k";
+    : ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"];
 
   const ffmpeg = spawn(FFMPEG, [
     "-loglevel", "error",
@@ -320,13 +317,12 @@ async function streamRemux(res, key, createLink, info, start, targetHeight = nul
     "-i", source.url,
     "-map", "0:v:0", "-map", "0:a:0?",
     ...videoArgs,
-    "-c:a", "aac", "-b:a", audioKbps, "-ac", "2",
+    "-c:a", "aac", "-b:a", "160k", "-ac", "2",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4", "pipe:1",
   ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
   activeSessions++;
-  if (targetHeight) activeTranscodes++;
   res.writeHead(200, { "Content-Type": "video/mp4", "Cache-Control": "no-cache" });
   ffmpeg.stdout.pipe(res);
   ffmpeg.stderr.on("data", (d) => console.error(`[vod ${key}] ${d.toString().trim()}`));
@@ -340,31 +336,21 @@ async function streamRemux(res, key, createLink, info, start, targetHeight = nul
   });
   res.on("close", () => {
     activeSessions--;
-    if (targetHeight) activeTranscodes--;
     ffmpeg.kill("SIGTERM");
   });
 }
 
-/**
- * GET …/stream: plays the title in whichever mode describe() picked, or re-encoded to a
- * lower quality when `quality` is a height smaller than the source (e.g. "480").
- */
-async function stream(req, res, key, createLink, start = 0, quality = "original") {
+/** GET …/stream: plays the original title in whichever mode describe() picked. */
+async function stream(req, res, key, createLink, start = 0) {
   if (activeSessions >= MAX_VOD_SESSIONS) return busy(res);
   const info = await describe(key, createLink);
   const safeStart = Math.max(0, Math.min(Number(start) || 0, info.duration || Infinity));
-
-  const targetHeight = qualitiesFor(info).includes(String(quality)) && quality !== "original" ? Number(quality) : null;
-  if (targetHeight) {
-    if (activeTranscodes >= MAX_VOD_TRANSCODES) {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ error: "Lower qualities are busy right now. Try Original, or again shortly." }));
-    }
-    return streamRemux(res, key, createLink, info, safeStart, targetHeight);
-  }
 
   if (info.mode === "direct") return streamDirect(req, res, key, createLink);
   return streamRemux(res, key, createLink, info, safeStart);
 }
 
-module.exports = { describe, stream, qualitiesFor };
+/** Movies/episodes being played right now. */
+const sessionCount = () => activeSessions;
+
+module.exports = { describe, stream, sessionCount };

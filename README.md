@@ -334,16 +334,20 @@ node server.js         # http://localhost:3477
 
 **Catalogues.** On startup the server serves the channel, radio, movie and series lists from
 `server/cache/` immediately, then refreshes them from the portal in the background every
-`CATALOGUE_REFRESH_HOURS` (default 6). A refreshed list only replaces the old one once it's
-complete. The very first run (no cache) downloads everything, which takes 20–30 minutes.
+`CATALOGUE_REFRESH_HOURS` (default 6). A list counts as complete once it has at least 98% of
+the portal's `total_items`; pages that fail are retried, and incomplete catalogues are loaded
+again after 15 minutes. A refresh only replaces the served list when the new one is complete
+or bigger. `/health` shows each catalogue's `complete` flag and `lastLoad` (duration, missing
+pages and why pages failed). A full load of every catalogue takes several hours.
 **Switching portal** (new `IPTV_PORTAL_URL` or `IPTV_MAC` in `server/.env`): just restart. Caches remember
 which portal they came from, so the old ones are ignored and everything downloads fresh. To force
 a fresh download for the same portal, delete `server/cache/` and restart.
 
 **Live TV.** One portal connection per channel, shared by every viewer of that channel.
-ffmpeg re-encodes it to H.264/AAC HLS with 4-second segments. Re-encoding gives clean
-timestamps across the provider's frequent reconnects and plays in every browser.
-`LIVE_VIDEO_MODE=copy` saves CPU at the cost of reliability.
+ffmpeg repackages it to HLS with the provider's original video untouched (audio converted
+to AAC). HEVC channels, which browsers can't play, and channels whose copied stream fails in
+the player are re-encoded to H.264. `LIVE_VIDEO_MODE=reencode` re-encodes every channel:
+cleaner timestamps across the provider's reconnects, at the cost of CPU and picture quality.
 
 **Movies and episodes.** Each title is probed once. Browser-friendly MP4/H.264 files (most
 episodes) are passed through with byte-range support, so seeking is native. Everything else
@@ -352,11 +356,18 @@ video is copied, audio converted to AAC, and seeking restarts at `?start=`. Expe
 start. The provider's file-server links expire after ~30–40 s and connections drop often,
 so all reads go through a reader that resumes from the exact byte with a fresh link.
 
-**Quality choice.** Live channels are encoded in several qualities at once (`LIVE_QUALITIES`,
-default 1080/720/480/360, never above the source). The player picks automatically for each
-viewer's connection and screen, or the viewer chooses. Movies and episodes offer *Original*
-(no extra CPU) plus lower qualities that are re-encoded per viewer, capped at
-`MAX_VOD_TRANSCODES` (default 3) at once.
+**Programme guide.** This portal returns nothing for the all-channels EPG (`get_epg_info`), so
+`/api/epg` is empty. Each channel's guide comes from `get_short_epg` instead:
+`/api/channel/:id/epg` lists what's on now and next (cached 5 minutes), shown under the player.
+Regular broadcast channels have a guide; PPV, event and 24/7 channels usually don't.
+
+**Radio.** The portal has answered the radio list with its TV channels. Radio entries that are
+also TV channels (same id and name) are dropped, and a radio load made up mostly of TV
+channels is rejected, keeping the current list.
+
+**Daily restart.** After `RESTART_AFTER_HOURS` (default 24) of uptime the server exits at a
+quiet moment (nobody watching, no catalogue loading; at most 6 hours later regardless) and pm2
+starts it again. Set it to 0 in development.
 
 **Limits.** The portal account allows **6 simultaneous streams** (live channels count once
 each however many people watch them; every movie/episode/radio listener counts separately).
