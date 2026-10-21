@@ -230,6 +230,17 @@ async function loadFromXtream(kind, entry) {
 /** The portal's paged list, 14 items per request (hours for the big catalogues). */
 async function loadFromPortalPages(kind, entry, firstRun) {
   const source = SOURCES[kind];
+
+  // The portal sometimes answers the radio list with its ~28,000 TV channels: an hour
+  // of pages only to be rejected. Check the first page and stop if the filter drops most of it.
+  if (source.filter) {
+    const first = await portal.portalGet({ ...source.list, p: "1" });
+    const page = first?.js?.data || [];
+    if (page.length > 0 && source.filter(page).length < page.length / 2) {
+      throw new Error(`portal answered with TV channels (total_items=${first?.js?.total_items}); keeping the current list`);
+    }
+  }
+
   let categories = entry.categories;
   if (source.categories) {
     const data = await portal.portalGet(source.categories);
