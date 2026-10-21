@@ -1,11 +1,12 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Loader2, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, Maximize, MessageCircle, Minimize, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
+import IptvChat from "@/components/iptv/IptvChat";
 import { splitTag } from "@/lib/iptv-format";
-import { Badge, IptvPage } from "@/components/iptv/ui";
+import { Badge, IptvPage, SpeedNotice } from "@/components/iptv/ui";
 import RelatedChannels from "@/components/iptv/RelatedChannels";
 import ChannelGuide from "@/components/iptv/ChannelGuide";
 import ChannelLogo from "@/components/iptv/ChannelLogo";
@@ -197,6 +198,33 @@ function PlayerOverlay({ status, error, onRetry }: { status: PlayerStatus; error
   return null;
 }
 
+/** True from the `lg` breakpoint up (sidebar layout); false until mounted. */
+function useIsDesktop() {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const update = () => setDesktop(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return desktop;
+}
+
+function PlayerButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur transition-colors hover:bg-black/85"
+    >
+      {children}
+    </button>
+  );
+}
+
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -218,6 +246,39 @@ export default function IptvWatchPage() {
   // Bumped by "Try again" to restart the player
   const [attempt, setAttempt] = useState(0);
   const [muted, setMuted] = useState(false);
+
+  // Fullscreen covers the player *and* the chat beside it (stageRef), not just the video
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenChat, setFullscreenChat] = useState(true);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const isDesktop = useIsDesktop();
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(Boolean(stageRef.current) && document.fullscreenElement === stageRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const stage = stageRef.current;
+    const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (stage?.requestFullscreen) {
+      // Narrow portrait phones start with the chat hidden, so the video gets the screen
+      setFullscreenChat(window.innerWidth >= 640);
+      stage.requestFullscreen().then(() => {
+        // Landscape suits a match; browsers that can't lock orientation just ignore this
+        (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.("landscape").catch(() => {});
+      }).catch(() => {});
+    } else {
+      // iPhone Safari can only put the video itself in fullscreen
+      video?.webkitEnterFullscreen?.();
+    }
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -442,11 +503,7 @@ export default function IptvWatchPage() {
 
       switch (e.key.toLowerCase()) {
         case "f":
-          if (document.fullscreenElement) {
-            document.exitFullscreen();
-          } else {
-            video.requestFullscreen().catch(() => {});
-          }
+          toggleFullscreen();
           break;
         case "m":
           video.muted = !video.muted;
@@ -461,18 +518,43 @@ export default function IptvWatchPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [toggleFullscreen]);
 
   // ============================================================
   // RENDER
   // ============================================================
   return (
     <IptvPage title="Live TV" icon={<Tv className="h-5 w-5" />} backHref={fromHome ? "/" : "/iptv/channels"}>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {/* grid-cols-1 caps the column at the screen width (long channel names overflowed phones) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0">
-        <div className="relative overflow-hidden rounded-2xl bg-black shadow-2xl">
+        <div ref={stageRef} className={fullscreen ? "flex h-full w-full bg-black" : ""}>
+        <div className={`relative min-w-0 flex-1 overflow-hidden bg-black ${fullscreen ? "" : "rounded-2xl shadow-2xl"}`}>
           <PlayerOverlay status={playerStatus} error={errorMessage} onRetry={() => setAttempt((a) => a + 1)} />
-          <video ref={videoRef} controls autoPlay playsInline className="block aspect-video w-full" />
+          <video
+            ref={videoRef}
+            controls
+            // The fullscreen button below also brings the chat; the native one would show only the video
+            controlsList="nofullscreen"
+            autoPlay
+            playsInline
+            className={fullscreen ? "block h-full w-full object-contain" : "block aspect-video w-full"}
+          />
+          {/* Shown each time a channel is opened; fades once it plays */}
+          <SpeedNotice key={channelId} started={playerStatus === "playing"} />
+          <div className="absolute right-3 top-3 z-20 flex gap-2">
+            <PlayerButton label="Refresh stream" onClick={() => setAttempt((a) => a + 1)}>
+              <RefreshCw className="h-4 w-4" />
+            </PlayerButton>
+            {fullscreen && (
+              <PlayerButton label={fullscreenChat ? "Hide chat" : "Show chat"} onClick={() => setFullscreenChat((v) => !v)}>
+                <MessageCircle className="h-4 w-4" />
+              </PlayerButton>
+            )}
+            <PlayerButton label={fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
+              {fullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            </PlayerButton>
+          </div>
           {muted && playerStatus === "playing" && (
             <button
               type="button"
@@ -488,6 +570,34 @@ export default function IptvWatchPage() {
             </button>
           )}
         </div>
+        {fullscreen && fullscreenChat && (
+          <div className="h-full w-[clamp(240px,28vw,360px)] flex-shrink-0 p-2">
+            <IptvChat dark />
+          </div>
+        )}
+        </div>
+
+        {/* Phones: the chat folds away under the player */}
+        {!isDesktop && !fullscreen && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setMobileChatOpen((open) => !open)}
+              aria-expanded={mobileChatOpen}
+              className="flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+              style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-secondary)" }}
+            >
+              <MessageCircle className="h-4 w-4 text-red-500" />
+              <span className="flex-1 text-left">{mobileChatOpen ? "Hide live chat" : "Open live chat"}</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${mobileChatOpen ? "rotate-180" : ""}`} />
+            </button>
+            {mobileChatOpen && (
+              <div className="mt-2 h-[60vh] max-h-[480px]">
+                <IptvChat />
+              </div>
+            )}
+          </div>
+        )}
 
         <ChannelInfo channel={channel} status={playerStatus} />
         <ChannelGuide channelId={channelId} />
@@ -499,7 +609,14 @@ export default function IptvWatchPage() {
         </div>
       </div>
 
-      <RelatedChannels channelId={channelId} fromHome={fromHome} />
+      <div className="min-w-0 space-y-4">
+        {isDesktop && !fullscreen && (
+          <div className="h-[520px]">
+            <IptvChat />
+          </div>
+        )}
+        <RelatedChannels channelId={channelId} fromHome={fromHome} />
+      </div>
       </div>
     </IptvPage>
   );

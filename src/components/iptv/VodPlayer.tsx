@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, Maximize, Minimize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import { fetchIptv, IptvError, IPTV_API_URL } from "@/lib/iptv-client";
+import { SpeedNotice } from "./ui";
 
 interface Source {
   /** "direct": the file plays as-is (native seeking). "remux": the server repackages it; seeking restarts at ?start= */
@@ -69,16 +70,19 @@ export default function VodPlayer({ sourcePath, resumeId, title }: { sourcePath:
   }, [sourcePath]);
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
-      {error ? (
-        <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text={error} />
-      ) : !source ? (
-        <PlayerMessage icon={<Loader2 className="h-8 w-8 animate-spin text-white/80" />} text="Preparing video…" />
-      ) : source.mode === "direct" ? (
-        <DirectVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
-      ) : (
-        <RemuxVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
-      )}
+    <div>
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
+        {error ? (
+          <PlayerMessage icon={<AlertTriangle className="h-8 w-8 text-yellow-400" />} text={error} />
+        ) : !source ? (
+          <PlayerMessage icon={<Loader2 className="h-8 w-8 animate-spin text-white/80" />} text="Preparing video…" />
+        ) : source.mode === "direct" ? (
+          <DirectVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
+        ) : (
+          <RemuxVideo key={source.stream} source={source} resumeId={resumeId} title={title} />
+        )}
+        {!error && <SpeedNotice key={sourcePath} started={Boolean(source)} />}
+      </div>
     </div>
   );
 }

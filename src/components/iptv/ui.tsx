@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { ArrowLeft, RefreshCw, Search, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowLeft, RefreshCw, Search, Wifi, X } from "lucide-react";
 import Header from "@/components/Header";
 import type { CatalogueStatus } from "@/hooks/use-catalogue";
 import { formatCount } from "@/lib/iptv-format";
@@ -211,6 +211,38 @@ export function EmptyState({ icon, title, message, action }: { icon: ReactNode; 
         </p>
       )}
       {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * Banner over a player when a video opens: videos play in their original quality, so a
+ * slow connection will buffer. Fades out `hideAfterMs` after `started` turns true.
+ * Place it inside the player's relative container.
+ */
+export function SpeedNotice({ started = true, hideAfterMs = 8000 }: { started?: boolean; hideAfterMs?: number }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    if (!started) return;
+    const timer = setTimeout(() => setVisible(false), hideAfterMs);
+    return () => clearTimeout(timer);
+  }, [started, hideAfterMs]);
+  if (!visible) return null;
+  return (
+    <div
+      role="status"
+      className="absolute left-1/2 top-14 z-30 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-black/75 py-1.5 pl-3 pr-1.5 text-xs text-white shadow-lg backdrop-blur"
+    >
+      <Wifi className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
+      <span>High-quality video: needs a fast internet connection (about 10 Mbps)</span>
+      <button
+        type="button"
+        onClick={() => setVisible(false)}
+        aria-label="Dismiss"
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full hover:bg-white/15"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
