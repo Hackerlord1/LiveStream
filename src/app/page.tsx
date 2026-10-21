@@ -33,6 +33,7 @@ import {
 } from "react-icons/fa";
 
 import Header from "@/components/Header";
+import LeagueChannels from "@/components/LeagueChannels";
 
 // ========== TYPES ==========
 type FilterStatus = 'all' | 'live' | 'upcoming';
@@ -581,7 +582,7 @@ export default function Home() {
                             {featuredChannels.map((ch) => (
                                 <Link
                                     key={ch.id}
-                                    href={`/iptv/watch/${ch.id}`}
+                                    href={`/iptv/watch/${ch.id}?from=home`}
                                     className="p-2.5 rounded-xl text-center hover:shadow-lg transition-all"
                                     style={{
                                         backgroundColor: 'var(--surface-primary)',
@@ -954,6 +955,9 @@ export default function Home() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Channels of the big football competitions */}
+                        <LeagueChannels />
 
                         {/* Matches Section */}
                         <section className="mb-12">

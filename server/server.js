@@ -274,6 +274,65 @@ function channelFields(ch) {
   };
 }
 
+// =============================
+// LEAGUE CHANNELS
+// =============================
+// The provider keeps a channel group per big football competition ("VIP | PREMIER LEAGUE"...).
+// In each, divider rows ("##### FRENCH #####") start a language, and "NO MATCH" rows are
+// placeholders on days without a game.
+const LEAGUES = [
+  { key: "ucl", name: "Champions League", match: /CHAMPIONS LEAGUE/i },
+  { key: "uel", name: "Europa League", match: /EUROPA LEAGUE/i },
+  { key: "ligue1", name: "Ligue 1", match: /LIGUE 1\b/i },
+  { key: "epl", name: "Premier League", match: /PREMIER LEAGUE/i },
+  { key: "laliga", name: "LaLiga", match: /LA ?LIGA/i },
+  { key: "seriea", name: "Serie A", match: /SERIE A\b/i },
+  { key: "bundesliga", name: "Bundesliga", match: /BUNDESLIGA/i },
+];
+
+const LANGUAGES = {
+  FRENCH: "French", FR: "French",
+  ENGLISH: "English", EN: "English", UK: "English",
+  ARABIC: "Arabic", AR: "Arabic",
+  SPANISH: "Spanish", SPAIN: "Spanish", ES: "Spanish", SP: "Spanish",
+  DEUTSCH: "German", GERMAN: "German", DE: "German",
+  ITALY: "Italian", ITALIAN: "Italian", IT: "Italian",
+  ALBANIAN: "Albanian", ALBANIA: "Albanian", ALB: "Albanian",
+  PORTUGAL: "Portuguese", PORTUGUESE: "Portuguese", PT: "Portuguese",
+};
+const DIVIDER_RE = /^#{3,}\s*(.*?)\s*#{3,}$/;
+const PLACEHOLDER_RE = /\bNO (?:MATCH|EVENT)\b/i;
+
+function buildLeagues() {
+  const { items, categories } = catalogue.channels;
+  return LEAGUES.map(({ key, name, match }) => {
+    const genre = categories.find((g) => /^VIP\s*\|/i.test(g.title || "") && match.test(g.title));
+    const rows = genre
+      ? items.filter((ch) => String(ch.tv_genre_id) === String(genre.id)).sort((a, b) => Number(a.number) - Number(b.number))
+      : [];
+
+    // The league's logo is the one most of its channels use
+    const logoCounts = new Map();
+    for (const ch of rows) if (ch.logo) logoCounts.set(ch.logo, (logoCounts.get(ch.logo) || 0) + 1);
+    const topLogo = [...logoCounts].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const logoChannel = rows.find((ch) => ch.logo === topLogo);
+
+    const channels = [];
+    let language = null;
+    for (const ch of rows) {
+      const divider = DIVIDER_RE.exec(ch.name);
+      if (divider) {
+        language = LANGUAGES[divider[1].toUpperCase()] || divider[1];
+        continue;
+      }
+      if (PLACEHOLDER_RE.test(ch.name)) continue;
+      const tag = (ch.name.match(/^([A-Z]{2,4})\s*[-|:]/) || [])[1];
+      channels.push({ ...channelFields(ch), language: LANGUAGES[tag] || language || "Other" });
+    }
+    return { key, name, logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
+  });
+}
+
 // Only what the movie/series grids show; full items come from /api/vod/:id and /api/series/:id
 function listFields(item) {
   return {
@@ -733,6 +792,11 @@ const server = http.createServer(async (req, res) => {
     if (!channel) return sendJson(req, res, 404, { error: "Channel not found" });
     const related = relatedChannels(channel, catalogue.channels.items, 16).map(channelFields);
     return sendJson(req, res, 200, { related });
+  }
+
+  // Channels of the big football competitions, by language: /api/leagues
+  if (url.pathname === "/api/leagues") {
+    return sendJson(req, res, 200, { leagues: buildLeagues(), ready: catalogue.channels.ready });
   }
 
   // What's on now and next: /api/channel/:id/epg (empty list when the channel has no guide)

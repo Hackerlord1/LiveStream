@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Loader2, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
@@ -202,6 +202,8 @@ function PlayerOverlay({ status, error, onRetry }: { status: PlayerStatus; error
 // ============================================================
 export default function IptvWatchPage() {
   const params = useParams();
+  // Opened from the home page's channels (?from=home): the back button returns there
+  const fromHome = useSearchParams().get("from") === "home";
   const channelId = Number(params.id);
 
   // Refs
@@ -465,7 +467,7 @@ export default function IptvWatchPage() {
   // RENDER
   // ============================================================
   return (
-    <IptvPage title="Live TV" icon={<Tv className="h-5 w-5" />} backHref="/iptv/channels">
+    <IptvPage title="Live TV" icon={<Tv className="h-5 w-5" />} backHref={fromHome ? "/" : "/iptv/channels"}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0">
         <div className="relative overflow-hidden rounded-2xl bg-black shadow-2xl">
@@ -497,7 +499,7 @@ export default function IptvWatchPage() {
         </div>
       </div>
 
-      <RelatedChannels channelId={channelId} />
+      <RelatedChannels channelId={channelId} fromHome={fromHome} />
       </div>
     </IptvPage>
   );

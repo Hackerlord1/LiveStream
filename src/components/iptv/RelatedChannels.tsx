@@ -17,7 +17,7 @@ interface RelatedChannel {
 }
 
 /** Sidebar of channels similar to the one being watched (same brand, genre, name words). */
-export default function RelatedChannels({ channelId }: { channelId: number }) {
+export default function RelatedChannels({ channelId, fromHome = false }: { channelId: number; fromHome?: boolean }) {
   const [channels, setChannels] = useState<RelatedChannel[] | null>(null);
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function RelatedChannels({ channelId }: { channelId: number }) {
         <ul className="space-y-1">
           {channels.map((ch) => (
             <li key={ch.id}>
-              <RelatedItem channel={ch} />
+              <RelatedItem channel={ch} fromHome={fromHome} />
             </li>
           ))}
         </ul>
@@ -64,11 +64,12 @@ export default function RelatedChannels({ channelId }: { channelId: number }) {
   );
 }
 
-function RelatedItem({ channel }: { channel: RelatedChannel }) {
+/** `fromHome` keeps the player's back button pointing at the home page (see the watch page). */
+function RelatedItem({ channel, fromHome }: { channel: RelatedChannel; fromHome: boolean }) {
   const { tag, title } = splitTag(channel.name);
   return (
     <Link
-      href={`/iptv/watch/${channel.id}`}
+      href={`/iptv/watch/${channel.id}${fromHome ? "?from=home" : ""}`}
       className="group flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
       title={channel.name}
     >
