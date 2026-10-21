@@ -136,6 +136,29 @@ async function getChannelEpg(channelId) {
   return programmes;
 }
 
+// Movies from the Xtream list come without description, cast etc.: fetched once, when a
+// movie's page is opened, and kept on the item (a failed fetch is tried again next time)
+async function withVodDetails(movie) {
+  if (movie.description !== undefined) return movie;
+  try {
+    const info = (await portal.xtreamGet("get_vod_info", { vod_id: movie.id }))?.info || {};
+    Object.assign(movie, {
+      description: info.plot || info.description || "",
+      director: info.director || "",
+      actors: info.cast || info.actors || "",
+      genres_str: info.genre || "",
+      age: info.age || info.mpaa_rating || "",
+      country: info.country || "",
+      year: info.releasedate || movie.year,
+      rating_imdb: info.rating || movie.rating_imdb,
+      screenshot_uri: info.cover_big || info.movie_image || movie.screenshot_uri,
+    });
+  } catch (err) {
+    console.warn(`⚠️ Details for movie ${movie.id} failed: ${err.message}`);
+  }
+  return movie;
+}
+
 // A series' seasons (each with its episode numbers and the cmd used to play them).
 // Cached briefly: the detail page and every episode play need them.
 const seasonsCache = new Map();
@@ -844,7 +867,7 @@ const server = http.createServer(async (req, res) => {
   if (vodMatch) {
     const movie = catalogue.vod.items.find((m) => String(m.id) === vodMatch[1]);
     return movie
-      ? sendJson(req, res, 200, { movie })
+      ? sendJson(req, res, 200, { movie: await withVodDetails(movie) })
       : sendJson(req, res, 404, { error: "Movie not found", ready: catalogue.vod.ready });
   }
 

@@ -8,6 +8,7 @@ import { splitTag } from "@/lib/iptv-format";
 import { Badge, IptvPage } from "@/components/iptv/ui";
 import RelatedChannels from "@/components/iptv/RelatedChannels";
 import ChannelGuide from "@/components/iptv/ChannelGuide";
+import ChannelLogo from "@/components/iptv/ChannelLogo";
 
 // ============================================================
 // CONFIGURATION
@@ -103,7 +104,6 @@ function StatusBadge({ status }: { status: PlayerStatus }) {
 }
 
 function ChannelInfo({ channel, status }: { channel: Channel | null; status: PlayerStatus }) {
-  const [logoFailed, setLogoFailed] = useState(false);
   const { tag, title } = splitTag(channel?.name);
 
   return (
@@ -111,17 +111,13 @@ function ChannelInfo({ channel, status }: { channel: Channel | null; status: Pla
       className="mt-4 flex items-center gap-4 rounded-2xl p-4"
       style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-secondary)" }}
     >
-      <div
+      <ChannelLogo
+        src={apiAsset(channel?.logo)}
         className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl"
         style={{ backgroundColor: "var(--surface-secondary)" }}
-      >
-        {channel?.logo && !logoFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
-          <img src={apiAsset(channel.logo)} alt="" className="max-h-full max-w-full object-contain p-1.5" onError={() => setLogoFailed(true)} />
-        ) : (
-          <Tv className="h-6 w-6" style={{ color: "var(--text-muted)" }} />
-        )}
-      </div>
+        imgClassName="max-h-full max-w-full object-contain p-1.5"
+        fallback={<Tv className="h-6 w-6" style={{ color: "var(--text-muted)" }} />}
+      />
       <div className="min-w-0 flex-1">
         {channel ? (
           <>

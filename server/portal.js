@@ -180,6 +180,43 @@ async function fetchAllPages(params, { firstPage = 1, delayMs = 100, onPage } = 
   return { items, total, missingPages: missing, failures };
 }
 
+// =============================
+// XTREAM API
+// =============================
+// The provider's stream server also speaks the Xtream API, which returns a whole list
+// (all channels, all movies...) in one request instead of 14 items per portal page.
+// Its username/password are the ones in every stream link the portal hands out:
+// http://host/<username>/<password>/<stream id>.
+let xtreamAccount = null;
+
+async function getXtreamAccount() {
+  if (xtreamAccount) return xtreamAccount;
+  // Any channel id works: only the account part of the link is needed
+  const link = new URL(await createLiveLink("1"));
+  const [, username, password] = link.pathname.split("/");
+  if (!username || !password) throw new Error("No Xtream account in the portal's stream link");
+  xtreamAccount = { base: `${link.protocol}//${link.host}/player_api.php`, username, password };
+  return xtreamAccount;
+}
+
+/** Xtream API call, e.g. xtreamGet("get_live_streams") or xtreamGet("get_vod_info", { vod_id: 5 }). */
+async function xtreamGet(action, params = {}) {
+  const account = await getXtreamAccount();
+  const query = new URLSearchParams({ username: account.username, password: account.password, action, ...params });
+  const res = await fetch(`${account.base}?${query}`, {
+    headers: { "User-Agent": USER_AGENT },
+    // The full movie and series lists are 50-80 MB
+    signal: AbortSignal.timeout(180000),
+  });
+  if (!res.ok) throw new Error(`Xtream ${action} returned ${res.status}`);
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Xtream ${action} returned non-JSON: ${text.slice(0, 80)}`);
+  }
+}
+
 function stripFfmpegPrefix(cmd) {
   return String(cmd || "").replace(/^ffmpeg\s+/, "").trim();
 }
@@ -231,6 +268,7 @@ module.exports = {
   USER_AGENT,
   portalGet,
   fetchAllPages,
+  xtreamGet,
   createLiveLink,
   createVodLink,
 };

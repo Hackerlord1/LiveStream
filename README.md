@@ -334,11 +334,14 @@ node server.js         # http://localhost:3477
 
 **Catalogues.** On startup the server serves the channel, radio, movie and series lists from
 `server/cache/` immediately, then refreshes them from the portal in the background every
-`CATALOGUE_REFRESH_HOURS` (default 6). A list counts as complete once it has at least 98% of
-the portal's `total_items`; pages that fail are retried, and incomplete catalogues are loaded
-again after 15 minutes. A refresh only replaces the served list when the new one is complete
-or bigger. `/health` shows each catalogue's `complete` flag and `lastLoad` (duration, missing
-pages and why pages failed). A full load of every catalogue takes several hours.
+`CATALOGUE_REFRESH_HOURS` (default 6). Channels, movies and series come from the provider's
+Xtream API (`player_api.php` on the stream server, using the account in the portal's stream
+links): one request per list, about a minute for everything. Movie details (description, cast)
+are fetched from it when a movie is opened. Radio comes from the portal. If the Xtream API
+fails, the portal's paged lists are crawled instead (14 items per request, several hours).
+A list counts as complete once it has at least 98% of the portal's `total_items`; incomplete
+catalogues are loaded again after 15 minutes. `/health` shows each catalogue's `complete` flag
+and `lastLoad` (`via`, duration, missing pages and why pages failed).
 **Switching portal** (new `IPTV_PORTAL_URL` or `IPTV_MAC` in `server/.env`): just restart. Caches remember
 which portal they came from, so the old ones are ignored and everything downloads fresh. To force
 a fresh download for the same portal, delete `server/cache/` and restart.

@@ -9,6 +9,7 @@ import { useListMemory } from "@/hooks/use-list-memory";
 import { apiAsset } from "@/lib/iptv-client";
 import { formatCount, isHd, splitTag } from "@/lib/iptv-format";
 import { Badge, EmptyState, FilterChips, IptvPage, LoadProgress, RetryButton, SearchBox, SkeletonGrid } from "@/components/iptv/ui";
+import ChannelLogo from "@/components/iptv/ChannelLogo";
 
 interface Channel {
   id: string;
@@ -165,7 +166,6 @@ export default function IptvChannelsPage() {
 }
 
 function ChannelTile({ channel }: { channel: Channel }) {
-  const [logoFailed, setLogoFailed] = useState(false);
   const { tag, title } = splitTag(channel.name);
 
   return (
@@ -175,23 +175,20 @@ function ChannelTile({ channel }: { channel: Channel }) {
       className="group block overflow-hidden rounded-xl transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
       style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-secondary)" }}
     >
-      <div className="relative flex aspect-[4/3] items-center justify-center p-3" style={{ backgroundColor: "var(--surface-secondary)" }}>
-        {channel.logo && !logoFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element -- remote logos on arbitrary hosts
-          <img
-            src={apiAsset(channel.logo)}
-            alt=""
-            loading="lazy"
-            onError={() => setLogoFailed(true)}
-            className="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
-          />
-        ) : (
+      <ChannelLogo
+        src={apiAsset(channel.logo)}
+        loading="lazy"
+        className="relative flex aspect-[4/3] items-center justify-center p-3"
+        style={{ backgroundColor: "var(--surface-secondary)" }}
+        imgClassName="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
+        fallback={
           <span className="text-lg font-bold tracking-tight" style={{ color: "var(--text-muted)" }}>
             {title.slice(0, 3).toUpperCase()}
           </span>
-        )}
+        }
+      >
         <div className="absolute right-1.5 top-1.5 flex gap-1">{isHd(channel.hd) && <Badge tone="red">HD</Badge>}</div>
-      </div>
+      </ChannelLogo>
       <div className="p-2">
         <p className="line-clamp-2 text-[11px] font-semibold leading-snug group-hover:text-red-500">{title}</p>
         <p className="mt-0.5 truncate text-[10px]" style={{ color: "var(--text-muted)" }}>

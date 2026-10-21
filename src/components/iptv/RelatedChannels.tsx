@@ -6,6 +6,7 @@ import { Tv } from "lucide-react";
 import { apiAsset, fetchIptv } from "@/lib/iptv-client";
 import { isHd, splitTag } from "@/lib/iptv-format";
 import { Badge } from "./ui";
+import ChannelLogo from "./ChannelLogo";
 
 interface RelatedChannel {
   id: string;
@@ -64,7 +65,6 @@ export default function RelatedChannels({ channelId }: { channelId: number }) {
 }
 
 function RelatedItem({ channel }: { channel: RelatedChannel }) {
-  const [logoFailed, setLogoFailed] = useState(false);
   const { tag, title } = splitTag(channel.name);
   return (
     <Link
@@ -72,17 +72,14 @@ function RelatedItem({ channel }: { channel: RelatedChannel }) {
       className="group flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
       title={channel.name}
     >
-      <span
+      <ChannelLogo
+        src={apiAsset(channel.logo)}
+        loading="lazy"
         className="flex h-10 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg"
         style={{ backgroundColor: "var(--surface-secondary)" }}
-      >
-        {channel.logo && !logoFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element -- logos come from the stream server's logo proxy
-          <img src={apiAsset(channel.logo)} alt="" loading="lazy" onError={() => setLogoFailed(true)} className="max-h-full max-w-full object-contain p-1" />
-        ) : (
-          <Tv className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
-        )}
-      </span>
+        imgClassName="max-h-full max-w-full object-contain p-1"
+        fallback={<Tv className="h-4 w-4" style={{ color: "var(--text-muted)" }} />}
+      />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold group-hover:text-red-500">{title}</span>
         <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>

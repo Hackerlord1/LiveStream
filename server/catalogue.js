@@ -1,5 +1,10 @@
 // Channel / radio / movie / series catalogues.
 //
+// Channels, movies and series come from the Xtream API in one request each (about a
+// minute for everything), mapped to the portal's item format the rest of the server
+// uses. If the Xtream API fails, the portal's paged lists are crawled instead (14 items
+// per request: hours). Radio only exists on the portal.
+//
 // Each catalogue is saved to server/cache/<kind>.json after a load, and read back
 // on startup so a restart serves the list immediately. A list only counts as
 // complete once it has (nearly) every item the portal says it has; incomplete
@@ -32,10 +37,75 @@ const VOD_LIST_PARAMS = {
   movie_id: "0", season_id: "0", episode_id: "0",
 };
 
+const HD_RE = /\b(?:HD|FHD|UHD|4K)\b/i;
+
+/** Last year-like number in a title, e.g. "FR - Matchbox – Le film - 2026" → "2026". */
+function yearFromName(name) {
+  const years = String(name || "").match(/\b(?:19|20)\d{2}\b/g);
+  return years ? years[years.length - 1] : "";
+}
+
+// Xtream categories → the portal's genre/category format, with the portal's "All" entry
+function mapCategories(list) {
+  return [
+    { id: "*", title: "All" },
+    ...(Array.isArray(list) ? list : []).map((c) => ({ id: String(c.category_id), title: c.category_name })),
+  ];
+}
+
+// Xtream items → the portal's item format (same ids, so playback through the portal still works)
+const fromXtream = {
+  channels: (s) => ({
+    id: String(s.stream_id),
+    name: s.name,
+    number: String(s.num ?? ""),
+    logo: s.stream_icon || "",
+    tv_genre_id: String(s.category_id ?? ""),
+    hd: HD_RE.test(s.name) ? "1" : "0",
+    // Only third-party direct streams need their own URL; portal channels get a fresh link
+    cmd: s.direct_source ? `ffmpeg ${s.direct_source}` : "",
+  }),
+  vod: (s) => ({
+    id: Number(s.stream_id),
+    name: s.name,
+    o_name: s.name,
+    screenshot_uri: s.stream_icon || "",
+    rating_imdb: s.rating || "",
+    rating_kinopoisk: s.rating || "",
+    year: yearFromName(s.name),
+    category_id: String(s.category_id ?? ""),
+    hd: HD_RE.test(s.name) ? 1 : 0,
+    added: s.added,
+    // The portal's play command for a movie: base64 JSON naming the stream
+    cmd: Buffer.from(JSON.stringify({
+      type: "movie",
+      stream_id: Number(s.stream_id),
+      stream_source: null,
+      target_container: JSON.stringify([s.container_extension || "mp4"]),
+    })).toString("base64"),
+  }),
+  series: (s) => ({
+    id: Number(s.series_id),
+    name: s.name,
+    o_name: s.name,
+    screenshot_uri: s.cover || "",
+    description: s.plot || "",
+    actors: s.cast || "",
+    director: s.director || "",
+    genres_str: s.genre || "",
+    year: s.releaseDate || yearFromName(s.name),
+    rating_imdb: s.rating || "",
+    rating_kinopoisk: s.rating || "",
+    category_id: String(s.category_id ?? ""),
+    added: s.last_modified,
+  }),
+};
+
 const SOURCES = {
   channels: {
     list: { type: "itv", action: "get_ordered_list", genre: "*", sortby: "number", fav: "0", hd: "0" },
     categories: { type: "itv", action: "get_genres" },
+    xtream: { list: "get_live_streams", categories: "get_live_categories", sort: (a, b) => Number(a.number) - Number(b.number) },
     delayMs: 200,
   },
   radio: {
@@ -50,10 +120,13 @@ const SOURCES = {
   vod: {
     list: { type: "vod", action: "get_ordered_list", ...VOD_LIST_PARAMS },
     categories: { type: "vod", action: "get_categories" },
+    // Newest first, like the portal's sortby=added
+    xtream: { list: "get_vod_streams", categories: "get_vod_categories", sort: (a, b) => Number(b.added) - Number(a.added) },
   },
   series: {
     list: { type: "series", action: "get_ordered_list", ...VOD_LIST_PARAMS },
     categories: { type: "series", action: "get_categories" },
+    xtream: { list: "get_series", categories: "get_series_categories", sort: (a, b) => Number(b.added) - Number(a.added) },
   },
 };
 
@@ -110,7 +183,72 @@ async function saveToDisk(kind) {
   // Write then rename, so a crash mid-write never leaves a corrupt cache
   const tmp = `${cachePath(kind)}.tmp`;
   await fs.promises.writeFile(tmp, JSON.stringify({ portal: PORTAL_FINGERPRINT, items, categories, updatedAt, total, complete }));
-  await fs.promises.rename(tmp, cachePath(kind));
+  // On Windows the rename fails (EPERM/EBUSY/EACCES) while something briefly holds the old
+  // file open, e.g. antivirus scanning a large cache it just saw written: try again shortly
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fs.promises.rename(tmp, cachePath(kind));
+      return;
+    } catch (err) {
+      if (attempt >= 10 || !["EPERM", "EBUSY", "EACCES"].includes(err.code)) throw err;
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+}
+
+/**
+ * The whole list in one Xtream request. `listed` is the portal's own count (one cheap
+ * page request), so a short Xtream answer still shows up as incomplete.
+ */
+async function loadFromXtream(kind, entry) {
+  const source = SOURCES[kind];
+  const [list, categories] = await Promise.all([
+    portal.xtreamGet(source.xtream.list),
+    portal.xtreamGet(source.xtream.categories).catch(() => null),
+  ]);
+  if (!Array.isArray(list) || list.length === 0) throw new Error(`Xtream ${source.xtream.list} returned no items`);
+  const fetched = list.map(fromXtream[kind]).sort(source.xtream.sort);
+  entry.loaded = fetched.length;
+
+  let listed = fetched.length;
+  try {
+    const first = await portal.portalGet({ ...source.list, p: "1" });
+    listed = Number(first?.js?.total_items) || listed;
+  } catch (err) {
+    console.warn(`⚠️ ${kind}: couldn't get the portal's count to check against (${err.message})`);
+  }
+  entry.total = listed;
+  return {
+    fetched,
+    listed,
+    categories: categories ? mapCategories(categories) : entry.categories,
+    missingPages: [],
+    failures: [],
+  };
+}
+
+/** The portal's paged list, 14 items per request (hours for the big catalogues). */
+async function loadFromPortalPages(kind, entry, firstRun) {
+  const source = SOURCES[kind];
+  let categories = entry.categories;
+  if (source.categories) {
+    const data = await portal.portalGet(source.categories);
+    categories = Array.isArray(data?.js) ? data.js : [];
+  }
+
+  const { items: fetched, total: listed, missingPages, failures } = await portal.fetchAllPages(source.list, {
+    delayMs: source.delayMs ?? 100,
+    onPage: (all, total) => {
+      entry.loaded = all.length;
+      entry.total = total;
+      // With nothing to show yet, serve the list as it grows
+      if (firstRun) {
+        entry.items = all;
+        entry.categories = categories;
+      }
+    },
+  });
+  return { fetched, listed, categories, missingPages, failures };
 }
 
 async function refresh(kind) {
@@ -122,31 +260,27 @@ async function refresh(kind) {
   const startedAt = Date.now();
   const timing = () => ({
     startedAt: new Date(startedAt).toISOString(),
-    minutes: Math.round((Date.now() - startedAt) / 60000),
+    seconds: Math.round((Date.now() - startedAt) / 1000),
   });
   entry.loading = true;
   entry.loaded = 0;
   console.log(`📡 ${firstRun ? "Loading" : "Refreshing"} ${kind}...`);
 
   try {
-    let categories = entry.categories;
-    if (source.categories) {
-      const data = await portal.portalGet(source.categories);
-      categories = Array.isArray(data?.js) ? data.js : [];
+    let loaded = null;
+    let via = "portal pages";
+    let xtreamError;
+    if (source.xtream) {
+      try {
+        loaded = await loadFromXtream(kind, entry);
+        via = "xtream";
+      } catch (err) {
+        xtreamError = err.message;
+        console.warn(`⚠️ ${kind}: Xtream API failed (${err.message}); loading page by page from the portal`);
+      }
     }
-
-    const { items: fetched, total: listed, missingPages, failures } = await portal.fetchAllPages(source.list, {
-      delayMs: source.delayMs ?? 100,
-      onPage: (all, total) => {
-        entry.loaded = all.length;
-        entry.total = total;
-        // With nothing to show yet, serve the list as it grows
-        if (firstRun) {
-          entry.items = all;
-          entry.categories = categories;
-        }
-      },
-    });
+    loaded ??= await loadFromPortalPages(kind, entry, firstRun);
+    const { fetched, listed, categories, missingPages, failures } = loaded;
 
     // Completeness is judged on what the portal listed; items dropped by the filter
     // (radio entries that are really TV channels) are then left out of the total too
@@ -155,6 +289,8 @@ async function refresh(kind) {
     const total = listed - (fetched.length - items.length);
     entry.lastLoad = {
       ...timing(),
+      via,
+      ...(xtreamError && { xtreamError }),
       items: items.length,
       total,
       complete,
@@ -180,10 +316,11 @@ async function refresh(kind) {
     }
 
     Object.assign(entry, { items, categories, total, complete, ready: true, updatedAt: Date.now() });
-    await saveToDisk(kind);
+    // The new list is already served; a failed save only means the next start uses the older cache
+    await saveToDisk(kind).catch((err) => console.warn(`⚠️ ${kind}: loaded, but couldn't save the cache: ${err.message}`));
     console.log(complete
-      ? `✅ ${kind}: ${items.length.toLocaleString()} of ${total.toLocaleString()} items`
-      : `⚠️ ${kind}: ${items.length.toLocaleString()} of ${total.toLocaleString()} items (${missingPages.length} pages missing)`);
+      ? `✅ ${kind}: ${items.length.toLocaleString()} of ${total.toLocaleString()} items (${via}, ${timing().seconds}s)`
+      : `⚠️ ${kind}: ${items.length.toLocaleString()} of ${total.toLocaleString()} items (${via}, ${missingPages.length} pages missing)`);
   } catch (err) {
     console.error(`❌ Failed to load ${kind}: ${err.message}`);
     entry.lastLoad = { ...timing(), error: err.message };
