@@ -1,6 +1,11 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
+
+// Rooms where only signed-in (Google) users may post: the live TV chat
+const SIGNED_IN_ROOMS = new Set(["iptv-global"]);
 
 const MAX_MESSAGE_LENGTH = 200;
 const MAX_USERNAME_LENGTH = 20;
@@ -74,6 +79,64 @@ export const getMessages = query({
   },
 });
 
+/** Rate-limits, then stores a message. `username` must already be sanitised. */
+async function insertMessage(
+  ctx: MutationCtx,
+  { matchId, username, message, color, userId }: { matchId: string; username: string; message: string; color: string; userId?: Id<"users"> }
+) {
+  const text = sanitizeMessage(message);
+  if (!text) {
+    throw new ConvexError("Message cannot be empty.");
+  }
+
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW;
+
+  const recentMessages = await ctx.db
+    .query("messages")
+    .withIndex("by_match_user_created", (q) =>
+      q
+        .eq("matchId", matchId)
+        .eq("username", username)
+        .gt("createdAt", windowStart)
+    )
+    .take(RATE_LIMIT_MAX);
+
+  if (recentMessages.length >= RATE_LIMIT_MAX) {
+    throw new ConvexError(
+      "Rate limit exceeded. Please wait before sending more messages."
+    );
+  }
+
+  const recentMatchMessages = await ctx.db
+    .query("messages")
+    .withIndex("by_match_created", (q) =>
+      q.eq("matchId", matchId).gt("createdAt", windowStart)
+    )
+    .take(MATCH_RATE_LIMIT_MAX);
+
+  if (recentMatchMessages.length >= MATCH_RATE_LIMIT_MAX) {
+    throw new ConvexError("Chat is busy. Please wait a moment.");
+  }
+
+  await ctx.db.insert("messages", {
+    matchId,
+    username,
+    message: text,
+    color: COLOR_PATTERN.test(color) ? color : DEFAULT_COLOR,
+    createdAt: now,
+    isAdmin: false,
+    ...(userId && { userId }),
+  });
+}
+
+/** The name a signed-in user chats under: Google first name plus last initial, e.g. "Felix G". */
+function chatNameFor(fullName: string | undefined) {
+  const [first = "", last = ""] = (fullName || "").trim().split(/\s+/);
+  return sanitizeUsername(last ? `${first} ${last[0]}` : first);
+}
+
+/** Anonymous posting (match chats). Rooms in SIGNED_IN_ROOMS need sendSignedIn instead. */
 export const sendMessage = mutation({
   args: {
     matchId: v.string(),
@@ -82,50 +145,37 @@ export const sendMessage = mutation({
     color: v.string(),
   },
   handler: async (ctx, args) => {
-    const username = sanitizeUsername(args.username);
-    const message = sanitizeMessage(args.message);
-
-    if (!message) {
-      throw new ConvexError("Message cannot be empty.");
+    if (SIGNED_IN_ROOMS.has(args.matchId)) {
+      throw new ConvexError("Please sign in with Google to chat.");
     }
+    await insertMessage(ctx, { ...args, username: sanitizeUsername(args.username) });
+  },
+});
 
-    const now = Date.now();
-    const windowStart = now - RATE_LIMIT_WINDOW;
-
-    const recentMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_match_user_created", (q) =>
-        q
-          .eq("matchId", args.matchId)
-          .eq("username", username)
-          .gt("createdAt", windowStart)
-      )
-      .take(RATE_LIMIT_MAX);
-
-    if (recentMessages.length >= RATE_LIMIT_MAX) {
-      throw new ConvexError(
-        "Rate limit exceeded. Please wait before sending more messages."
-      );
+/** Posting as the signed-in Google user; the name comes from their account. */
+export const sendSignedIn = mutation({
+  args: {
+    matchId: v.string(),
+    message: v.string(),
+    color: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Please sign in with Google to chat.");
     }
+    const user = await ctx.db.get(userId);
+    await insertMessage(ctx, { ...args, username: chatNameFor(user?.name), userId });
+  },
+});
 
-    const recentMatchMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_match_created", (q) =>
-        q.eq("matchId", args.matchId).gt("createdAt", windowStart)
-      )
-      .take(MATCH_RATE_LIMIT_MAX);
-
-    if (recentMatchMessages.length >= MATCH_RATE_LIMIT_MAX) {
-      throw new ConvexError("Chat is busy. Please wait a moment.");
-    }
-
-    await ctx.db.insert("messages", {
-      matchId: args.matchId,
-      username,
-      message,
-      color: COLOR_PATTERN.test(args.color) ? args.color : DEFAULT_COLOR,
-      createdAt: now,
-      isAdmin: false,
-    });
+/** The signed-in user's chat name, or null when signed out. */
+export const viewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    return { name: chatNameFor(user?.name) };
   },
 });

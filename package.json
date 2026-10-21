@@ -11,6 +11,8 @@
     "convex:deploy": "npx convex deploy"
   },
   "dependencies": {
+    "@auth/core": "^0.41.3",
+    "@convex-dev/auth": "^0.0.96",
     "@tanstack/react-virtual": "^3.14.2",
     "convex": "^1.39.1",
     "dotenv": "^18.0.4",

@@ -1,7 +1,9 @@
 "use client";
 
 import { ReactNode, useMemo } from "react";
-import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexReactClient } from "convex/react";
+// Convex plus Google sign-in (the live TV chat); also handles the ?code= on the way back from Google
+import { ConvexAuthProvider } from "@convex-dev/auth/react";
 
 export default function ConvexClientProvider({
   children,
@@ -26,8 +28,8 @@ export default function ConvexClientProvider({
   }
 
   return (
-    <ConvexProvider client={convex}>
+    <ConvexAuthProvider client={convex}>
       {children}
-    </ConvexProvider>
+    </ConvexAuthProvider>
   );
 }

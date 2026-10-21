@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import { ConvexError } from "convex/values";
 import { MessageCircle, Send } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 
 // One room for every channel: everyone watching live TV talks in the same chat.
-// Uses the match chat's Convex functions (same limits and sanitising), keyed by this id.
+// Anyone can read it; posting needs a Google sign-in (the name comes from the account).
 const ROOM = "iptv-global";
-const NAME_KEY = "iptv-chat-username";
-const MIN_NAME = 3;
-const MAX_NAME = 20;
 const MAX_MESSAGE = 200;
 
 // The server only accepts #rrggbb colours
@@ -23,20 +21,15 @@ function colorFor(name: string) {
   return NAME_COLORS[hash % NAME_COLORS.length];
 }
 
-function readName() {
-  try {
-    return localStorage.getItem(NAME_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function writeName(name: string) {
-  try {
-    localStorage.setItem(NAME_KEY, name);
-  } catch {
-    // storage unavailable: the name lasts until the page is closed
-  }
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
+      <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z" />
+      <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.3v3.1A12 12 0 0 0 12 24z" />
+      <path fill="#FBBC05" d="M5.3 14.3a7.2 7.2 0 0 1 0-4.6V6.6H1.3a12 12 0 0 0 0 10.8l4-3.1z" />
+      <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1c.9-2.9 3.6-4.9 6.7-4.9z" />
+    </svg>
+  );
 }
 
 /**
@@ -44,7 +37,7 @@ function writeName(name: string) {
  * where it sits on black regardless of the site theme.
  */
 export default function IptvChat({ dark = false }: { dark?: boolean }) {
-  // Without Convex configured there's no ConvexProvider, so the chat hooks can't run
+  // Without Convex configured there's no provider, so the chat hooks can't run
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
     return (
       <ChatFrame dark={dark}>
@@ -71,48 +64,40 @@ function ChatFrame({ dark, children }: { dark: boolean; children: React.ReactNod
 }
 
 function ChatRoom({ dark }: { dark: boolean }) {
-  // Only rendered in the browser (the watch page mounts the chat after checking the screen size)
-  const [name, setName] = useState(readName);
-  const [nameDraft, setNameDraft] = useState(name);
-  const [editingName, setEditingName] = useState(false);
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const { signIn, signOut } = useAuthActions();
+  const viewer = useQuery(api.messages.viewer);
+  const name = isAuthenticated ? viewer?.name : undefined;
+
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
 
-  const joined = Boolean(name) && !editingName;
-  const messages = useQuery(api.messages.getMessages, { matchId: ROOM, username: name || undefined });
-  const send = useMutation(api.messages.sendMessage);
+  const messages = useQuery(api.messages.getMessages, { matchId: ROOM, username: name });
+  const send = useMutation(api.messages.sendSignedIn);
 
   // Follow new messages, unless the viewer scrolled up to read older ones
   useEffect(() => {
     const list = listRef.current;
     if (list && nearBottom.current) list.scrollTop = list.scrollHeight;
-  }, [messages?.length, joined]);
+  }, [messages?.length, isAuthenticated]);
 
   const muted = dark ? "rgba(248, 250, 252, 0.6)" : "var(--text-muted)";
+  const border = dark ? "rgba(255,255,255,0.12)" : "var(--border-secondary)";
   const fieldStyle = dark
     ? { backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#f8fafc" }
     : { backgroundColor: "var(--surface-secondary)", border: "1px solid var(--border-primary)", color: "var(--text-primary)" };
 
-  function join(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = nameDraft.trim().slice(0, MAX_NAME);
-    if (trimmed.length < MIN_NAME) return;
-    writeName(trimmed);
-    setName(trimmed);
-    setEditingName(false);
-  }
-
   async function submit(e: FormEvent) {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || sending || !name) return;
     setSending(true);
     setError("");
     try {
-      await send({ matchId: ROOM, username: name, message: text, color: colorFor(name) });
+      await send({ matchId: ROOM, message: text, color: colorFor(name) });
       setDraft("");
       nearBottom.current = true;
     } catch (err) {
@@ -122,24 +107,27 @@ function ChatRoom({ dark }: { dark: boolean }) {
     }
   }
 
+  function signInWithGoogle() {
+    setError("");
+    // Back to this same page (and channel) after Google
+    signIn("google", { redirectTo: window.location.href }).catch(() => setError("Couldn't start Google sign-in. Please try again."));
+  }
+
   return (
     <ChatFrame dark={dark}>
-      <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: dark ? "rgba(255,255,255,0.12)" : "var(--border-secondary)" }}>
+      <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: border }}>
         <MessageCircle className="h-4 w-4 text-red-500" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold leading-tight" style={{ color: dark ? "#f8fafc" : "var(--text-primary)" }}>Live chat</p>
           <p className="truncate text-[11px]" style={{ color: muted }}>Everyone watching, on every channel</p>
         </div>
-        {joined && (
-          <button
-            type="button"
-            onClick={() => setEditingName(true)}
-            className="max-w-[40%] truncate text-xs font-semibold hover:underline"
-            style={{ color: colorFor(name) }}
-            title="Change your name"
-          >
-            {name}
-          </button>
+        {name && (
+          <div className="flex min-w-0 max-w-[45%] flex-col items-end">
+            <span className="max-w-full truncate text-xs font-semibold" style={{ color: colorFor(name) }}>{name}</span>
+            <button type="button" onClick={() => void signOut()} className="text-[11px] hover:underline" style={{ color: muted }}>
+              Sign out
+            </button>
+          </div>
         )}
       </div>
 
@@ -168,26 +156,17 @@ function ChatRoom({ dark }: { dark: boolean }) {
         )}
       </div>
 
-      <div className="border-t p-2" style={{ borderColor: dark ? "rgba(255,255,255,0.12)" : "var(--border-secondary)" }}>
-        {!joined ? (
-          <form onSubmit={join} className="flex gap-2">
-            <input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              maxLength={MAX_NAME}
-              placeholder="Pick a name to chat"
-              aria-label="Your chat name"
-              className="h-9 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-red-500"
-              style={fieldStyle}
-            />
-            <button
-              type="submit"
-              disabled={nameDraft.trim().length < MIN_NAME}
-              className="h-9 rounded-lg bg-red-600 px-3 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              Join
-            </button>
-          </form>
+      <div className="border-t p-2" style={{ borderColor: border }}>
+        {authLoading || (isAuthenticated && viewer === undefined) ? (
+          <p className="py-2 text-center text-xs" style={{ color: muted }}>Checking sign-in…</p>
+        ) : !name ? (
+          <button
+            type="button"
+            onClick={signInWithGoogle}
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-semibold text-gray-800 shadow-sm ring-1 ring-black/10 hover:bg-gray-50"
+          >
+            <GoogleMark /> Sign in with Google to chat
+          </button>
         ) : (
           <form onSubmit={submit} className="flex gap-2">
             <input
@@ -210,9 +189,6 @@ function ChatRoom({ dark }: { dark: boolean }) {
           </form>
         )}
         {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
-        {!joined && nameDraft.trim().length > 0 && nameDraft.trim().length < MIN_NAME && (
-          <p className="mt-1.5 text-xs" style={{ color: muted }}>At least {MIN_NAME} characters</p>
-        )}
       </div>
     </ChatFrame>
   );

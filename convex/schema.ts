@@ -1,7 +1,11 @@
 import { defineSchema, defineTable } from "convex/server";
+import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // ---- SIGN-IN (Convex Auth: users, sessions, Google accounts) ----
+  ...authTables,
+
   // ---- CHAT (existing) ----
   messages: defineTable({
     matchId: v.string(),
@@ -11,6 +15,8 @@ export default defineSchema({
     createdAt: v.number(),
     isAdmin: v.boolean(),
     isSystem: v.optional(v.boolean()),
+    // Who sent it, for messages from signed-in users (lets a user be banned later)
+    userId: v.optional(v.id("users")),
   })
     .index("by_matchId", ["matchId"])
     .index("by_match_created", ["matchId", "createdAt"])

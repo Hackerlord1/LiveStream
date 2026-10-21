@@ -50,3 +50,6 @@ server/cache/
 
 # server dependencies
 server/node_modules/
+
+# Google OAuth client secrets (never commit)
+client_secret_*.json
