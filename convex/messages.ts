@@ -1,4 +1,4 @@
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
@@ -6,6 +6,32 @@ import { ConvexError } from "convex/values";
 
 // Rooms where only signed-in (Google) users may post: the live TV chat
 const SIGNED_IN_ROOMS = new Set(["iptv-global"]);
+
+// Admins are recognised by the email on their Google account, listed in the deployment's
+// ADMIN_EMAILS setting (comma-separated), so the address isn't in the code
+async function isAdmin(ctx: QueryCtx, userId: Id<"users"> | null) {
+  if (!userId) return false;
+  const user = await ctx.db.get(userId);
+  const email = user?.email?.trim().toLowerCase();
+  const admins = (process.env.ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return Boolean(email) && admins.includes(email!);
+}
+
+/** The user's block or time freeze that is still in force, if any. */
+async function activeBan(ctx: QueryCtx, userId: Id<"users">) {
+  const ban = await ctx.db.query("chatBans").withIndex("by_user", (q) => q.eq("userId", userId)).first();
+  return ban && (ban.until === undefined || ban.until > Date.now()) ? ban : null;
+}
+
+// Time freeze lengths an admin can pick, in minutes
+const FREEZE_MINUTES = new Set([10, 60, 24 * 60]);
+
+/** The signed-in user, who must be an admin; throws otherwise. */
+async function requireAdmin(ctx: MutationCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId || !(await isAdmin(ctx, userId))) throw new ConvexError("Only admins can do that.");
+  return userId;
+}
 
 const MAX_MESSAGE_LENGTH = 200;
 const MAX_USERNAME_LENGTH = 20;
@@ -82,7 +108,9 @@ export const getMessages = query({
 /** Rate-limits, then stores a message. `username` must already be sanitised. */
 async function insertMessage(
   ctx: MutationCtx,
-  { matchId, username, message, color, userId }: { matchId: string; username: string; message: string; color: string; userId?: Id<"users"> }
+  { matchId, username, message, color, userId, admin = false }: {
+    matchId: string; username: string; message: string; color: string; userId?: Id<"users">; admin?: boolean;
+  }
 ) {
   const text = sanitizeMessage(message);
   if (!text) {
@@ -125,7 +153,7 @@ async function insertMessage(
     message: text,
     color: COLOR_PATTERN.test(color) ? color : DEFAULT_COLOR,
     createdAt: now,
-    isAdmin: false,
+    isAdmin: admin,
     ...(userId && { userId }),
   });
 }
@@ -164,18 +192,95 @@ export const sendSignedIn = mutation({
     if (!userId) {
       throw new ConvexError("Please sign in with Google to chat.");
     }
+    const ban = await activeBan(ctx, userId);
+    if (ban) {
+      throw new ConvexError(ban.until ? "You're frozen in the chat for a while. Try again later." : "You've been blocked from the chat.");
+    }
     const user = await ctx.db.get(userId);
-    await insertMessage(ctx, { ...args, username: chatNameFor(user?.name), userId });
+    await insertMessage(ctx, { ...args, username: chatNameFor(user?.name), userId, admin: await isAdmin(ctx, userId) });
   },
 });
 
-/** The signed-in user's chat name, or null when signed out. */
+/** The signed-in user's chat name and admin status, or null when signed out. */
 export const viewer = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
     const user = await ctx.db.get(userId);
-    return { name: chatNameFor(user?.name) };
+    const ban = await activeBan(ctx, userId);
+    return {
+      name: chatNameFor(user?.name),
+      isAdmin: await isAdmin(ctx, userId),
+      isBlocked: Boolean(ban),
+      // Set for a time freeze: when they may post again
+      blockedUntil: ban?.until ?? null,
+    };
+  },
+});
+
+// =============================
+// ADMIN: delete messages, block and unblock users
+// =============================
+
+export const deleteMessage = mutation({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, { messageId }) => {
+    await requireAdmin(ctx);
+    if (await ctx.db.get(messageId)) await ctx.db.delete(messageId);
+  },
+});
+
+/**
+ * Stops the signed-in user who wrote `messageId` from posting. With `minutes` it's a time
+ * freeze (their messages stay); without, a permanent block that also deletes their messages.
+ */
+export const blockAuthor = mutation({
+  args: { messageId: v.id("messages"), minutes: v.optional(v.number()) },
+  handler: async (ctx, { messageId, minutes }) => {
+    const adminId = await requireAdmin(ctx);
+    if (minutes !== undefined && !FREEZE_MINUTES.has(minutes)) throw new ConvexError("Unknown freeze length.");
+    const message = await ctx.db.get(messageId);
+    if (!message) return;
+    if (!message.userId) {
+      // Anonymous (older or match chat) messages have no account to block
+      await ctx.db.delete(messageId);
+      return;
+    }
+    const userId = message.userId;
+    if (userId === adminId) throw new ConvexError("You can't block yourself.");
+
+    const now = Date.now();
+    const ban = { username: message.username, bannedBy: adminId, createdAt: now, until: minutes ? now + minutes * 60_000 : undefined };
+    const existing = await ctx.db.query("chatBans").withIndex("by_user", (q) => q.eq("userId", userId)).first();
+    if (existing) await ctx.db.replace(existing._id, { userId, ...ban });
+    else await ctx.db.insert("chatBans", { userId, ...ban });
+
+    if (!minutes) {
+      // Blocked for good: their messages disappear from every chat (capped so one call stays small)
+      const theirs = await ctx.db.query("messages").withIndex("by_user", (q) => q.eq("userId", userId)).take(500);
+      for (const m of theirs) await ctx.db.delete(m._id);
+    }
+  },
+});
+
+export const unblockUser = mutation({
+  args: { banId: v.id("chatBans") },
+  handler: async (ctx, { banId }) => {
+    await requireAdmin(ctx);
+    if (await ctx.db.get(banId)) await ctx.db.delete(banId);
+  },
+});
+
+/** Blocked and frozen users, newest first (admins only; others get an empty list). Ended freezes are left out. */
+export const blockedUsers = query({
+  args: {},
+  handler: async (ctx) => {
+    if (!(await isAdmin(ctx, await getAuthUserId(ctx)))) return [];
+    const now = Date.now();
+    const bans = await ctx.db.query("chatBans").order("desc").take(200);
+    return bans
+      .filter((b) => b.until === undefined || b.until > now)
+      .map((b) => ({ id: b._id, username: b.username, createdAt: b.createdAt, until: b.until ?? null }));
   },
 });

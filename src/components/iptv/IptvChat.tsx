@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { ConvexError } from "convex/values";
-import { MessageCircle, Send } from "lucide-react";
+import { Ban, MessageCircle, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 // One room for every channel: everyone watching live TV talks in the same chat.
 // Anyone can read it; posting needs a Google sign-in (the name comes from the account).
@@ -78,6 +79,25 @@ function ChatRoom({ dark }: { dark: boolean }) {
   const messages = useQuery(api.messages.getMessages, { matchId: ROOM, username: name });
   const send = useMutation(api.messages.sendSignedIn);
 
+  // Admin tools (the server checks the admin email on every action too)
+  const admin = Boolean(isAuthenticated && viewer?.isAdmin);
+  const blocked = useQuery(api.messages.blockedUsers, admin ? {} : "skip");
+  const deleteMessage = useMutation(api.messages.deleteMessage);
+  const blockAuthor = useMutation(api.messages.blockAuthor);
+  const unblockUser = useMutation(api.messages.unblockUser);
+  const [showBlocked, setShowBlocked] = useState(false);
+  // Message whose block/freeze options are open
+  const [moderating, setModerating] = useState<string | null>(null);
+
+  async function adminAction(action: () => Promise<unknown>) {
+    setError("");
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof ConvexError ? String(err.data) : "That didn't work. Please try again.");
+    }
+  }
+
   // Follow new messages, unless the viewer scrolled up to read older ones
   useEffect(() => {
     const list = listRef.current;
@@ -123,13 +143,49 @@ function ChatRoom({ dark }: { dark: boolean }) {
         </div>
         {name && (
           <div className="flex min-w-0 max-w-[45%] flex-col items-end">
-            <span className="max-w-full truncate text-xs font-semibold" style={{ color: colorFor(name) }}>{name}</span>
-            <button type="button" onClick={() => void signOut()} className="text-[11px] hover:underline" style={{ color: muted }}>
-              Sign out
-            </button>
+            <span className="flex max-w-full items-center gap-1 truncate text-xs font-semibold" style={{ color: colorFor(name) }}>
+              {admin && <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" aria-label="Admin" />}
+              {name}
+            </span>
+            <span className="flex gap-2 text-[11px]" style={{ color: muted }}>
+              {admin && (
+                <button type="button" onClick={() => setShowBlocked((v) => !v)} className="hover:underline">
+                  Blocked ({blocked?.length ?? 0})
+                </button>
+              )}
+              <button type="button" onClick={() => void signOut()} className="hover:underline">
+                Sign out
+              </button>
+            </span>
           </div>
         )}
       </div>
+
+      {admin && showBlocked && (
+        <div className="max-h-40 overflow-y-auto border-b px-3 py-2 text-xs" style={{ borderColor: border }}>
+          {!blocked?.length ? (
+            <p style={{ color: muted }}>Nobody is blocked.</p>
+          ) : (
+            blocked.map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-2 py-0.5">
+                <span className="truncate">
+                  {b.username}
+                  <span className="ml-1.5" style={{ color: muted }}>
+                    {b.until ? `frozen until ${new Date(b.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "blocked"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => adminAction(() => unblockUser({ banId: b.id }))}
+                  className="flex-shrink-0 font-semibold text-red-500 hover:underline"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div
         ref={listRef}
@@ -145,14 +201,82 @@ function ChatRoom({ dark }: { dark: boolean }) {
         ) : messages.length === 0 ? (
           <p className="py-6 text-center text-sm" style={{ color: muted }}>No messages yet. Say hello!</p>
         ) : (
-          messages.map((m) => (
-            <p key={String(m._id)} className="break-words text-sm leading-snug">
-              <span className="mr-1.5 font-semibold" style={{ color: m.color || colorFor(m.username) }}>
-                {m.isAdmin ? "⭐ " : ""}{m.username}
-              </span>
-              <span style={m.isSystem ? { color: muted } : undefined}>{m.message}</span>
-            </p>
-          ))
+          messages.map((m) => {
+            // The welcome note is made up by the server, not a stored message
+            const stored = !m.isSystem && !String(m._id).startsWith("welcome-");
+            const id = m._id as Id<"messages">;
+            return (
+              <div key={String(m._id)}>
+              <div className="group flex items-start gap-1">
+                <p className="min-w-0 flex-1 break-words text-sm leading-snug">
+                  <span className="mr-1.5 font-semibold" style={{ color: m.color || colorFor(m.username) }}>
+                    {m.isAdmin ? "⭐ " : ""}{m.username}
+                  </span>
+                  <span style={m.isSystem ? { color: muted } : undefined}>{m.message}</span>
+                </p>
+                {admin && stored && (
+                  <span className="flex flex-shrink-0 gap-0.5 opacity-60 group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => adminAction(() => deleteMessage({ messageId: id }))}
+                      aria-label={`Delete message from ${m.username}`}
+                      title="Delete message"
+                      className="rounded p-1 hover:bg-red-500/15 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                    {"userId" in m && m.userId && !m.isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setModerating((open) => (open === String(m._id) ? null : String(m._id)))}
+                        aria-label={`Freeze or block ${m.username}`}
+                        aria-expanded={moderating === String(m._id)}
+                        title="Freeze or block user"
+                        className="rounded p-1 hover:bg-red-500/15 hover:text-red-500"
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+              {admin && moderating === String(m._id) && (
+                <div className="mt-1 flex flex-wrap gap-1 pl-1 text-[11px]">
+                  {[
+                    { label: "Freeze 10 min", minutes: 10 },
+                    { label: "Freeze 1 hour", minutes: 60 },
+                    { label: "Freeze 24 hours", minutes: 24 * 60 },
+                  ].map((o) => (
+                    <button
+                      key={o.minutes}
+                      type="button"
+                      onClick={() => {
+                        setModerating(null);
+                        void adminAction(() => blockAuthor({ messageId: id, minutes: o.minutes }));
+                      }}
+                      className="rounded-full px-2 py-0.5 font-semibold"
+                      style={fieldStyle}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Block ${m.username} for good? Their messages will be deleted.`)) {
+                        setModerating(null);
+                        void adminAction(() => blockAuthor({ messageId: id }));
+                      }
+                    }}
+                    className="rounded-full bg-red-600 px-2 py-0.5 font-semibold text-white"
+                  >
+                    Block permanently
+                  </button>
+                </div>
+              )}
+              </div>
+            );
+          })
         )}
       </div>
 
@@ -167,6 +291,12 @@ function ChatRoom({ dark }: { dark: boolean }) {
           >
             <GoogleMark /> Sign in with Google to chat
           </button>
+        ) : viewer?.isBlocked ? (
+          <p className="py-2 text-center text-xs" style={{ color: muted }}>
+            {viewer.blockedUntil
+              ? `You're frozen in the chat until ${new Date(viewer.blockedUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+              : "You've been blocked from posting in the chat."}
+          </p>
         ) : (
           <form onSubmit={submit} className="flex gap-2">
             <input
