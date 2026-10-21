@@ -85,9 +85,13 @@ function supportsInputOptions(args) {
 // them as fast as they arrive makes the stream run ahead of viewers, so players skip forward
 // to catch up. Read live input at real-time speed instead, with a short initial burst so
 // channels still start quickly (-readrate_initial_burst needs ffmpeg 6.1+; else plain -re).
-const liveReadRateArgs = supportsInputOptions(["-readrate", "1", "-readrate_initial_burst", "10"])
-  ? ["-readrate", "1", "-readrate_initial_burst", "10"]
-  : ["-re"];
+// After the provider pauses, -readrate_catchup (ffmpeg 7.1+) reads up to 1.5x until back on
+// time: at a strict 1x every pause would shrink viewers' buffers for good, until they stall.
+const READ_RATE = ["-readrate", "1", "-readrate_initial_burst", "10"];
+const READ_RATE_CATCHUP = [...READ_RATE, "-readrate_catchup", "1.5"];
+const liveReadRateArgs = supportsInputOptions(READ_RATE_CATCHUP)
+  ? READ_RATE_CATCHUP
+  : supportsInputOptions(READ_RATE) ? READ_RATE : ["-re"];
 
 // After a provider reconnect the timestamps jump; by default ffmpeg fills the gap by
 // repeating frames ("More than 1000 frames duplicated"), which viewers see as a freeze.

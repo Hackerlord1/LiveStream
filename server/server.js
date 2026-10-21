@@ -366,6 +366,28 @@ function sendJson(req, res, status, body, extraHeaders = {}) {
   res.end(json);
 }
 
+// Segments are cut every 4 s; one much longer means the source timestamps jumped
+const MAX_COPY_SEGMENT_SECONDS = 15;
+// No new segment for this long, while frames keep arriving, means the segmenter is stuck
+const MAX_PLAYLIST_IDLE_MS = 25000;
+
+/** Why a copy-mode channel's playlist is broken (see the health check), or null if it's fine. */
+function copyPlaylistProblem(channelId, framesArriving) {
+  const file = path.join(HLS_DIR, `${channelId}.m3u8`);
+  let text, modifiedAt;
+  try {
+    text = fs.readFileSync(file, "utf8");
+    modifiedAt = fs.statSync(file).mtimeMs;
+  } catch {
+    return null; // no playlist yet
+  }
+  const longest = Math.max(0, ...[...text.matchAll(/#EXTINF:([\d.]+)/g)].map((m) => Number(m[1])));
+  if (longest > MAX_COPY_SEGMENT_SECONDS) return `a ${Math.round(longest)} s segment`;
+  const idle = Date.now() - modifiedAt;
+  if (framesArriving && idle > MAX_PLAYLIST_IDLE_MS) return `no new segment for ${Math.round(idle / 1000)} s`;
+  return null;
+}
+
 function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
   const m3u8Path = path.join(HLS_DIR, `${channelId}.m3u8`);
   const baseArgs = [
@@ -405,9 +427,13 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
       "-vf", "yadif=mode=0:deint=interlaced",
       ...tools.fpsPassthroughArgs,
       "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-tune", "zerolatency",
-      "-crf", "23",
+      // Only HEVC channels and channels whose copied video broke are re-encoded, so spend
+      // the CPU on picture quality: ultrafast/CRF 23 turned grass into blocks
+      "-preset", "veryfast",
+      "-crf", "20",
+      // A ceiling so a busy scene can't flood viewers' connections
+      "-maxrate", "10000k",
+      "-bufsize", "20000k",
       "-pix_fmt", "yuv420p", // browsers can't decode 10-bit
       "-g", "48",
       "-sc_threshold", "0",
@@ -587,6 +613,18 @@ async function startStream(channelId, forceReencode = false) {
 
       const healthCheck = setInterval(() => {
         const timeSinceLastOutput = Date.now() - lastOutput;
+        // Copy mode passes the provider's timestamps through. When they jump (seen: +25 h),
+        // the playlist gets absurd segments (0.1 s, 92,197 s) or stops growing while frames
+        // still arrive, and players stall with video already downloaded. Re-encoding writes
+        // clean timestamps, so switch this channel to it for good.
+        if (!forceReencode && streamStarted) {
+          const problem = copyPlaylistProblem(channelId, Date.now() - lastProgress < 10000);
+          if (problem) {
+            copyFailedChannels.add(channelId);
+            killAndRestart(`Copied video broke (${problem})`, true);
+            return;
+          }
+        }
         if (!streamStarted && timeSinceLastOutput > 10000) {
           killAndRestart("Stream didn't start", true);
         } else if (timeSinceLastOutput > 15000) {
