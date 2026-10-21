@@ -21,10 +21,45 @@ interface League {
   channels: LeagueChannel[];
 }
 
-/** "COMO VS MANCHESTER UNITED 17:45 CET" → { match: "COMO VS MANCHESTER UNITED", time: "17:45 CET" } */
-function splitKickoff(title: string): { match: string; time: string | null } {
+interface Game {
+  key: string;
+  title: string;
+  time: string | null;
+  /** One button per channel, labelled by language ("EN", "EN 2" when a language has several) */
+  watch: { id: string; label: string; language: string; number?: string }[];
+}
+
+// Short labels for the language buttons
+const LANGUAGE_CODES: Record<string, string> = {
+  English: "EN", French: "FR", Arabic: "AR", Spanish: "ES", German: "DE",
+  Italian: "IT", Albanian: "ALB", Portuguese: "PT",
+};
+
+/** "EN - COMO VS MANCHESTER UNITED 17:45 CET [BK1]" → title "COMO VS MANCHESTER UNITED", time "17:45 CET" */
+function parseChannelName(name: string): { title: string; time: string | null } {
+  const title = splitTag(name).title.replace(/\s*\[[^\]]*\]\s*$/, "").trim();
   const found = title.match(/^(.*?)\s+(\d{1,2}:\d{2}(?:\s*[A-Z]{2,4})?)\s*$/);
-  return found ? { match: found[1], time: found[2] } : { match: title, time: null };
+  return found ? { title: found[1], time: found[2] } : { title, time: null };
+}
+
+/** The league's channels grouped into one entry per game, with a button per language. */
+function groupGames(channels: LeagueChannel[]): Game[] {
+  const games = new Map<string, Game>();
+  for (const ch of channels) {
+    const { title, time } = parseChannelName(ch.name);
+    const key = title.toUpperCase();
+    const game = games.get(key) ?? { key, title, time, watch: [] };
+    game.time ??= time;
+    const code = LANGUAGE_CODES[ch.language] ?? ch.language.slice(0, 3).toUpperCase();
+    const sameLanguage = game.watch.filter((w) => w.language === ch.language).length;
+    game.watch.push({ id: ch.id, label: sameLanguage ? `${code} ${sameLanguage + 1}` : code, language: ch.language, number: ch.number });
+    games.set(key, game);
+  }
+  // Games (with a kick-off time) first, by time; then channels like "MULTI SCREEN"
+  return [...games.values()].sort((a, b) => {
+    if (Boolean(a.time) !== Boolean(b.time)) return a.time ? -1 : 1;
+    return (a.time || "").localeCompare(b.time || "") || a.title.localeCompare(b.title);
+  });
 }
 
 const chipStyle = {
@@ -34,13 +69,13 @@ const chipStyle = {
 };
 
 /**
- * Chips for the big football competitions (logo, name, channels showing a match); picking
- * one lists its channels, filterable by commentary language.
+ * "Watch on BraveStream TV": the big football competitions on our own channels. Opens on
+ * the league with the most games on; each game is one card with a button per language.
  */
 export default function LeagueChannels() {
   const [leagues, setLeagues] = useState<League[]>([]);
+  // null = not chosen yet (the busiest league is shown); "" = closed
   const [selected, setSelected] = useState<string | null>(null);
-  const [language, setLanguage] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -56,33 +91,45 @@ export default function LeagueChannels() {
     };
   }, []);
 
-  const league = leagues.find((l) => l.key === selected) ?? null;
-
-  const languages = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const ch of league?.channels ?? []) counts.set(ch.language, (counts.get(ch.language) || 0) + 1);
-    return [...counts];
-  }, [league]);
-
-  const shown = (league?.channels ?? []).filter((ch) => language === "all" || ch.language === language);
+  const busiest = useMemo(
+    () => leagues.reduce<League | null>((best, l) => (l.channels.length > (best?.channels.length ?? 0) ? l : best), null),
+    [leagues]
+  );
+  const activeKey = selected ?? busiest?.key ?? "";
+  const league = leagues.find((l) => l.key === activeKey) ?? null;
+  const games = useMemo(() => groupGames(league?.channels ?? []), [league]);
 
   if (leagues.length === 0) return null;
 
-  function choose(key: string) {
-    setSelected((current) => (current === key ? null : key));
-    setLanguage("all");
-  }
-
   return (
-    <div className="mb-6">
+    <section
+      className="mb-6 rounded-2xl p-4 sm:p-5"
+      style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-primary)" }}
+      aria-labelledby="bravestream-tv-heading"
+    >
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
+          <Tv className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <h2 id="bravestream-tv-heading" className="text-lg font-bold sm:text-xl" style={{ color: "var(--text-primary)" }}>
+            Watch on BraveStream TV
+          </h2>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Live football on our own channels: pick a league, then the language you want to watch in.
+          </p>
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {leagues.map((l) => {
-          const active = l.key === selected;
+          const active = l.key === activeKey;
+          const gameCount = groupGames(l.channels).length;
           return (
             <button
               key={l.key}
               type="button"
-              onClick={() => choose(l.key)}
+              onClick={() => setSelected(active ? "" : l.key)}
               aria-pressed={active}
               className={`flex items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-3 text-sm transition-all duration-300 ${active ? "bg-red-600 text-white shadow-md" : ""}`}
               style={active ? undefined : chipStyle}
@@ -98,8 +145,9 @@ export default function LeagueChannels() {
               <span
                 className="rounded-full px-1.5 py-0.5 text-xs"
                 style={{ backgroundColor: active ? "rgba(255,255,255,0.3)" : "var(--surface-secondary)" }}
+                title={`${gameCount} game${gameCount === 1 ? "" : "s"} on`}
               >
-                {l.channels.length}
+                {gameCount}
               </span>
             </button>
           );
@@ -107,65 +155,51 @@ export default function LeagueChannels() {
       </div>
 
       {league && (
-        <section
-          className="mt-3 rounded-2xl p-4"
-          style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-primary)" }}
-          aria-label={`${league.name} channels`}
-        >
-          <h2 className="mb-3 text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-            {league.name} channels
-          </h2>
-
-          {league.channels.length === 0 ? (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              No {league.name} matches on these channels right now. They appear here when a match is scheduled.
+        <div className="mt-4">
+          {games.length === 0 ? (
+            <p className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-muted)" }}>
+              No {league.name} match on our channels right now. Games appear here when they&apos;re scheduled.
             </p>
           ) : (
-            <>
-              {languages.length > 1 && (
-                <div className="mb-3 flex flex-wrap gap-1.5">
-                  {[["all", league.channels.length] as const, ...languages].map(([value, count]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setLanguage(value)}
-                      aria-pressed={language === value}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${language === value ? "bg-red-600 text-white" : ""}`}
-                      style={language === value ? undefined : chipStyle}
-                    >
-                      {value === "all" ? "All languages" : value} · {count}
-                    </button>
-                  ))}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {games.map((game) => (
+                <div
+                  key={game.key}
+                  className="flex flex-col gap-2 rounded-xl p-3"
+                  style={{ backgroundColor: "var(--surface-secondary)", border: "1px solid var(--border-secondary)" }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="line-clamp-2 text-sm font-bold leading-snug" style={{ color: "var(--text-primary)" }}>
+                      {game.title}
+                    </p>
+                    {game.time && (
+                      <span className="flex-shrink-0 rounded-md bg-red-600/10 px-1.5 py-0.5 text-[11px] font-semibold text-red-600">
+                        {game.time}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Watch in:</span>
+                    {game.watch.map((w) => (
+                      <Link
+                        key={w.id}
+                        // from=home: the player's back button returns to the home page
+                        href={`/iptv/watch/${w.id}?from=home`}
+                        title={`${w.language}${w.number ? ` · CH ${w.number}` : ""}`}
+                        className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-bold transition-opacity hover:opacity-85"
+                        // Inline so the site's global link colour can't override it
+                        style={{ color: "#fff" }}
+                      >
+                        {w.label}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {shown.map((ch) => {
-                  const { match, time } = splitKickoff(splitTag(ch.name).title);
-                  return (
-                    <Link
-                      key={ch.id}
-                      // from=home: the player's back button returns to the home page
-                      href={`/iptv/watch/${ch.id}?from=home`}
-                      title={ch.name}
-                      className="group flex flex-col gap-1 rounded-xl p-3 transition-all hover:shadow-lg"
-                      style={{ backgroundColor: "var(--surface-secondary)", border: "1px solid var(--border-secondary)" }}
-                    >
-                      <span className="flex items-center justify-between gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                        <span className="rounded-md bg-red-600/10 px-1.5 py-0.5 font-semibold text-red-600">{ch.language}</span>
-                        <span>{[time, ch.number && `CH ${ch.number}`].filter(Boolean).join(" · ")}</span>
-                      </span>
-                      <span className="line-clamp-2 text-sm font-semibold group-hover:text-red-500" style={{ color: "var(--text-primary)" }}>
-                        {match}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </>
+              ))}
+            </div>
           )}
-        </section>
+        </div>
       )}
-    </div>
+    </section>
   );
 }

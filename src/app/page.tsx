@@ -647,6 +647,10 @@ export default function Home() {
                     </div>
                 )}
 
+                {/* Watch on BraveStream TV: the big competitions on our own channels, as its own
+                    section above the filters (so it isn't mistaken for a match filter) */}
+                <LeagueChannels />
+
                 {/* NO DATA STATE */}
                 {matches.length === 0 && !error ? (
                     <NoDataState onRetry={loadMatches} />
@@ -955,9 +959,6 @@ export default function Home() {
                                 </button>
                             ))}
                         </div>
-
-                        {/* Channels of the big football competitions */}
-                        <LeagueChannels />
 
                         {/* Matches Section */}
                         <section className="mb-12">
