@@ -15,8 +15,10 @@ const tools = require("./tools");
 
 // MPEG-TS is a run of 188-byte packets; a viewer has to start on a packet boundary
 const TS_PACKET = 188;
-// Recent stream kept per channel, so a new viewer starts with data instead of waiting
-const BACKLOG_BYTES = 2 * 1024 * 1024;
+// Recent stream kept per channel and sent to each new viewer at once: their head start.
+// The relay reads at real time, so this is all the buffer a player gets; 8 MB is about
+// 10-20 s of a 3-6 Mbps channel (viewers then watch that far behind live).
+const BACKLOG_BYTES = 8 * 1024 * 1024;
 // A viewer this far behind (unsent bytes) is dropped so one slow phone can't hold up others
 const MAX_CLIENT_BACKLOG = 8 * 1024 * 1024;
 // Keep the provider connection this long after the last viewer leaves (quick channel flips)
