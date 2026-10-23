@@ -350,7 +350,16 @@ async function stream(req, res, key, createLink, start = 0) {
   return streamRemux(res, key, createLink, info, safeStart);
 }
 
+/**
+ * GET /api/app/…/file: the original file, proxied with Range support (seeking) and no
+ * conversion. For the Android app, whose player handles MKV, HEVC and AC3 itself.
+ */
+async function streamFile(req, res, key, createLink) {
+  if (activeSessions >= MAX_VOD_SESSIONS) return busy(res);
+  return streamDirect(req, res, key, createLink);
+}
+
 /** Movies/episodes being played right now. */
 const sessionCount = () => activeSessions;
 
-module.exports = { describe, stream, sessionCount };
+module.exports = { describe, stream, streamFile, sessionCount };

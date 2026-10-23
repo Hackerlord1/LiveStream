@@ -335,6 +335,20 @@ function buildLeagues() {
   });
 }
 
+// Categories that actually have items, with counts, for the app's filters (cached per list)
+const appCategoryCache = new Map(); // kind -> { items, list }
+function appCategories(kind, items, categories) {
+  const cached = appCategoryCache.get(kind);
+  if (cached && cached.items === items) return cached.list;
+  const counts = new Map();
+  for (const item of items) counts.set(String(item.category_id), (counts.get(String(item.category_id)) || 0) + 1);
+  const list = categories
+    .filter((c) => c.id !== "*" && counts.has(String(c.id)))
+    .map((c) => ({ id: String(c.id), title: c.title, count: counts.get(String(c.id)) }));
+  appCategoryCache.set(kind, { items, list });
+  return list;
+}
+
 // Only what the movie/series grids show; full items come from /api/vod/:id and /api/series/:id
 function listFields(item) {
   return {
@@ -879,6 +893,54 @@ const server = http.createServer(async (req, res) => {
     const channel = findChannel(appLiveMatch[1]);
     if (!channel) return sendJson(req, res, 404, { error: "Channel not found" });
     return appRelay.serve(req, res, channel);
+  }
+
+  // ---- Android app: movies and series a page at a time (the full lists are too big for a phone) ----
+  const appCatalogMatch = url.pathname.match(/^\/api\/app\/(vod|series)(\/categories)?$/);
+  if (appCatalogMatch) {
+    const { items, categories } = catalogue[appCatalogMatch[1]];
+    if (appCatalogMatch[2]) {
+      return sendJson(req, res, 200, { categories: appCategories(appCatalogMatch[1], items, categories) });
+    }
+    const page = Math.max(0, Number(url.searchParams.get("page")) || 0);
+    const size = Math.min(100, Math.max(1, Number(url.searchParams.get("size")) || 60));
+    const category = url.searchParams.get("category") || "";
+    const words = (url.searchParams.get("q") || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = items.filter((item) =>
+      (!category || String(item.category_id) === category) &&
+      (words.length === 0 || words.every((w) => String(item.name || "").toLowerCase().includes(w))));
+    const slice = matches.slice(page * size, (page + 1) * size).map(listFields);
+    return sendJson(req, res, 200, { items: slice, total: matches.length, page, hasMore: (page + 1) * size < matches.length });
+  }
+
+  // ---- Android app: the original movie / episode file (seekable, no conversion) ----
+  const appVodFileMatch = url.pathname.match(/^\/api\/app\/vod\/(\d{1,12})\/file$/);
+  if (appVodFileMatch) {
+    const movie = catalogue.vod.items.find((m) => String(m.id) === appVodFileMatch[1]);
+    if (!movie?.cmd) return sendJson(req, res, 404, { error: "Movie not found" });
+    try {
+      return await vod.streamFile(req, res, `vod:${movie.id}`, () => portal.createVodLink(movie.cmd));
+    } catch (err) {
+      console.error(`❌ App movie ${movie.id} failed: ${err.message}`);
+      if (!res.headersSent) return sendJson(req, res, 502, { error: "This movie can't be played right now" });
+      return res.end();
+    }
+  }
+  const appEpisodeFileMatch = url.pathname.match(/^\/api\/app\/series\/([\w:-]{1,40})\/file$/);
+  if (appEpisodeFileMatch) {
+    const id = appEpisodeFileMatch[1];
+    const seasonId = url.searchParams.get("season") || "";
+    const episode = url.searchParams.get("episode") || "";
+    if (!/^[\w:-]{1,40}$/.test(seasonId) || !/^\d{1,4}$/.test(episode)) return sendJson(req, res, 400, { error: "Invalid episode" });
+    try {
+      const season = (await getSeasons(id)).find((s) => String(s.id) === seasonId);
+      if (!season?.cmd) return sendJson(req, res, 404, { error: "Episode not found" });
+      return await vod.streamFile(req, res, `ep:${seasonId}:${episode}`, () => portal.createVodLink(season.cmd, episode));
+    } catch (err) {
+      console.error(`❌ App episode ${id} ${seasonId}/${episode} failed: ${err.message}`);
+      if (!res.headersSent) return sendJson(req, res, 502, { error: "This episode can't be played right now" });
+      return res.end();
+    }
   }
 
   const radioMatch = url.pathname.match(/^\/api\/radio\/(\d{1,10})\/listen$/);
