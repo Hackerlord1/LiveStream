@@ -11,6 +11,8 @@ const crypto = require("crypto");
 const portal = require("./portal");
 const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
 const vod = require("./vod");
+// Raw live relay for the Android app (the website uses the HLS streams below)
+const appRelay = require("./relay");
 const { buildGames } = require("./games");
 const { relatedChannels } = require("./related");
 const tools = require("./tools");
@@ -795,6 +797,7 @@ const server = http.createServer(async (req, res) => {
       activeStreams: Object.keys(streams).filter(id => !(streams[id] instanceof Promise)).length,
       initializingStreams: Object.keys(streams).filter(id => streams[id] instanceof Promise).length,
       totalViewers: Object.values(viewers).reduce((a, b) => a + b, 0),
+      appRelays: appRelay.status(),
       uptime: process.uptime(),
     });
   }
@@ -870,6 +873,14 @@ const server = http.createServer(async (req, res) => {
 
   // Radio arrives as MPEG-TS, which browsers can't play in <audio>, so ffmpeg converts it
   // to MP3. Serving it from here also keeps plain-HTTP URLs off the HTTPS site.
+  // ---- Android app: the channel's original stream, relayed (see relay.js) ----
+  const appLiveMatch = url.pathname.match(/^\/api\/app\/live\/(\d{1,10})\.ts$/);
+  if (appLiveMatch) {
+    const channel = findChannel(appLiveMatch[1]);
+    if (!channel) return sendJson(req, res, 404, { error: "Channel not found" });
+    return appRelay.serve(req, res, channel);
+  }
+
   const radioMatch = url.pathname.match(/^\/api\/radio\/(\d{1,10})\/listen$/);
   if (radioMatch) {
     const station = catalogue.radio.items.find((s) => String(s.id) === radioMatch[1]);
@@ -1131,6 +1142,7 @@ function gracefulShutdown(signal) {
   });
   
   Object.keys(viewers).forEach(id => delete viewers[id]);
+  appRelay.closeAll();
   Object.keys(restartCount).forEach(id => delete restartCount[id]);
   Object.keys(reencodeAttempts).forEach(id => delete reencodeAttempts[id]);
   
@@ -1161,6 +1173,7 @@ if (RESTART_AFTER_HOURS > 0) {
     const uptimeHours = process.uptime() / 3600;
     if (uptimeHours < RESTART_AFTER_HOURS) return;
     const busy = Object.values(viewers).some((n) => n > 0) || activeRadioProxies > 0 || vod.sessionCount() > 0
+      || appRelay.status().viewers > 0
       || Object.values(catalogueStatus()).some((c) => c.loading);
     if (busy && uptimeHours < RESTART_AFTER_HOURS + RESTART_MAX_WAIT_HOURS) return;
     gracefulShutdown(`scheduled restart after ${Math.round(uptimeHours)} h uptime${busy ? " (still busy, restarting anyway)" : ""}`);
