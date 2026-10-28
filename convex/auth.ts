@@ -8,6 +8,9 @@ function allowedOrigins() {
     .map((url) => new URL(url).origin);
 }
 
+// Where the Android app (bravestream_app, lib/auth.dart) catches the end of a sign-in
+const APP_REDIRECT = "bravestream://auth";
+
 // Google sign-in, used to post in the live TV chat. Needs AUTH_GOOGLE_ID,
 // AUTH_GOOGLE_SECRET, SITE_URL, JWT_PRIVATE_KEY and JWKS set on the deployment.
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
@@ -17,6 +20,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     async redirect({ redirectTo }) {
       const site = process.env.SITE_URL;
       if (site && (redirectTo.startsWith("/") || redirectTo.startsWith("?"))) return `${site}${redirectTo}`;
+      if (redirectTo === APP_REDIRECT) return redirectTo;
       try {
         if (allowedOrigins().includes(new URL(redirectTo).origin)) return redirectTo;
       } catch {

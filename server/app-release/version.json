@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
+  "versionCode": 3,
+  "versionName": "1.2.0",
   "minVersionCode": 0,
-  "notes": "New app icon, and the app now tells you when an update is ready."
+  "notes": "Sign in with Google to chat during live TV. Better layout on tablets, TV boxes and in landscape. EFL club channels, and a new app icon."
 }
