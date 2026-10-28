@@ -290,7 +290,11 @@ const LEAGUES = [
   { key: "laliga", name: "LaLiga", match: /LA ?LIGA/i },
   { key: "seriea", name: "Serie A", match: /SERIE A\b/i },
   { key: "bundesliga", name: "Bundesliga", match: /BUNDESLIGA/i },
+  // The EFL has no VIP group: one channel per club ("EFL-CHAMP - BURNLEY FHD") in three groups
+  { key: "efl", name: "EFL", clubs: true, genres: /^EU \| UK \| (CHAMPIONSHIP|LEAGUE ONE|LEAGUE TWO)$/i },
 ];
+const EFL_DIVISIONS = { CHAMP: "Championship", L1: "League One", L2: "League Two" };
+const EFL_NAME_RE = /^EFL-(CHAMP|L1|L2)\s*-\s*(.*?)(?:\s+(?:FHD|HD|SD|HEVC|4K)\S*)?\s*$/i;
 
 const LANGUAGES = {
   FRENCH: "French", FR: "French",
@@ -307,11 +311,13 @@ const PLACEHOLDER_RE = /\bNO (?:MATCH|EVENT)\b/i;
 
 function buildLeagues() {
   const { items, categories } = catalogue.channels;
-  return LEAGUES.map(({ key, name, match }) => {
-    const genre = categories.find((g) => /^VIP\s*\|/i.test(g.title || "") && match.test(g.title));
-    const rows = genre
-      ? items.filter((ch) => String(ch.tv_genre_id) === String(genre.id)).sort((a, b) => Number(a.number) - Number(b.number))
-      : [];
+  return LEAGUES.map(({ key, name, match, genres, clubs }) => {
+    const genreIds = new Set(
+      categories
+        .filter((g) => (genres ? genres.test(g.title || "") : /^VIP\s*\|/i.test(g.title || "") && match.test(g.title)))
+        .map((g) => String(g.id))
+    );
+    const rows = items.filter((ch) => genreIds.has(String(ch.tv_genre_id))).sort((a, b) => Number(a.number) - Number(b.number));
 
     // The league's logo is the one most of its channels use
     const logoCounts = new Map();
@@ -328,10 +334,16 @@ function buildLeagues() {
         continue;
       }
       if (PLACEHOLDER_RE.test(ch.name)) continue;
+      if (clubs) {
+        const club = EFL_NAME_RE.exec(ch.name);
+        if (!club) continue;
+        channels.push({ ...channelFields(ch), name: club[2], language: "English", division: EFL_DIVISIONS[club[1].toUpperCase()] });
+        continue;
+      }
       const tag = (ch.name.match(/^([A-Z]{2,4})\s*[-|:]/) || [])[1];
       channels.push({ ...channelFields(ch), language: LANGUAGES[tag] || language || "Other" });
     }
-    return { key, name, logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
+    return { key, name, ...(clubs && { clubs: true }), logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
   });
 }
 
@@ -364,6 +376,21 @@ function listFields(item) {
 }
 
 // JSON response, gzipped when the client accepts it (the catalogues are large)
+// The Android app offered for download and as an in-app update
+const APP_RELEASE_DIR = path.join(__dirname, "app-release");
+const APP_APK = path.join(APP_RELEASE_DIR, "bravestream.apk");
+
+/** version.json plus the APK's size, or null when no release is published. */
+function readAppRelease() {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(APP_RELEASE_DIR, "version.json"), "utf8"));
+    const { size } = fs.statSync(APP_APK);
+    return { ...info, size, apkUrl: "/download/bravestream.apk" };
+  } catch {
+    return null;
+  }
+}
+
 function sendJson(req, res, status, body, extraHeaders = {}) {
   const json = JSON.stringify(body);
   const headers = { "Content-Type": "application/json", ...extraHeaders };
@@ -887,6 +914,26 @@ const server = http.createServer(async (req, res) => {
 
   // Radio arrives as MPEG-TS, which browsers can't play in <audio>, so ffmpeg converts it
   // to MP3. Serving it from here also keeps plain-HTTP URLs off the HTTPS site.
+  // ---- Android app: the latest release (server/app-release/), read on every request so a new
+  // APK goes live by copying the files there, without a restart ----
+  if (url.pathname === "/api/app/version") {
+    const release = readAppRelease();
+    if (!release) return sendJson(req, res, 404, { error: "No app release published" });
+    return sendJson(req, res, 200, release, { "Cache-Control": "no-cache" });
+  }
+  if (url.pathname === "/download/bravestream.apk") {
+    const release = readAppRelease();
+    if (!release) return sendJson(req, res, 404, { error: "No app release published" });
+    res.writeHead(200, {
+      "Content-Type": "application/vnd.android.package-archive",
+      "Content-Length": release.size,
+      "Content-Disposition": `attachment; filename="BraveStream-${release.versionName}.apk"`,
+      "Cache-Control": "no-cache",
+    });
+    if (req.method === "HEAD") return res.end();
+    return fs.createReadStream(APP_APK).pipe(res);
+  }
+
   // ---- Android app: the channel's original stream, relayed (see relay.js) ----
   const appLiveMatch = url.pathname.match(/^\/api\/app\/live\/(\d{1,10})\.ts$/);
   if (appLiveMatch) {

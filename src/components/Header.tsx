@@ -11,6 +11,7 @@ const NAV_LINKS = [
     { href: '/', label: 'Home' },
     { href: '/channels', label: 'Channels' },
     { href: '/iptv', label: 'IPTV' },
+    { href: '/download', label: 'Get the App' },
     { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' },
 ] as const;

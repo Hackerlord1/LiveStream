@@ -284,6 +284,33 @@ npm install
 pm2 restart all
 ```
 
+Always restart after `npm run build`: a website left running across a rebuild serves pages that
+point at JS files the build deleted, and they fail with "This page couldn't load".
+
+### 11. Publishing an Android app update
+
+The website's **Get the App** page (`/download`) and the app's update prompt both read
+`server/app-release/` on the stream server, on every request, so no restart is needed.
+
+1. In `bravestream_app/pubspec.yaml`, raise the version, e.g. `1.1.0+2` → `1.2.0+3`. The number
+   after `+` (the build number) must go up every time: the app offers an update when the
+   server's `versionCode` is higher than its own.
+2. Build: `flutter build apk --release`. It is signed with the release key from
+   `android/key.properties`. Every update must use that same key, or Android refuses to install
+   it over the old app, so keep a backup of the key.
+3. Copy `build/app/outputs/flutter-apk/app-release.apk` to the server as
+   `server/app-release/bravestream.apk`.
+4. Edit `server/app-release/version.json`:
+   ```json
+   { "versionCode": 3, "versionName": "1.2.0", "minVersionCode": 0, "notes": "What's new" }
+   ```
+   `versionCode` and `versionName` match the new build. To force everyone below a version to
+   update (e.g. after an API change), set `minVersionCode` to it: those users can't dismiss
+   the prompt.
+
+Users see "Update available" the next time they open the app. **Update** downloads the APK in
+the browser, and Android asks them to install it over the old version. Settings are kept.
+
 ---
 
 ## Running locally (development)

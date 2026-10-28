@@ -12,11 +12,15 @@ interface LeagueChannel {
   number?: string;
   name: string;
   language: string;
+  /** EFL club channels: "Championship", "League One", "League Two" */
+  division?: string;
 }
 
 interface League {
   key: string;
   name: string;
+  /** One always-on channel per club (the EFL) rather than one per match */
+  clubs?: boolean;
   logo: string;
   channels: LeagueChannel[];
 }
@@ -48,7 +52,8 @@ function groupGames(channels: LeagueChannel[]): Game[] {
   for (const ch of channels) {
     const { title, time } = parseChannelName(ch.name);
     const key = title.toUpperCase();
-    const game = games.get(key) ?? { key, title, time, watch: [] };
+    // A club channel shows its division where a match shows its kick-off time
+    const game = games.get(key) ?? { key, title, time: time ?? ch.division ?? null, watch: [] };
     game.time ??= time;
     const code = LANGUAGE_CODES[ch.language] ?? ch.language.slice(0, 3).toUpperCase();
     const sameLanguage = game.watch.filter((w) => w.language === ch.language).length;
@@ -92,7 +97,8 @@ export default function LeagueChannels() {
   }, []);
 
   const busiest = useMemo(
-    () => leagues.reduce<League | null>((best, l) => (l.channels.length > (best?.channels.length ?? 0) ? l : best), null),
+    // Club channels are always there, so they'd always win: only count real matches
+    () => leagues.reduce<League | null>((best, l) => (!l.clubs && l.channels.length > (best?.channels.length ?? 0) ? l : best), null),
     [leagues]
   );
   const activeKey = selected ?? busiest?.key ?? "";
@@ -145,7 +151,7 @@ export default function LeagueChannels() {
               <span
                 className="rounded-full px-1.5 py-0.5 text-xs"
                 style={{ backgroundColor: active ? "rgba(255,255,255,0.3)" : "var(--surface-secondary)" }}
-                title={`${gameCount} game${gameCount === 1 ? "" : "s"} on`}
+                title={l.clubs ? `${gameCount} club channels` : `${gameCount} game${gameCount === 1 ? "" : "s"} on`}
               >
                 {gameCount}
               </span>

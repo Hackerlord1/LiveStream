@@ -53,3 +53,9 @@ server/node_modules/
 
 # Google OAuth client secrets (never commit)
 client_secret_*.json
+
+# Android app releases: the APK is copied to the server, not committed
+/server/app-release/*.apk
+
+# Deploy archives contain server/.env (IPTV credentials)
+deploy.tar.gz
