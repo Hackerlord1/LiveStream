@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.2.1",
+  "versionCode": 5,
+  "versionName": "1.2.2",
   "minVersionCode": 0,
-  "notes": "Sign in with Google to chat during live TV (now with the proper Google button). Better layout on tablets, TV boxes and in landscape. New app icon."
+  "notes": "Every VIP channel group in the Football tab: Formula 1, cricket, EuroLeague, concerts, 4K and more. Opens on the group with today's matches."
 }
