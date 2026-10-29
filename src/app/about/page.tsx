@@ -29,7 +29,7 @@ export default function AboutPage() {
 
                 {/* Hero */}
                 <section className="text-center mb-16">
-                    <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
+                    <h1 className="text-3xl md:text-4xl font-bold mb-3 ">
                         About BraveStream
                     </h1>
                     <p className="text-lg" style={{ color: 'var(--text-muted)' }}>

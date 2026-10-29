@@ -40,16 +40,18 @@ export default function DownloadPage() {
 
                 {/* Hero */}
                 <section className="text-center mb-14">
-                    <Image src="/app-icon.png" alt="BraveStream app icon" width={112} height={112} className="mx-auto mb-6 rounded-3xl shadow-lg" />
-                    <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
+                    <Image src="/app-icon.png" alt="BraveStream app icon" width={96} height={96} className="mx-auto mb-5 rounded-[22px]" />
+                    <h1 className="text-3xl md:text-4xl font-bold mb-2">
                         Get the BraveStream app
                     </h1>
-                    <p className="text-lg mb-8" style={{ color: 'var(--text-muted)' }}>
+                    <p className="mb-6" style={{ color: 'var(--text-muted)' }}>
                         Football, live TV, movies and radio in one app for Android.
                     </p>
                     <a
                         href={APK_URL}
-                        className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-lg font-semibold shadow-lg transition-colors"
+                        className="inline-flex items-center gap-2.5 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 font-semibold transition-colors"
+                        // Inline so the site's global link colour can't override it
+                        style={{ color: '#fff' }}
                     >
                         <FaDownload />
                         Download for Android

@@ -109,25 +109,21 @@ export default function LeagueChannels() {
 
   return (
     <section
-      className="mb-6 rounded-2xl p-4 sm:p-5"
+      className="mb-5 rounded-xl p-3 sm:p-4"
       style={{ backgroundColor: "var(--surface-primary)", border: "1px solid var(--border-primary)" }}
       aria-labelledby="bravestream-tv-heading"
     >
-      <div className="mb-3 flex items-start gap-3">
-        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
-          <Tv className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <h2 id="bravestream-tv-heading" className="text-lg font-bold sm:text-xl" style={{ color: "var(--text-primary)" }}>
-            Watch on BraveStream TV
-          </h2>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Live football on our own channels: pick a league, then the language you want to watch in.
-          </p>
-        </div>
+      <div className="mb-3">
+        <h2 id="bravestream-tv-heading" className="flex items-center gap-2 text-lg font-bold sm:text-xl" style={{ color: "var(--text-primary)" }}>
+          <Tv className="h-5 w-5 text-red-600" />
+          Watch on BraveStream TV
+        </h2>
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Pick a league, then the language you want.
+        </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap">
         {leagues.map((l) => {
           const active = l.key === activeKey;
           const gameCount = groupGames(l.channels).length;
@@ -137,20 +133,19 @@ export default function LeagueChannels() {
               type="button"
               onClick={() => setSelected(active ? "" : l.key)}
               aria-pressed={active}
-              className={`flex items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-3 text-sm transition-all duration-300 ${active ? "bg-red-600 text-white shadow-md" : ""}`}
+              className={`flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-lg py-1 pl-1 pr-2.5 text-sm transition-colors ${active ? "bg-red-600 text-white" : ""}`}
               style={active ? undefined : chipStyle}
             >
               <ChannelLogo
                 src={apiAsset(l.logo)}
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-md"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center overflow-hidden rounded"
                 style={{ backgroundColor: "var(--surface-secondary)" }}
                 imgClassName="max-h-full max-w-full object-contain p-0.5"
                 fallback={<Tv className="h-3.5 w-3.5" />}
               />
               <span className="font-medium">{l.name}</span>
               <span
-                className="rounded-full px-1.5 py-0.5 text-xs"
-                style={{ backgroundColor: active ? "rgba(255,255,255,0.3)" : "var(--surface-secondary)" }}
+                className="text-xs tabular-nums opacity-70"
                 title={l.clubs ? `${gameCount} club channels` : `${gameCount} game${gameCount === 1 ? "" : "s"} on`}
               >
                 {gameCount}

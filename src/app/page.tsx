@@ -28,7 +28,6 @@ import {
     FaFootballBall,
     FaHockeyPuck,
     FaEye,
-    FaHeart,
     FaPaypal
 } from "react-icons/fa";
 
@@ -188,6 +187,10 @@ const EmptyState = ({
     </div>
 );
 
+/** "SOCCER" -> "Soccer"; short names like "NFL" stay in capitals */
+const sportLabel = (sport: string) =>
+    sport.length <= 4 ? sport : sport.charAt(0) + sport.slice(1).toLowerCase();
+
 // ========== MATCH CARD COMPONENT ==========
 const MatchCard = ({ match }: { match: Match }) => {
     const createMatchSlug = (match: Match): string => {
@@ -217,15 +220,15 @@ const MatchCard = ({ match }: { match: Match }) => {
 
                 {/* Card Header */}
                 <div className="flex justify-between items-center mb-2.5 flex-shrink-0 w-full">
-                    <div className={`px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide flex-shrink-0 ${
+                    <div className={`px-2 py-0.5 rounded-md text-[11px] font-semibold flex-shrink-0 ${
                         match.status === 'live'
                             ? 'bg-red-500/15 text-red-600'
                             : match.status === 'upcoming'
                                 ? 'bg-blue-500/15 text-blue-600'
                                 : 'bg-gray-500/15 text-gray-500'
                     }`}>
-                        {match.status === 'live' ? '● LIVE' :
-                            match.status === 'upcoming' ? 'UPCOMING' : 'ENDED'}
+                        {match.status === 'live' ? '● Live' :
+                            match.status === 'upcoming' ? 'Upcoming' : 'Ended'}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                         <FaEye className="w-3 h-3" />
@@ -259,7 +262,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 WebkitBoxOrient: 'vertical',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
-                                wordBreak: 'break-all',
+                                overflowWrap: 'anywhere',
                                 hyphens: 'auto',
                             }}
                             title={match.homeTeam}
@@ -318,7 +321,7 @@ const MatchCard = ({ match }: { match: Match }) => {
                                 WebkitBoxOrient: 'vertical',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
-                                wordBreak: 'break-all',
+                                overflowWrap: 'anywhere',
                                 hyphens: 'auto',
                             }}
                             title={match.awayTeam}
@@ -356,10 +359,10 @@ const MatchCard = ({ match }: { match: Match }) => {
                     <div className="flex items-center gap-1 min-w-0 overflow-hidden">
                         <span className="flex-shrink-0">{getSportIconSmall(match.sport)}</span>
                         <span className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                            {match.sport}
+                            {sportLabel(match.sport)}
                         </span>
                     </div>
-                    <button className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded-lg text-[11px] font-semibold text-white transition-all duration-200 shadow-sm flex-shrink-0 whitespace-nowrap flex items-center gap-1">
+                    <button className="px-2.5 py-1 bg-red-600 hover:bg-red-700 rounded-md text-xs font-semibold text-white flex-shrink-0 whitespace-nowrap flex items-center gap-1">
                         <FaPlay className="w-2 h-2" />
                         Watch
                     </button>
@@ -517,38 +520,32 @@ export default function Home() {
 
             {/* ===== DONATION BANNER ===== */}
             {showDonateBanner && (
-                <div className="w-full bg-gradient-to-r from-[#0070ba] via-[#003087] to-[#0070ba] relative" style={{ zIndex: 50 }}>
-                    <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6">
-                        <div className="flex items-center justify-center py-3 gap-3 sm:gap-4">
-                            <FaHeart className="w-4 h-4 text-red-400 animate-pulse flex-shrink-0 hidden sm:block" />
-                            <p
-                                className="text-sm sm:text-base font-medium text-center"
-                                style={{ color: '#ffffff' }}
-                            >
-                                Enjoy free streams? Help us keep going!
-                            </p>
-                            <a
-                                href={paypalDonateUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 font-bold text-sm sm:text-base px-5 py-2 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 flex-shrink-0"
-                                style={{
-                                    backgroundColor: '#ffc439',
-                                    color: '#003087',
-                                }}
-                            >
-                                <FaPaypal className="w-5 h-5" />
-                                <span>Donate with PayPal</span>
-                            </a>
-                            <button
-                                onClick={() => setShowDonateBanner(false)}
-                                className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 transition-colors p-1"
-                                style={{ color: 'rgba(255, 255, 255, 0.6)' }}
-                                aria-label="Close donation banner"
-                            >
-                                <FaTimes className="w-4 h-4" />
-                            </button>
-                        </div>
+                <div
+                    className="w-full"
+                    style={{ backgroundColor: 'var(--surface-primary)', borderBottom: '1px solid var(--border-primary)' }}
+                >
+                    <div className="container mx-auto px-3 sm:px-4 md:px-5 lg:px-6 flex items-center gap-3 py-2">
+                        <p className="flex-1 min-w-0 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                            BraveStream is free. A small donation helps keep it running.
+                        </p>
+                        <a
+                            href={paypalDonateUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 font-semibold text-sm px-3 py-1.5 rounded-md flex-shrink-0 hover:opacity-90"
+                            style={{ backgroundColor: '#ffc439', color: '#003087' }}
+                        >
+                            <FaPaypal className="w-4 h-4" />
+                            Donate
+                        </a>
+                        <button
+                            onClick={() => setShowDonateBanner(false)}
+                            className="p-1 flex-shrink-0"
+                            style={{ color: 'var(--text-muted)' }}
+                            aria-label="Close donation banner"
+                        >
+                            <FaTimes className="w-3.5 h-3.5" />
+                        </button>
                     </div>
                 </div>
             )}
@@ -658,20 +655,20 @@ export default function Home() {
                     <>
                         {/* Filter Bar */}
                         <div
-                            className="mb-6 rounded-xl p-4 shadow-sm"
+                            className="mb-4 rounded-xl p-3"
                             style={{
                                 backgroundColor: 'var(--surface-primary)',
                                 border: '1px solid var(--border-primary)',
                             }}
                         >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex flex-wrap gap-2">
                                     {/* All Button */}
                                     <button
                                         onClick={() => setActiveFilter('all')}
-                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all ${
+                                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                                             activeFilter === 'all'
-                                                ? 'bg-red-600 text-white shadow-md'
+                                                ? 'bg-red-600 text-white'
                                                 : ''
                                         }`}
                                         style={activeFilter !== 'all' ? {
@@ -685,9 +682,9 @@ export default function Home() {
                                     {/* Live Button */}
                                     <button
                                         onClick={() => setActiveFilter('live')}
-                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
+                                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2 ${
                                             activeFilter === 'live'
-                                                ? 'bg-red-600 text-white shadow-md'
+                                                ? 'bg-red-600 text-white'
                                                 : ''
                                         }`}
                                         style={activeFilter !== 'live' ? {
@@ -702,9 +699,9 @@ export default function Home() {
                                     {/* Upcoming Button */}
                                     <button
                                         onClick={() => setActiveFilter('upcoming')}
-                                        className={`px-3 py-2 text-sm sm:text-base rounded-lg transition-all flex items-center gap-2 ${
+                                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2 ${
                                             activeFilter === 'upcoming'
-                                                ? 'bg-blue-600 text-white shadow-md'
+                                                ? 'bg-red-600 text-white'
                                                 : ''
                                         }`}
                                         style={activeFilter !== 'upcoming' ? {
@@ -720,7 +717,7 @@ export default function Home() {
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setShowFilters(!showFilters)}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
+                                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors"
                                         style={{
                                             backgroundColor: 'var(--surface-secondary)',
                                             color: 'var(--text-secondary)',
@@ -732,7 +729,7 @@ export default function Home() {
                                     </button>
                                     <button
                                         onClick={resetFilters}
-                                        className="flex items-center gap-2 px-3 py-2 text-sm transition-colors"
+                                        className="flex items-center gap-2 px-2 py-1.5 text-sm transition-colors"
                                         style={{ color: 'var(--text-muted)' }}
                                     >
                                         <FaTimes className="w-2 h-2 sm:w-3 sm:h-3" />
@@ -913,12 +910,12 @@ export default function Home() {
                         )}
 
                         {/* Sports Quick Filter */}
-                        <div className="flex flex-wrap gap-2 mb-6">
+                        <div className="flex gap-2 mb-5 overflow-x-auto pb-1 sm:flex-wrap">
                             <button
                                 onClick={() => setSelectedSport('all')}
-                                className={`px-3 py-2 text-sm rounded-lg transition-all ${
+                                className={`flex-shrink-0 px-3 py-1.5 text-sm rounded-lg transition-colors ${
                                     selectedSport === 'all'
-                                        ? 'bg-red-600 text-white shadow-md'
+                                        ? 'bg-red-600 text-white'
                                         : ''
                                 }`}
                                 style={selectedSport !== 'all' ? {
@@ -933,9 +930,9 @@ export default function Home() {
                                 <button
                                     key={sport}
                                     onClick={() => setSelectedSport(sport)}
-                                    className={`px-3 py-2 text-sm rounded-lg transition-all duration-300 flex items-center gap-2 ${
+                                    className={`flex-shrink-0 whitespace-nowrap px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2 ${
                                         selectedSport === sport
-                                            ? 'bg-red-600 text-white shadow-md'
+                                            ? 'bg-red-600 text-white'
                                             : ''
                                     }`}
                                     style={selectedSport !== sport ? {
@@ -945,17 +942,8 @@ export default function Home() {
                                     } : undefined}
                                 >
                                     {getSportIconSmall(sport)}
-                                    <span className="font-medium">{sport}</span>
-                                    <span
-                                        className="text-xs px-1.5 py-0.5 rounded-full"
-                                        style={{
-                                            backgroundColor: selectedSport === sport
-                                                ? 'rgba(255,255,255,0.3)'
-                                                : 'var(--surface-secondary)',
-                                        }}
-                                    >
-                                        {count}
-                                    </span>
+                                    <span className="font-medium">{sportLabel(sport)}</span>
+                                    <span className="text-xs opacity-70 tabular-nums">{count}</span>
                                 </button>
                             ))}
                         </div>
@@ -964,18 +952,12 @@ export default function Home() {
                         <section className="mb-12">
                             <div className="flex items-center justify-between mb-4">
                                 <h2
-                                    className="text-xl sm:text-2xl font-bold"
+                                    className="text-lg sm:text-xl font-bold"
                                     style={{ color: 'var(--text-primary)' }}
                                 >
-                                    {activeFilter === 'all' ? 'All Matches' :
-                                        activeFilter === 'live' ? 'Live Matches' : 'Upcoming Matches'}
-                                    <span
-                                        className="ml-2 px-2 py-1 text-xs sm:text-sm rounded-full"
-                                        style={{
-                                            backgroundColor: 'var(--error-bg)',
-                                            color: 'var(--error-text)',
-                                        }}
-                                    >
+                                    {activeFilter === 'all' ? 'All matches' :
+                                        activeFilter === 'live' ? 'Live now' : 'Coming up'}
+                                    <span className="ml-2 text-sm font-normal tabular-nums" style={{ color: 'var(--text-muted)' }}>
                                         {filteredMatches.length}
                                     </span>
                                 </h2>
@@ -984,7 +966,7 @@ export default function Home() {
                             {filteredMatches.length === 0 ? (
                                 <EmptyState searchTerm={searchTerm} onReset={resetFilters} />
                             ) : (
-                                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5 md:gap-6">
+                                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                                     {filteredMatches.map((match) => (
                                         <MatchCard key={match.gameID} match={match} />
                                     ))}

@@ -62,24 +62,15 @@ export default function Header({ onSearch, searchValue = '' }: {
                 style={{
                     backgroundColor: 'var(--neu-bg-page)',
                     borderBottom: '1px solid var(--border-primary)',
-                    boxShadow: '0 1px 3px var(--shadow-color)',
                 }}
             >
                 <div className="max-w-7xl mx-auto px-4">
-                    <div className="flex items-center justify-between h-16">
+                    <div className="flex items-center justify-between h-14 sm:h-16">
 
                         {/* ========== LOGO ========== */}
-                        <Link href="/" className="flex items-center gap-3 group">
-                            <div
-                                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300"
-                                style={{
-                                    backgroundColor: 'var(--neu-bg)',
-                                    boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
-                                }}
-                            >
-                                <GiSoccerBall className="w-6 h-6 text-red-600 group-hover:scale-110 transition-transform" />
-                            </div>
-                            <span className="text-2xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
+                        <Link href="/" className="flex items-center gap-2" style={{ color: 'var(--brand-red)' }}>
+                            <GiSoccerBall className="w-7 h-7" />
+                            <span className="text-xl sm:text-2xl font-extrabold tracking-tight">
                                 BraveStream
                             </span>
                         </Link>
@@ -135,7 +126,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                                     style={{
                                         backgroundColor: 'var(--neu-bg)',
                                         color: 'var(--text-primary)',
-                                        boxShadow: 'inset 4px 4px 8px var(--neu-shadow-dark), inset -4px -4px 8px var(--neu-shadow-light)',
+                                        border: '1px solid var(--border-primary)',
                                     }}
                                 />
                                 <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -163,10 +154,10 @@ export default function Header({ onSearch, searchValue = '' }: {
                             {/* Mobile Menu Toggle */}
                             <button
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                className="lg:hidden p-2.5 rounded-xl transition-colors duration-300"
+                                className="lg:hidden p-2 rounded-lg transition-colors duration-300"
                                 style={{
                                     backgroundColor: 'var(--neu-bg)',
-                                    boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
+                                    border: '1px solid var(--border-primary)',
                                 }}
                                 aria-label="Toggle menu"
                             >
@@ -210,7 +201,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                                     className="p-2 rounded-xl transition-colors duration-300"
                                     style={{
                                         backgroundColor: 'var(--neu-bg)',
-                                        boxShadow: '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)',
+                                        border: '1px solid var(--border-primary)',
                                     }}
                                 >
                                     <FaTimes className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
@@ -231,7 +222,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                                     style={{
                                         backgroundColor: 'var(--neu-bg)',
                                         color: 'var(--text-primary)',
-                                        boxShadow: 'inset 4px 4px 8px var(--neu-shadow-dark), inset -4px -4px 8px var(--neu-shadow-light)',
+                                        border: '1px solid var(--border-primary)',
                                     }}
                                 />
                                 <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -254,9 +245,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                                             backgroundColor: pathname === link.href
                                                 ? 'var(--error-bg)'
                                                 : 'var(--neu-bg)',
-                                            boxShadow: pathname !== link.href
-                                                ? '4px 4px 8px var(--neu-shadow-dark), -4px -4px 8px var(--neu-shadow-light)'
-                                                : 'none',
+                                            border: '1px solid var(--border-secondary)',
                                             fontWeight: pathname === link.href ? '600' : '500',
                                         }}
                                     >
@@ -287,7 +276,7 @@ export default function Header({ onSearch, searchValue = '' }: {
             )}
 
             {/* Spacer for fixed header */}
-            <div className="h-16" aria-hidden="true" />
+            <div className="h-14 sm:h-16" aria-hidden="true" />
         </>
     );
 }

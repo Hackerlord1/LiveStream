@@ -628,7 +628,7 @@ useEffect(() => {
                         className="rounded-2xl p-5 mb-6 overflow-hidden transition-colors duration-300"
                         style={{
                             backgroundColor: 'var(--neu-bg)',
-                            boxShadow: '6px 6px 12px var(--neu-shadow-dark), -6px -6px 12px var(--neu-shadow-light)',
+                            border: '1px solid var(--border-primary)',
                         }}
                     >
                         <div className="flex flex-col md:flex-row items-center justify-between gap-4">

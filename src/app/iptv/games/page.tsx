@@ -222,7 +222,8 @@ function GameCard({ game, now }: { game: Game; now: number }) {
         <Link
           href={`/iptv/watch/${game.channelId}`}
           className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: isLive ? "var(--brand-red)" : "var(--text-secondary)" }}
+          // Inline colour so the site's global link colour can't override it
+          style={{ backgroundColor: isLive ? "var(--brand-red)" : "#52525b", color: "#fff" }}
         >
           <Play className="h-4 w-4 fill-current" /> {isLive ? "Watch live" : "Open channel"}
         </Link>

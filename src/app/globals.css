@@ -19,12 +19,12 @@
 
     /* ========== LIGHT MODE (Default) ========== */
 
-    /* Neumorphic Colors */
-    --neu-bg: #e0e0e0;
-    --neu-bg-page: #e8e8e8;
-    --neu-shadow-dark: #bebebe;
-    --neu-shadow-light: #ffffff;
-    --neu-shadow-darker: #b0b0b0;
+    /* Surfaces (the --neu-* names are kept; the old raised/inset shadows are now a faint edge) */
+    --neu-bg: #ffffff;
+    --neu-bg-page: #f4f4f5;
+    --neu-shadow-dark: rgba(0, 0, 0, 0.06);
+    --neu-shadow-light: transparent;
+    --neu-shadow-darker: rgba(0, 0, 0, 0.1);
 
     /* Text Colors */
     --text-primary: #111827;
@@ -45,8 +45,8 @@
     --surface-hover: rgba(0, 0, 0, 0.05);
 
     /* Border Colors */
-    --border-primary: #d1d5db;
-    --border-secondary: #e5e7eb;
+    --border-primary: #e4e4e7;
+    --border-secondary: #ececee;
     --border-focus: var(--brand-red);
 
     /* Input Colors */
@@ -88,12 +88,12 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        /* Neumorphic Colors */
-        --neu-bg: #2a2a3e;
-        --neu-bg-page: #1a1a2e;
-        --neu-shadow-dark: #151525;
-        --neu-shadow-light: #3f3f57;
-        --neu-shadow-darker: #101020;
+        /* Surfaces */
+        --neu-bg: #1c1c1f;
+        --neu-bg-page: #111113;
+        --neu-shadow-dark: rgba(0, 0, 0, 0.35);
+        --neu-shadow-light: transparent;
+        --neu-shadow-darker: rgba(0, 0, 0, 0.5);
 
         /* Text Colors */
         --text-primary: #f3f4f6;
@@ -102,26 +102,26 @@
         --text-light: #b0b3bc;
 
         /* Surface Colors */
-        --surface-primary: #2a2a3e;
-        --surface-secondary: #1f1f35;
-        --surface-tertiary: #353550;
+        --surface-primary: #1c1c1f;
+        --surface-secondary: #232327;
+        --surface-tertiary: #2c2c31;
         --surface-hover: rgba(255, 255, 255, 0.05);
 
         /* Border Colors */
-        --border-primary: #3f3f57;
-        --border-secondary: #353550;
+        --border-primary: #2e2e33;
+        --border-secondary: #27272b;
         --border-focus: var(--brand-red);
 
         /* Input Colors */
-        --input-bg: #2a2a3e;
-        --input-border: #3f3f57;
+        --input-bg: #1c1c1f;
+        --input-border: #2e2e33;
         --input-text: var(--text-primary);
         --input-placeholder: var(--text-muted);
 
         /* Scrollbar Colors */
-        --scrollbar-track: #1f1f35;
-        --scrollbar-thumb: #3f3f57;
-        --scrollbar-thumb-hover: #55557a;
+        --scrollbar-track: #18181b;
+        --scrollbar-thumb: #3a3a40;
+        --scrollbar-thumb-hover: #52525b;
 
         /* Link Colors */
         --link-color: #60a5fa;
@@ -149,6 +149,11 @@
 }
 
 /* ========== BASE STYLES ========== */
+
+html {
+    font-size: clamp(14px, 3.9vw, 16px);
+    -webkit-text-size-adjust: 100%;
+}
 
 body {
     background-color: var(--neu-bg-page);
@@ -315,13 +320,16 @@ select {
 /* ========== NEUMORPHIC DESIGN SYSTEM ========== */
 
 .neumorphic-card {
-    background: var(--neu-bg);
-    border-radius: 20px;
-    padding: 20px;
+    background: var(--surface-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 16px;
     color: var(--text-secondary);
-    box-shadow: 6px 6px 12px var(--neu-shadow-dark),
-        -6px -6px 12px var(--neu-shadow-light);
-    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.3s ease;
+    transition: border-color 0.2s ease, background-color 0.3s ease;
+}
+
+a:hover > .neumorphic-card {
+    border-color: var(--text-muted);
 }
 
 .neumorphic-card h1,
@@ -1178,9 +1186,6 @@ ins.adsbygoogle,
 
     .neumorphic-card {
         padding: 12px;
-        border-radius: 14px;
-        box-shadow: 4px 4px 8px var(--neu-shadow-dark),
-            -4px -4px 8px var(--neu-shadow-light);
     }
 
     .chat-container {
@@ -1195,10 +1200,7 @@ ins.adsbygoogle,
 
 @media (max-width: 480px) {
     .neumorphic-card {
-        padding: 10px;
-        border-radius: 12px;
-        box-shadow: 3px 3px 6px var(--neu-shadow-dark),
-            -3px -3px 6px var(--neu-shadow-light);
+        padding: 12px;
     }
 }
 
@@ -1235,8 +1237,6 @@ ins.adsbygoogle,
     }
 
     .neumorphic-card {
-        background: #f0f0f0;
-        box-shadow: 4px 4px 8px #cccccc, -4px -4px 8px #ffffff;
         border: 1px solid #000000;
     }
 
