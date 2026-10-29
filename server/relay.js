@@ -122,7 +122,9 @@ function pump(relay, url) {
       received += chunk.length;
     });
     ffmpeg.stderr.on("data", (d) => {
-      lastError = d.toString().trim().split(/\r?\n/).pop() || lastError;
+      const text = d.toString();
+      lastError = text.trim().split(/\r?\n/).pop() || lastError;
+      if (text.includes("401 Unauthorized")) portal.reportRefusedLink();
     });
     ffmpeg.on("error", (err) => reject(err));
     ffmpeg.on("close", () => {

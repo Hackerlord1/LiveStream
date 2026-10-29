@@ -239,6 +239,7 @@ async function assertAvailable(key, createLink) {
     res?.body?.cancel().catch(() => {});
     // 509 = expired link and 429 = rate limit: those are worth a fresh link, not a verdict
     if (!res || res.ok || res.status >= 500 || res.status === 429) return;
+    if (res.status === 401) portal.reportRefusedLink();
     if (fresh) {
       console.warn(`⚠️ ${key}: provider file server refused the file (${res.status})`);
       throw Object.assign(new Error(PROVIDER_REFUSED_MESSAGE), { unavailable: true });

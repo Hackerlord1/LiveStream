@@ -22,7 +22,8 @@ const CACHE_DIR = path.join(__dirname, "cache");
 // Switching to a different portal or MAC makes old caches be ignored automatically.
 const PORTAL_FINGERPRINT = crypto
   .createHash("sha256")
-  .update(`${portal.PORTAL_URL}|${(process.env.IPTV_MAC || "").toUpperCase()}`)
+  // The first MAC only: backups (IPTV_MAC=a,b) share the same portal and lists
+  .update(`${portal.PORTAL_URL}|${(process.env.IPTV_MAC || "").split(",")[0].trim().toUpperCase()}`)
   .digest("hex")
   .slice(0, 16);
 const REFRESH_HOURS = Number(process.env.CATALOGUE_REFRESH_HOURS) || 6;

@@ -12,7 +12,10 @@ function requireEnv(name) {
 
 // e.g. http://3tv.pro (no trailing slash)
 const PORTAL_URL = requireEnv("IPTV_PORTAL_URL").replace(/\/+$/, "");
-const MAC = requireEnv("IPTV_MAC");
+// One MAC, or several separated by commas: the first is used, and the next takes over
+// when the provider starts refusing stream links (another device took the session)
+const MACS = requireEnv("IPTV_MAC").split(",").map((m) => m.trim()).filter(Boolean);
+let macIndex = 0;
 // Most portals serve the API at portal.php; some use server/load.php
 const API_URL = `${PORTAL_URL}/${process.env.IPTV_API_PATH || "portal.php"}`;
 const TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -20,13 +23,15 @@ const TOKEN_TTL_MS = 30 * 60 * 1000;
 const USER_AGENT =
   "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3";
 
-const BASE_HEADERS = {
-  Cookie: `mac=${encodeURIComponent(MAC)}; stb_lang=en; timezone=Africa%2FNairobi`,
-  "User-Agent": USER_AGENT,
-  "X-User-Agent": "Model: MAG250; Link: WiFi",
-  Referer: `${PORTAL_URL}/c/`,
-  Accept: "*/*",
-};
+function baseHeaders() {
+  return {
+    Cookie: `mac=${encodeURIComponent(MACS[macIndex])}; stb_lang=en; timezone=Africa%2FNairobi`,
+    "User-Agent": USER_AGENT,
+    "X-User-Agent": "Model: MAG250; Link: WiFi",
+    Referer: `${PORTAL_URL}/c/`,
+    Accept: "*/*",
+  };
+}
 
 let token = null;
 let tokenExpiresAt = 0;
@@ -34,7 +39,7 @@ let tokenPromise = null;
 
 async function rawGet(params, bearer) {
   const query = new URLSearchParams({ ...params, JsHttpRequest: "1-xml" });
-  const headers = bearer ? { ...BASE_HEADERS, Authorization: `Bearer ${bearer}` } : BASE_HEADERS;
+  const headers = bearer ? { ...baseHeaders(), Authorization: `Bearer ${bearer}` } : baseHeaders();
   const res = await fetch(`${API_URL}?${query}`, { headers, signal: AbortSignal.timeout(30000) });
   const text = await res.text();
   if (!res.ok) {
@@ -64,8 +69,40 @@ async function login() {
   await rawGet({ type: "stb", action: "get_profile", hd: "1" }, newToken);
   token = newToken;
   tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
-  console.log("🔑 Portal session refreshed");
+  console.log(`🔑 Portal session refreshed${MACS.length > 1 ? ` (MAC ${macIndex + 1} of ${MACS.length})` : ""}`);
   return token;
+}
+
+// =============================
+// STREAM REFUSALS
+// =============================
+// The subscription allows one device. When another device logs in with the same MAC, the
+// portal still answers us, but the stream server refuses our links with 401. A few refusals
+// in a short time means the session is gone: switch to the next MAC, or with only one MAC,
+// log in again to take the session back.
+const REFUSALS_TO_SWITCH = 3;
+const REFUSAL_WINDOW_MS = 60 * 1000;
+// Don't switch again sooner than this (each switch also restarts the catalogue's account)
+const SWITCH_COOLDOWN_MS = 2 * 60 * 1000;
+let refusals = [];
+let lastSwitchAt = 0;
+
+/** Called when the provider answered a stream link with 401 Unauthorized. */
+function reportRefusedLink() {
+  const now = Date.now();
+  refusals = refusals.filter((t) => now - t < REFUSAL_WINDOW_MS);
+  refusals.push(now);
+  if (refusals.length < REFUSALS_TO_SWITCH || now - lastSwitchAt < SWITCH_COOLDOWN_MS) return;
+  refusals = [];
+  lastSwitchAt = now;
+  if (MACS.length > 1) {
+    macIndex = (macIndex + 1) % MACS.length;
+    console.warn(`🔀 Provider is refusing our stream links (subscription in use elsewhere?): switching to MAC ${macIndex + 1} of ${MACS.length}`);
+    xtreamAccount = null; // each MAC has its own stream account
+  } else {
+    console.warn("🔀 Provider is refusing our stream links (subscription in use elsewhere?): logging in again");
+  }
+  getToken(true).catch((err) => console.warn(`⚠️ Portal login failed: ${err.message}`));
 }
 
 async function getToken(force = false) {
@@ -271,4 +308,5 @@ module.exports = {
   xtreamGet,
   createLiveLink,
   createVodLink,
+  reportRefusedLink,
 };

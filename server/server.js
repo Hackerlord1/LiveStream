@@ -605,6 +605,7 @@ async function startStream(channelId, forceReencode = false) {
             logMessage.includes("406 Not Acceptable") ||
             logMessage.includes("Invalid data found")) {
           console.error(`❌ ${channelId} stream error: ${logMessage.trim()}`);
+          if (logMessage.includes("401 Unauthorized")) portal.reportRefusedLink();
           errorCount++;
         }
         if (logMessage.includes("Stream #") || logMessage.includes("Duration:")) {
