@@ -72,6 +72,51 @@ const reencoding = new Set();
 const canReencode = () => reencoding.size < MAX_REENCODES;
 const restartCount = {};
 
+// Who is watching. Every player re-fetches its playlist every few seconds, so a viewer
+// counts while their player keeps asking: closing a tab, killing the browser or losing
+// signal never sends /leave, and counting /watch and /leave alone only ever went up
+// (streams then ran for hours for nobody). /leave just frees the spot sooner.
+const WATCHER_TIMEOUT_MS = 30 * 1000;
+const watchers = {}; // channelId -> Map(viewer key -> time of their last request)
+
+/** The player's own id (?v=), or for older pages without one, their address. */
+function viewerKey(req, url) {
+  const v = url.searchParams.get("v");
+  if (v && /^[\w-]{8,64}$/.test(v)) return v;
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+}
+
+/** Viewers seen within WATCHER_TIMEOUT_MS (forgets the others). */
+function countWatchers(channelId) {
+  const seen = watchers[channelId];
+  if (!seen) return 0;
+  const now = Date.now();
+  for (const [key, at] of seen) if (now - at > WATCHER_TIMEOUT_MS) seen.delete(key);
+  if (seen.size === 0) delete watchers[channelId];
+  return seen.size;
+}
+
+function setViewers(channelId, count) {
+  if ((viewers[channelId] || 0) === count) return;
+  console.log(`👁️ ${channelId}: ${count} viewer(s)`);
+  if (count > 0) {
+    viewers[channelId] = count;
+  } else {
+    delete viewers[channelId];
+    scheduleStop(channelId);
+  }
+}
+
+function touchWatcher(channelId, key) {
+  (watchers[channelId] ||= new Map()).set(key, Date.now());
+  setViewers(channelId, countWatchers(channelId));
+}
+
+// Viewers whose player stopped asking drop out; a channel left with nobody stops
+setInterval(() => {
+  for (const id of Object.keys(viewers)) setViewers(id, countWatchers(id));
+}, 10 * 1000).unref();
+
 // =============================
 // CLEANUP HLS FILES
 // =============================
@@ -641,6 +686,7 @@ async function startStream(channelId, forceReencode = false) {
           console.log(`🛑 ${channelId} failed ${MAX_RESTARTS} times, giving up`);
           cleanupHLSFiles(channelId);
           delete viewers[channelId];
+          delete watchers[channelId];
           delete restartCount[channelId];
           delete reencodeAttempts[channelId];
           return;
@@ -1156,8 +1202,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ error: "Server busy, try again shortly" }));
     }
 
-    viewers[id] = (viewers[id] || 0) + 1;
-    console.log(`👁️ ${id}: ${viewers[id]} viewer(s)`);
+    touchWatcher(id, viewerKey(req, url));
 
     // The player couldn't play this channel's original (copied) video: re-encode it from now on
     if (url.searchParams.get("forceTranscode") === "1" && LIVE_COPY && !copyFailedChannels.has(id)) {
@@ -1183,19 +1228,16 @@ const server = http.createServer(async (req, res) => {
       return res.end("Invalid channel ID");
     }
     
-    if (!viewers[id]) {
-      // Already nobody watching (e.g. the stream never started): nothing to do
-      return res.end(JSON.stringify({ ok: true, viewers: 0 }));
-    }
-    viewers[id] -= 1;
-    console.log(`👁️ ${id}: ${viewers[id]} viewer(s)`);
-
-    scheduleStop(id);
-    return res.end(JSON.stringify({ ok: true, viewers: viewers[id] }));
+    watchers[id]?.delete(viewerKey(req, url));
+    setViewers(id, countWatchers(id));
+    return res.end(JSON.stringify({ ok: true, viewers: viewers[id] || 0 }));
   }
 
   if (url.pathname.startsWith("/hls/")) {
     const file = url.pathname.slice("/hls/".length);
+    // A player asking for a running channel's playlist is still watching
+    const playlistOf = file.match(/^(\d{1,10})\.m3u8$/)?.[1];
+    if (playlistOf && streams[playlistOf]) touchWatcher(playlistOf, viewerKey(req, url));
     // Only serve playlists and segments this server writes (see HLS_FILE_RE)
     if (!HLS_FILE_RE.test(file)) {
       res.writeHead(404);

@@ -240,6 +240,9 @@ export default function IptvWatchPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<import("hls.js").default | null>(null);
   const cancelledRef = useRef(false);
+  // This player's id: the server counts a viewer while their player keeps asking with it
+  const viewerIdRef = useRef("");
+  if (!viewerIdRef.current) viewerIdRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   // State
   const [channel, setChannel] = useState<Channel | null>(null);
@@ -336,7 +339,7 @@ export default function IptvWatchPage() {
 
       // Ask the server to start the stream. A refusal (e.g. busy, or ffmpeg missing)
       // is reported straight away instead of waiting for a playlist that won't come.
-      const startRes = await fetch(`${IPTV_API_URL}/watch/${channelId}${forceTranscode ? "?forceTranscode=1" : ""}`, {
+      const startRes = await fetch(`${IPTV_API_URL}/watch/${channelId}?v=${viewerIdRef.current}${forceTranscode ? "&forceTranscode=1" : ""}`, {
         signal: AbortSignal.timeout(5000),
       }).catch(() => null);
       if (startRes && !startRes.ok) {
@@ -348,7 +351,7 @@ export default function IptvWatchPage() {
         return;
       }
 
-      const playlist = `${IPTV_API_URL}/hls/${channelId}.m3u8`;
+      const playlist = `${IPTV_API_URL}/hls/${channelId}.m3u8?v=${viewerIdRef.current}`;
 
       setPlayerStatus("connecting");
       const ready = await waitForPlaylist(playlist);
@@ -453,7 +456,7 @@ export default function IptvWatchPage() {
           setPlayerStatus("retrying");
 
           // Notify server to clean up
-          await fetch(`${IPTV_API_URL}/leave/${channelId}`).catch(() => {});
+          await fetch(`${IPTV_API_URL}/leave/${channelId}?v=${viewerIdRef.current}`).catch(() => {});
 
           // Wait 2 seconds then retry
           await new Promise((r) => setTimeout(r, 2000));
@@ -483,7 +486,8 @@ export default function IptvWatchPage() {
     return () => {
       cancelledRef.current = true;
 
-      fetch(`${IPTV_API_URL}/leave/${channelId}`).catch(() => {});
+      // keepalive: still sent when the page itself is going away
+      fetch(`${IPTV_API_URL}/leave/${channelId}?v=${viewerIdRef.current}`, { keepalive: true }).catch(() => {});
 
       if (hlsRef.current) {
         hlsRef.current.destroy();
