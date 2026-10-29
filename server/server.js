@@ -34,6 +34,10 @@ const HLS_DIR = path.join(__dirname, "hls");
 
 // Hard cap on concurrent ffmpeg processes so the box can't be exhausted
 const MAX_ACTIVE_STREAMS = Number(process.env.MAX_ACTIVE_STREAMS) || 20;
+// Re-encoding a channel takes about a CPU core; past this many at once every encode falls
+// behind real time, stalls and restarts, and the whole server (website too) slows to a crawl.
+// Channels beyond the budget play the provider's original video instead.
+const MAX_REENCODES = Number(process.env.MAX_REENCODES) || 2;
 // Debug endpoints are disabled unless a token is configured and supplied
 const DEBUG_TOKEN = process.env.DEBUG_TOKEN || "";
 // Radio is transcoded per listener, so cap concurrent listeners too
@@ -63,6 +67,9 @@ const copyFailedChannels = new Set();
 // re-encodes every channel: even segments and clean timestamps across the provider's
 // reconnects, at the cost of CPU and some picture quality.
 const LIVE_COPY = process.env.LIVE_VIDEO_MODE !== "reencode";
+// Channels currently being re-encoded (see MAX_REENCODES)
+const reencoding = new Set();
+const canReencode = () => reencoding.size < MAX_REENCODES;
 const restartCount = {};
 
 // =============================
@@ -290,11 +297,7 @@ const LEAGUES = [
   { key: "laliga", name: "LaLiga", match: /LA ?LIGA/i },
   { key: "seriea", name: "Serie A", match: /SERIE A\b/i },
   { key: "bundesliga", name: "Bundesliga", match: /BUNDESLIGA/i },
-  // The EFL has no VIP group: one channel per club ("EFL-CHAMP - BURNLEY FHD") in three groups
-  { key: "efl", name: "EFL", clubs: true, genres: /^EU \| UK \| (CHAMPIONSHIP|LEAGUE ONE|LEAGUE TWO)$/i },
 ];
-const EFL_DIVISIONS = { CHAMP: "Championship", L1: "League One", L2: "League Two" };
-const EFL_NAME_RE = /^EFL-(CHAMP|L1|L2)\s*-\s*(.*?)(?:\s+(?:FHD|HD|SD|HEVC|4K)\S*)?\s*$/i;
 
 const LANGUAGES = {
   FRENCH: "French", FR: "French",
@@ -311,13 +314,11 @@ const PLACEHOLDER_RE = /\bNO (?:MATCH|EVENT)\b/i;
 
 function buildLeagues() {
   const { items, categories } = catalogue.channels;
-  return LEAGUES.map(({ key, name, match, genres, clubs }) => {
-    const genreIds = new Set(
-      categories
-        .filter((g) => (genres ? genres.test(g.title || "") : /^VIP\s*\|/i.test(g.title || "") && match.test(g.title)))
-        .map((g) => String(g.id))
-    );
-    const rows = items.filter((ch) => genreIds.has(String(ch.tv_genre_id))).sort((a, b) => Number(a.number) - Number(b.number));
+  return LEAGUES.map(({ key, name, match }) => {
+    const genre = categories.find((g) => /^VIP\s*\|/i.test(g.title || "") && match.test(g.title));
+    const rows = genre
+      ? items.filter((ch) => String(ch.tv_genre_id) === String(genre.id)).sort((a, b) => Number(a.number) - Number(b.number))
+      : [];
 
     // The league's logo is the one most of its channels use
     const logoCounts = new Map();
@@ -334,16 +335,10 @@ function buildLeagues() {
         continue;
       }
       if (PLACEHOLDER_RE.test(ch.name)) continue;
-      if (clubs) {
-        const club = EFL_NAME_RE.exec(ch.name);
-        if (!club) continue;
-        channels.push({ ...channelFields(ch), name: club[2], language: "English", division: EFL_DIVISIONS[club[1].toUpperCase()] });
-        continue;
-      }
       const tag = (ch.name.match(/^([A-Z]{2,4})\s*[-|:]/) || [])[1];
       channels.push({ ...channelFields(ch), language: LANGUAGES[tag] || language || "Other" });
     }
-    return { key, name, ...(clubs && { clubs: true }), logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
+    return { key, name, logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
   });
 }
 
@@ -467,7 +462,8 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
   if (useReencode) {
     baseArgs.push(
       // Deinterlace only frames flagged interlaced (1080i broadcasts); progressive passes through
-      "-vf", "yadif=mode=0:deint=interlaced",
+      // ...and at most 720p: about half the CPU of 1080p, so the budget goes further
+      "-vf", "yadif=mode=0:deint=interlaced,scale=-2:'min(720,ih)'",
       ...tools.fpsPassthroughArgs,
       "-c:v", "libx264",
       // Only HEVC channels and channels whose copied video broke are re-encoded, so spend
@@ -475,8 +471,8 @@ function getFFmpegArgs(streamUrl, channelId, useReencode = false) {
       "-preset", "veryfast",
       "-crf", "20",
       // A ceiling so a busy scene can't flood viewers' connections
-      "-maxrate", "10000k",
-      "-bufsize", "20000k",
+      "-maxrate", "6000k",
+      "-bufsize", "12000k",
       "-pix_fmt", "yuv420p", // browsers can't decode 10-bit
       "-g", "48",
       "-sc_threshold", "0",
@@ -516,6 +512,10 @@ async function startStream(channelId, forceReencode = false) {
   // Channels already known to be HEVC go straight to re-encode (browsers can't play
   // HEVC), instead of opening a copy-mode connection only to throw it away
   if (!LIVE_COPY || hevcChannels.has(channelId) || copyFailedChannels.has(channelId)) forceReencode = true;
+  if (forceReencode && !canReencode()) {
+    console.warn(`⚖️ ${channelId}: ${reencoding.size} channels already re-encoding, playing the original video instead`);
+    forceReencode = false;
+  }
 
   if (!forceReencode) {
     reencodeAttempts[channelId] = 0;
@@ -540,6 +540,7 @@ async function startStream(channelId, forceReencode = false) {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true, // no console window per ffmpeg on Windows
       });
+      if (forceReencode) reencoding.add(channelId);
 
       let lastOutput = Date.now();
       let streamStarted = false;
@@ -574,7 +575,7 @@ async function startStream(channelId, forceReencode = false) {
             (logMessage.includes("libav") && logMessage.includes("/"))) {
           return;
         }
-        if (logMessage.includes("Video: hevc") && !forceReencode && !hevcDetected) {
+        if (logMessage.includes("Video: hevc") && !forceReencode && !hevcDetected && canReencode()) {
           hevcDetected = true;
           hevcChannels.add(channelId);
           killAndRestart("HEVC video detected", true);
@@ -619,6 +620,7 @@ async function startStream(channelId, forceReencode = false) {
       function handleExit(reason, reencode) {
         if (exitHandled) return;
         exitHandled = true;
+        if (forceReencode) reencoding.delete(channelId);
         clearInterval(healthCheck);
         delete streams[channelId];
         delete healthChecks[channelId];
@@ -660,7 +662,7 @@ async function startStream(channelId, forceReencode = false) {
         // the playlist gets absurd segments (0.1 s, 92,197 s) or stops growing while frames
         // still arrive, and players stall with video already downloaded. Re-encoding writes
         // clean timestamps, so switch this channel to it for good.
-        if (!forceReencode && streamStarted) {
+        if (!forceReencode && streamStarted && canReencode()) {
           const problem = copyPlaylistProblem(channelId, Date.now() - lastProgress < 10000);
           if (problem) {
             copyFailedChannels.add(channelId);
@@ -669,15 +671,15 @@ async function startStream(channelId, forceReencode = false) {
           }
         }
         if (!streamStarted && timeSinceLastOutput > 10000) {
-          killAndRestart("Stream didn't start", true);
+          killAndRestart("Stream didn't start", forceReencode || canReencode());
         } else if (timeSinceLastOutput > 15000) {
-          const tryReencode = !forceReencode && (reencodeAttempts[channelId] || 0) < 2;
+          const tryReencode = !forceReencode && (reencodeAttempts[channelId] || 0) < 2 && canReencode();
           if (tryReencode) reencodeAttempts[channelId] = (reencodeAttempts[channelId] || 0) + 1;
           killAndRestart(`Stream stalled (${timeSinceLastOutput}ms without output)`, tryReencode || forceReencode);
         } else if (lastFrames >= 0 && Date.now() - lastProgress > NO_FRAMES_TIMEOUT_MS) {
           // Running, but no new frames: reconnect to pick up the provider's current feed
           killAndRestart(`No new video for ${Math.round((Date.now() - lastProgress) / 1000)}s (feed changed or stuck)`, forceReencode);
-        } else if (errorCount > 10 && !forceReencode) {
+        } else if (errorCount > 10 && !forceReencode && canReencode()) {
           killAndRestart("Too many stream errors", true);
         }
       }, 5000);
@@ -696,7 +698,7 @@ async function startStream(channelId, forceReencode = false) {
       });
 
       // Used by /watch?forceTranscode=1 when a player can't play this copy-mode stream
-      if (!forceReencode) ffmpeg.switchToReencode = () => killAndRestart("Player couldn't play the copied video", true);
+      if (!forceReencode) ffmpeg.switchToReencode = () => canReencode() && killAndRestart("Player couldn't play the copied video", true);
       streams[channelId] = ffmpeg;
       healthChecks[channelId] = healthCheck;
       console.log(`▶️ ffmpeg launched for ${channelId} (${forceReencode ? "re-encode" : "copy"} mode)`);
