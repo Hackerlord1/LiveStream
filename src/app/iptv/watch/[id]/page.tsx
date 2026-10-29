@@ -18,7 +18,9 @@ import { apiAsset, IPTV_API_URL } from "@/lib/iptv-client";
 // A channel's first start can take ~15-20 s (longer when it falls back to re-encoding), so allow well over that
 const PLAYLIST_TIMEOUT = 45000;
 const PLAYLIST_RETRY_INTERVAL = 1000;
-const MIN_SEGMENTS = 2;
+// Start with ~12 s of video in reserve. With 2 (~8 s) playback sat at the live edge: each
+// 4 s piece played as soon as it arrived, and any dip in the connection showed as loading.
+const MIN_SEGMENTS = 3;
 
 // ============================================================
 // TYPES
