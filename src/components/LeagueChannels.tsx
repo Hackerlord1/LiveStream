@@ -12,15 +12,11 @@ interface LeagueChannel {
   number?: string;
   name: string;
   language: string;
-  /** EFL club channels: "Championship", "League One", "League Two" */
-  division?: string;
 }
 
 interface League {
   key: string;
   name: string;
-  /** One always-on channel per club (the EFL) rather than one per match */
-  clubs?: boolean;
   logo: string;
   channels: LeagueChannel[];
 }
@@ -52,10 +48,10 @@ function groupGames(channels: LeagueChannel[]): Game[] {
   for (const ch of channels) {
     const { title, time } = parseChannelName(ch.name);
     const key = title.toUpperCase();
-    // A club channel shows its division where a match shows its kick-off time
-    const game = games.get(key) ?? { key, title, time: time ?? ch.division ?? null, watch: [] };
+    const game = games.get(key) ?? { key, title, time, watch: [] };
     game.time ??= time;
-    const code = LANGUAGE_CODES[ch.language] ?? ch.language.slice(0, 3).toUpperCase();
+    // Channels with no language (concerts, 4K...) just get a Watch button
+    const code = !ch.language || ch.language === "Other" ? "Watch" : LANGUAGE_CODES[ch.language] ?? ch.language.slice(0, 3).toUpperCase();
     const sameLanguage = game.watch.filter((w) => w.language === ch.language).length;
     game.watch.push({ id: ch.id, label: sameLanguage ? `${code} ${sameLanguage + 1}` : code, language: ch.language, number: ch.number });
     games.set(key, game);
@@ -96,11 +92,17 @@ export default function LeagueChannels() {
     };
   }, []);
 
-  const busiest = useMemo(
-    // Club channels are always there, so they'd always win: only count real matches
-    () => leagues.reduce<League | null>((best, l) => (!l.clubs && l.channels.length > (best?.channels.length ?? 0) ? l : best), null),
-    [leagues]
-  );
+  // Opens on the group with the most games that have a kick-off time: the 24/7 groups
+  // (concerts, 4K...) have more channels, but no matches
+  const busiest = useMemo(() => {
+    let best: League | null = null;
+    let bestGames = 0;
+    for (const l of leagues) {
+      const games = groupGames(l.channels).filter((g) => g.time).length;
+      if (games > bestGames) [best, bestGames] = [l, games];
+    }
+    return best ?? leagues[0] ?? null;
+  }, [leagues]);
   const activeKey = selected ?? busiest?.key ?? "";
   const league = leagues.find((l) => l.key === activeKey) ?? null;
   const games = useMemo(() => groupGames(league?.channels ?? []), [league]);
@@ -119,7 +121,7 @@ export default function LeagueChannels() {
           Watch on BraveStream TV
         </h2>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Pick a league, then the language you want.
+          Live football, F1, cricket, concerts and more: pick a group, then a channel.
         </p>
       </div>
 
@@ -146,7 +148,7 @@ export default function LeagueChannels() {
               <span className="font-medium">{l.name}</span>
               <span
                 className="text-xs tabular-nums opacity-70"
-                title={l.clubs ? `${gameCount} club channels` : `${gameCount} game${gameCount === 1 ? "" : "s"} on`}
+                title={`${gameCount} channel${gameCount === 1 ? "" : "s"}`}
               >
                 {gameCount}
               </span>
@@ -159,7 +161,7 @@ export default function LeagueChannels() {
         <div className="mt-4">
           {games.length === 0 ? (
             <p className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: "var(--surface-secondary)", color: "var(--text-muted)" }}>
-              No {league.name} match on our channels right now. Games appear here when they&apos;re scheduled.
+              Nothing on {league.name} right now. Games appear here when they&apos;re scheduled.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -180,7 +182,9 @@ export default function LeagueChannels() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Watch in:</span>
+                    {game.watch.some((w) => w.label !== "Watch") && (
+                      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Watch in:</span>
+                    )}
                     {game.watch.map((w) => (
                       <Link
                         key={w.id}

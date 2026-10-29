@@ -331,9 +331,11 @@ function channelFields(ch) {
 // =============================
 // LEAGUE CHANNELS
 // =============================
-// The provider keeps a channel group per big football competition ("VIP | PREMIER LEAGUE"...).
-// In each, divider rows ("##### FRENCH #####") start a language, and "NO MATCH" rows are
-// placeholders on days without a game.
+// Every "VIP | ..." channel group the provider has: the big football competitions
+// ("VIP | PREMIER LEAGUE"...) and others (Formula 1, cricket, concerts, 4K...), in the
+// provider's order. In each, divider rows ("##### FRENCH #####") start a language, and
+// "NO MATCH" rows are placeholders on days without a game.
+// Groups listed here keep a fixed key and a tidier name; any other VIP group is shown too.
 const LEAGUES = [
   { key: "ucl", name: "Champions League", match: /CHAMPIONS LEAGUE/i },
   { key: "uel", name: "Europa League", match: /EUROPA LEAGUE/i },
@@ -354,16 +356,26 @@ const LANGUAGES = {
   ALBANIAN: "Albanian", ALBANIA: "Albanian", ALB: "Albanian",
   PORTUGAL: "Portuguese", PORTUGUESE: "Portuguese", PT: "Portuguese",
 };
+// Words kept in capitals when a group's name is tidied ("VIP | WORLD CRICKET" -> "World Cricket")
+const NAME_ACRONYMS = new Set(["UEFA", "F1", "4K", "HD", "UHD", "TV", "NBA", "NFL", "UFC", "WWE", "MMA"]);
+function groupName(title) {
+  return title
+    .replace(/^VIP\s*\|\s*/i, "")
+    .split(/\s+/)
+    .map((w) => (NAME_ACRONYMS.has(w.toUpperCase()) || /\d/.test(w) ? w.toUpperCase() : w.charAt(0) + w.slice(1).toLowerCase()))
+    .join(" ");
+}
 const DIVIDER_RE = /^#{3,}\s*(.*?)\s*#{3,}$/;
 const PLACEHOLDER_RE = /\bNO (?:MATCH|EVENT)\b/i;
 
 function buildLeagues() {
   const { items, categories } = catalogue.channels;
-  return LEAGUES.map(({ key, name, match }) => {
-    const genre = categories.find((g) => /^VIP\s*\|/i.test(g.title || "") && match.test(g.title));
-    const rows = genre
-      ? items.filter((ch) => String(ch.tv_genre_id) === String(genre.id)).sort((a, b) => Number(a.number) - Number(b.number))
-      : [];
+  const groups = categories.filter((g) => /^VIP\s*\|/i.test(g.title || ""));
+  return groups.map((genre) => {
+    const known = LEAGUES.find((l) => l.match.test(genre.title));
+    const key = known?.key || `vip-${genre.id}`;
+    const name = known?.name || groupName(genre.title);
+    const rows = items.filter((ch) => String(ch.tv_genre_id) === String(genre.id)).sort((a, b) => Number(a.number) - Number(b.number));
 
     // The league's logo is the one most of its channels use
     const logoCounts = new Map();
@@ -374,13 +386,16 @@ function buildLeagues() {
     const channels = [];
     let language = null;
     for (const ch of rows) {
-      const divider = DIVIDER_RE.exec(ch.name);
+      const divider = DIVIDER_RE.exec(ch.name.trim());
       if (divider) {
-        language = LANGUAGES[divider[1].toUpperCase()] || divider[1];
+        // In the football leagues a divider names a language; elsewhere it's a section
+        // ("##### 4K SPORTS CHANNELS #####"), which isn't one
+        language = LANGUAGES[divider[1].toUpperCase()] || (known ? divider[1] : null);
         continue;
       }
       if (PLACEHOLDER_RE.test(ch.name)) continue;
       const tag = (ch.name.match(/^([A-Z]{2,4})\s*[-|:]/) || [])[1];
+      // "Other": no language (concerts, 4K...); the site shows a Watch button for it
       channels.push({ ...channelFields(ch), language: LANGUAGES[tag] || language || "Other" });
     }
     return { key, name, logo: logoChannel ? logoUrlFor(logoChannel) : "", channels };
