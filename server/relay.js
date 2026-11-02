@@ -194,7 +194,7 @@ function serve(req, res, channel) {
   });
 }
 
-/** For /health and the daily restart: open relays and their viewers. */
+/** For /health and the scheduled restart: open relays and their viewers. */
 function status() {
   let viewers = 0;
   for (const r of relays.values()) viewers += r.clients.size;

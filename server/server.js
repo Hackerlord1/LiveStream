@@ -1327,13 +1327,13 @@ function gracefulShutdown(signal) {
 }
 
 // =============================
-// DAILY RESTART
+// SCHEDULED RESTART
 // =============================
 // After RESTART_AFTER_HOURS of uptime the process exits and pm2 starts it again, which
 // reloads the catalogues and frees memory. It waits for a quiet moment (nobody watching
 // or listening, no catalogue loading), but restarts anyway once RESTART_MAX_WAIT_HOURS
 // more have passed. 0 turns it off, e.g. in development where nothing restarts the server.
-const RESTART_AFTER_HOURS = Number(process.env.RESTART_AFTER_HOURS ?? 24);
+const RESTART_AFTER_HOURS = Number(process.env.RESTART_AFTER_HOURS ?? 6);
 const RESTART_MAX_WAIT_HOURS = 6;
 
 if (RESTART_AFTER_HOURS > 0) {

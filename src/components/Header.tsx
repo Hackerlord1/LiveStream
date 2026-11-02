@@ -9,10 +9,12 @@ import { GiSoccerBall } from 'react-icons/gi';
 
 const NAV_LINKS = [
     { href: '/', label: 'Home' },
-    { href: '/channels', label: 'Channels' },
+    { href: '/iptv/channels', label: 'Channels' },
     { href: '/iptv', label: 'IPTV' },
+    { href: '/iptv/vod', label: 'Movies' },
+    { href: '/iptv/series', label: 'Series' },
+    { href: '/iptv/radio', label: 'Radio' },
     { href: '/download', label: 'Get the App' },
-    { href: '/about', label: 'About' },
     { href: '/contact', label: 'Contact' },
 ] as const;
 
@@ -46,7 +48,7 @@ export default function Header({ onSearch, searchValue = '' }: {
     const handleSearch = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         onSearch?.(searchTerm);
-        if (pathname === '/' || pathname === '/channels') {
+        if (pathname === '/') {
             const params = new URLSearchParams(window.location.search);
             if (searchTerm) params.set('search', searchTerm);
             else params.delete('search');
@@ -76,7 +78,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                         </Link>
 
                         {/* ========== DESKTOP NAV ========== */}
-                        <nav className="hidden lg:flex items-center gap-1">
+                        <nav className="hidden xl:flex items-center gap-1">
                             {NAV_LINKS.map((link) => (
                                 <Link
                                     key={link.href}
@@ -116,7 +118,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                         <div className="flex items-center gap-3">
 
                             {/* Search Bar (Desktop) */}
-                            <form onSubmit={handleSearch} className="hidden lg:block relative">
+                            <form onSubmit={handleSearch} className="hidden xl:block relative">
                                 <input
                                     type="text"
                                     placeholder="Search matches..."
@@ -154,7 +156,7 @@ export default function Header({ onSearch, searchValue = '' }: {
                             {/* Mobile Menu Toggle */}
                             <button
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                className="lg:hidden p-2 rounded-lg transition-colors duration-300"
+                                className="xl:hidden p-2 rounded-lg transition-colors duration-300"
                                 style={{
                                     backgroundColor: 'var(--neu-bg)',
                                     border: '1px solid var(--border-primary)',
@@ -173,7 +175,7 @@ export default function Header({ onSearch, searchValue = '' }: {
 
             {/* ========== MOBILE MENU ========== */}
             {isMenuOpen && (
-                <div className="lg:hidden fixed inset-0 z-50">
+                <div className="xl:hidden fixed inset-0 z-50">
                     {/* Backdrop */}
                     <div
                         className="absolute inset-0 backdrop-blur-sm"

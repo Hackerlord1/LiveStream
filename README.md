@@ -395,7 +395,7 @@ Regular broadcast channels have a guide; PPV, event and 24/7 channels usually do
 also TV channels (same id and name) are dropped, and a radio load made up mostly of TV
 channels is rejected, keeping the current list.
 
-**Daily restart.** After `RESTART_AFTER_HOURS` (default 24) of uptime the server exits at a
+**Scheduled restart.** After `RESTART_AFTER_HOURS` (default 6) of uptime the server exits at a
 quiet moment (nobody watching, no catalogue loading; at most 6 hours later regardless) and pm2
 starts it again. Set it to 0 in development.
 

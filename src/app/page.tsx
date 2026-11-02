@@ -128,7 +128,7 @@ const NoDataState = ({ onRetry }: { onRetry: () => void }) => (
                 Try Again
             </button>
             <Link
-                href="/channels"
+                href="/iptv/channels"
                 className="px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
                 style={{
                     backgroundColor: 'var(--surface-primary)',
