@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { ConvexError } from "convex/values";
-import { Ban, MessageCircle, Send, ShieldCheck, Trash2 } from "lucide-react";
+import { Ban, MessageCircle, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -35,18 +35,37 @@ function GoogleMark() {
 
 /**
  * The live TV chat. Fills its parent's height. `dark` is for the fullscreen player,
- * where it sits on black regardless of the site theme.
+ * where it sits on black regardless of the site theme. `onClose` adds a button that hides it.
  */
-export default function IptvChat({ dark = false }: { dark?: boolean }) {
+export default function IptvChat({ dark = false, onClose }: { dark?: boolean; onClose?: () => void }) {
   // Without Convex configured there's no provider, so the chat hooks can't run
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
     return (
       <ChatFrame dark={dark}>
+        {onClose && (
+          <div className="flex justify-end p-2">
+            <CloseButton onClick={onClose} />
+          </div>
+        )}
         <p className="m-auto px-4 text-center text-sm opacity-70">Chat is unavailable right now.</p>
       </ChatFrame>
     );
   }
-  return <ChatRoom dark={dark} />;
+  return <ChatRoom dark={dark} onClose={onClose} />;
+}
+
+function CloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Hide chat"
+      title="Hide chat"
+      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full opacity-70 transition-opacity hover:bg-white/10 hover:opacity-100"
+    >
+      <X className="h-4 w-4" />
+    </button>
+  );
 }
 
 function ChatFrame({ dark, children }: { dark: boolean; children: React.ReactNode }) {
@@ -64,7 +83,7 @@ function ChatFrame({ dark, children }: { dark: boolean; children: React.ReactNod
   );
 }
 
-function ChatRoom({ dark }: { dark: boolean }) {
+function ChatRoom({ dark, onClose }: { dark: boolean; onClose?: () => void }) {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
   const viewer = useQuery(api.messages.viewer);
@@ -159,6 +178,7 @@ function ChatRoom({ dark }: { dark: boolean }) {
             </span>
           </div>
         )}
+        {onClose && <CloseButton onClick={onClose} />}
       </div>
 
       {admin && showBlocked && (

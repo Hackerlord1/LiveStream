@@ -3,7 +3,7 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ChevronDown, Loader2, Maximize, MessageCircle, Minimize, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, Maximize, MessageCircle, MessageCircleOff, Minimize, RefreshCw, Tv, VolumeX, WifiOff } from "lucide-react";
 import IptvChat from "@/components/iptv/IptvChat";
 import { splitTag } from "@/lib/iptv-format";
 import { Badge, IptvPage, SpeedNotice } from "@/components/iptv/ui";
@@ -213,6 +213,24 @@ function useIsDesktop() {
   return desktop;
 }
 
+// Whether the viewer last chose to show the chat in fullscreen (null until they choose)
+const FULLSCREEN_CHAT_KEY = "bravestream:fullscreen-chat";
+
+function readFullscreenChatChoice(): boolean | null {
+  try {
+    const value = localStorage.getItem(FULLSCREEN_CHAT_KEY);
+    return value === null ? null : value === "1";
+  } catch {
+    return null;
+  }
+}
+
+function saveFullscreenChatChoice(show: boolean) {
+  try {
+    localStorage.setItem(FULLSCREEN_CHAT_KEY, show ? "1" : "0");
+  } catch {}
+}
+
 function PlayerButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -259,6 +277,12 @@ export default function IptvWatchPage() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const isDesktop = useIsDesktop();
 
+  // Hiding or showing the chat in fullscreen is remembered for next time
+  const setFullscreenChatChoice = useCallback((show: boolean) => {
+    setFullscreenChat(show);
+    saveFullscreenChatChoice(show);
+  }, []);
+
   useEffect(() => {
     const onChange = () => setFullscreen(Boolean(stageRef.current) && document.fullscreenElement === stageRef.current);
     document.addEventListener("fullscreenchange", onChange);
@@ -273,8 +297,9 @@ export default function IptvWatchPage() {
       return;
     }
     if (stage?.requestFullscreen) {
-      // Narrow portrait phones start with the chat hidden, so the video gets the screen
-      setFullscreenChat(window.innerWidth >= 640);
+      // The viewer's last choice; until they make one, narrow portrait phones start with
+      // the chat hidden, so the video gets the screen
+      setFullscreenChat(readFullscreenChatChoice() ?? window.innerWidth >= 640);
       stage.requestFullscreen().then(() => {
         // Landscape suits a match; browsers that can't lock orientation just ignore this
         (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.("landscape").catch(() => {});
@@ -514,6 +539,9 @@ export default function IptvWatchPage() {
         case "m":
           video.muted = !video.muted;
           break;
+        case "c":
+          if (document.fullscreenElement) setFullscreenChatChoice(!fullscreenChat);
+          break;
         case " ":
           e.preventDefault();
           if (video.paused) video.play();
@@ -524,7 +552,7 @@ export default function IptvWatchPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleFullscreen]);
+  }, [toggleFullscreen, fullscreenChat, setFullscreenChatChoice]);
 
   // ============================================================
   // RENDER
@@ -553,8 +581,8 @@ export default function IptvWatchPage() {
               <RefreshCw className="h-4 w-4" />
             </PlayerButton>
             {fullscreen && (
-              <PlayerButton label={fullscreenChat ? "Hide chat" : "Show chat"} onClick={() => setFullscreenChat((v) => !v)}>
-                <MessageCircle className="h-4 w-4" />
+              <PlayerButton label={fullscreenChat ? "Hide chat (C)" : "Show chat (C)"} onClick={() => setFullscreenChatChoice(!fullscreenChat)}>
+                {fullscreenChat ? <MessageCircleOff className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />}
               </PlayerButton>
             )}
             <PlayerButton label={fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
@@ -578,7 +606,7 @@ export default function IptvWatchPage() {
         </div>
         {fullscreen && fullscreenChat && (
           <div className="h-full w-[clamp(240px,28vw,360px)] flex-shrink-0 p-2">
-            <IptvChat dark />
+            <IptvChat dark onClose={() => setFullscreenChatChoice(false)} />
           </div>
         )}
         </div>
@@ -611,6 +639,7 @@ export default function IptvWatchPage() {
         <div className="mt-3 hidden flex-wrap items-center justify-center gap-4 text-xs sm:flex" style={{ color: "var(--text-muted)" }}>
           <Shortcut keyLabel="F" action="fullscreen" />
           <Shortcut keyLabel="M" action="mute" />
+          <Shortcut keyLabel="C" action="chat in fullscreen" />
           <Shortcut keyLabel="Space" action="play / pause" />
         </div>
       </div>
