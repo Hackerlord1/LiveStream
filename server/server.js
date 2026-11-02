@@ -867,6 +867,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       return sendJson(req, res, 400, { error: err.message });
     }
+    if (!body.portalUrl || !String(body.portalUrl).trim()) return sendJson(req, res, 400, { error: "enter a portal URL to test" });
     const macList = Array.isArray(body.macs) ? body.macs.filter((m) => String(m).trim()) : [];
     if (macList.length === 0) return sendJson(req, res, 400, { error: "no MACs to test" });
 

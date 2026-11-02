@@ -132,6 +132,10 @@ export default function AdminIptvPage() {
 
   async function runTest() {
     if (!token || parsedMacs.length === 0) return;
+    if (!portalUrl.trim()) {
+      setError("Enter the portal URL you want to test.");
+      return;
+    }
     if (invalidMacs.length > 0) {
       setError(`Invalid MAC: ${invalidMacs[0]} — use the format XX:XX:XX:XX:XX:XX`);
       return;
@@ -257,7 +261,7 @@ export default function AdminIptvPage() {
             <button
               type="button"
               onClick={runTest}
-              disabled={loading || parsedMacs.length === 0 || invalidMacs.length > 0}
+              disabled={loading || parsedMacs.length === 0 || invalidMacs.length > 0 || !portalUrl.trim()}
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}

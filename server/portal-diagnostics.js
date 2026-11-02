@@ -201,7 +201,8 @@ async function mapLimited(items, limit, mapper) {
  * @param {{ portalUrl?: string, macs: string[], onMeta?: Function, onResult?: Function }} opts
  */
 async function testPortal({ portalUrl, macs, onMeta, onResult } = {}) {
-  const base = String(portalUrl || portal.PORTAL_URL || "").trim().replace(/\/+$/, "");
+  const base = String(portalUrl || "").trim().replace(/\/+$/, "");
+  if (!base) throw new Error("enter a portal URL to test");
   if (!/^https?:\/\//.test(base)) throw new Error("portal URL must start with http:// or https://");
   // API path is fixed to portal.php
   const path = "portal.php";
