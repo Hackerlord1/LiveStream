@@ -9,6 +9,7 @@ const path = require("path");
 const zlib = require("zlib");
 const crypto = require("crypto");
 const portal = require("./portal");
+const portalDiag = require("./portal-diagnostics");
 const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
 const vod = require("./vod");
 // Raw live relay for the Android app (the website uses the HLS streams below)
@@ -464,6 +465,29 @@ function sendJson(req, res, status, body, extraHeaders = {}) {
   res.end(json);
 }
 
+/** Reads and parses a JSON request body, with a size cap. */
+function readJsonBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > limit) {
+        reject(new Error("request body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (!body.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error("invalid JSON body"));
+      }
+    });
+    req.on("error", () => reject(new Error("could not read request body")));
+  });
+}
+
 // Segments are cut every 4 s; one much longer means the source timestamps jumped
 const MAX_COPY_SEGMENT_SECONDS = 15;
 // No new segment for this long, while frames keep arriving, means the segmenter is stuck
@@ -807,7 +831,7 @@ const server = http.createServer(async (req, res) => {
   // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Debug-Token");
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -820,10 +844,52 @@ const server = http.createServer(async (req, res) => {
   // =============================
 
   if (url.pathname.startsWith("/debug/")) {
-    if (!DEBUG_TOKEN || url.searchParams.get("token") !== DEBUG_TOKEN) {
+    // Token may come in the query (easy with curl) or an X-Debug-Token header (keeps it
+    // out of URLs and access logs, used by the admin page)
+    const provided = url.searchParams.get("token") || req.headers["x-debug-token"];
+    if (!DEBUG_TOKEN || provided !== DEBUG_TOKEN) {
       res.writeHead(404);
       return res.end("not found");
     }
+  }
+
+  // Admin: IPTV portal/MAC tester. GET returns the configured defaults to prefill the
+  // form; POST {portalUrl, apiPath, macs[]} tests each MAC (login, stream link, account,
+  // catalogue counts).
+  if (url.pathname === "/debug/iptv/config") {
+    // Token check for the admin page; returns nothing sensitive (no portal/MACs)
+    return sendJson(req, res, 200, { ok: true }, { "Cache-Control": "no-store" });
+  }
+  if (url.pathname === "/debug/iptv/test" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(req, res, 400, { error: err.message });
+    }
+    const macList = Array.isArray(body.macs) ? body.macs.filter((m) => String(m).trim()) : [];
+    if (macList.length === 0) return sendJson(req, res, 400, { error: "no MACs to test" });
+
+    // Stream one NDJSON line per MAC as it finishes, so the admin page fills in live
+    res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+    const write = (obj) => {
+      try {
+        res.write(JSON.stringify(obj) + "\n");
+      } catch {}
+    };
+    try {
+      await portalDiag.testPortal({
+        portalUrl: body.portalUrl,
+        // API path is fixed to portal.php; not caller-configurable
+        macs: body.macs,
+        onMeta: (meta) => write({ type: "meta", ...meta }),
+        onResult: (r) => write({ type: "result", ...r }),
+      });
+      write({ type: "done" });
+    } catch (err) {
+      write({ type: "error", error: err.message });
+    }
+    return res.end();
   }
 
   if (url.pathname.startsWith("/debug/restart-stream/")) {
