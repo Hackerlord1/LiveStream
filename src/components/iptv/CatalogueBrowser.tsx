@@ -141,7 +141,8 @@ export default function CatalogueBrowser({ kind, listKey, title, icon, noun, hre
       />
     );
   } else if (!data || (items.length === 0 && !status?.ready)) {
-    body = <SkeletonGrid variant="poster" />;
+    // While the server is still building the list, LoadProgress above says so instead
+    body = <SkeletonGrid variant="poster" label={status?.ready === false ? undefined : `Loading ${noun}…`} />;
   } else if (visible.length === 0) {
     body = (
       <EmptyState

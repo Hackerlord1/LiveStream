@@ -172,26 +172,34 @@ export function LoadProgress({ status, noun }: { status: CatalogueStatus | null;
 // SKELETONS / EMPTY / ERROR
 // ============================================================
 
-export function SkeletonGrid({ variant, count = 18 }: { variant: "poster" | "tile"; count?: number }) {
+export function SkeletonGrid({ variant, count = 18, label }: { variant: "poster" | "tile"; count?: number; label?: string }) {
   return (
-    <div
-      className={
-        variant === "poster"
-          ? "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
-          : "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8"
-      }
-      aria-hidden
-    >
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="animate-pulse overflow-hidden rounded-xl" style={{ backgroundColor: "var(--surface-primary)" }}>
-          <div className={variant === "poster" ? "aspect-[2/3]" : "aspect-[4/3]"} style={{ backgroundColor: "var(--surface-tertiary)" }} />
-          <div className="space-y-1.5 p-2.5">
-            <div className="h-2.5 w-4/5 rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
-            <div className="h-2 w-1/2 rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
-          </div>
+    <>
+      {label && (
+        <div className="mb-3 flex items-center justify-center gap-2 py-2 text-sm font-medium" style={{ color: "var(--text-secondary)" }} role="status">
+          <RefreshCw className="h-4 w-4 animate-spin" style={{ color: "var(--brand-red)" }} />
+          {label}
         </div>
-      ))}
-    </div>
+      )}
+      <div
+        className={
+          variant === "poster"
+            ? "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+            : "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8"
+        }
+        aria-hidden
+      >
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="animate-pulse overflow-hidden rounded-xl" style={{ backgroundColor: "var(--surface-primary)" }}>
+            <div className={variant === "poster" ? "aspect-[2/3]" : "aspect-[4/3]"} style={{ backgroundColor: "var(--surface-tertiary)" }} />
+            <div className="space-y-1.5 p-2.5">
+              <div className="h-2.5 w-4/5 rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
+              <div className="h-2 w-1/2 rounded" style={{ backgroundColor: "var(--surface-tertiary)" }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

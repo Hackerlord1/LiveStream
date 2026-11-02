@@ -80,7 +80,7 @@ export default function RadioPage() {
       />
     );
   } else if (!data) {
-    body = <SkeletonGrid variant="tile" count={12} />;
+    body = <SkeletonGrid variant="tile" count={12} label="Loading stations…" />;
   } else if (visible.length === 0) {
     body = <EmptyState icon={<SearchX className="h-6 w-6" />} title="No stations found" message={search ? `Nothing matches “${search}”.` : undefined} />;
   } else {

@@ -113,7 +113,8 @@ export default function IptvChannelsPage() {
       />
     );
   } else if (!data || (channels.length === 0 && !status?.ready)) {
-    body = <SkeletonGrid variant="tile" count={24} />;
+    // While the server is still building the list, LoadProgress above says so instead
+    body = <SkeletonGrid variant="tile" count={24} label={status?.ready === false ? undefined : "Loading channels…"} />;
   } else if (visible.length === 0) {
     body = (
       <EmptyState
