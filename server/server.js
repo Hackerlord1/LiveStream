@@ -10,6 +10,7 @@ const zlib = require("zlib");
 const crypto = require("crypto");
 const portal = require("./portal");
 const portalDiag = require("./portal-diagnostics");
+const proxyChecker = require("./proxy-checker");
 const { catalogue, start: startCatalogue, status: catalogueStatus } = require("./catalogue");
 const vod = require("./vod");
 // Raw live relay for the Android app (the website uses the HLS streams below)
@@ -889,6 +890,53 @@ const server = http.createServer(async (req, res) => {
       write({ type: "done" });
     } catch (err) {
       write({ type: "error", error: err.message });
+    }
+    return res.end();
+  }
+
+  // Admin: bulk proxy checker. POST {proxies[], protocol, timeoutMs, concurrency, geo}
+  // streams one NDJSON line per proxy, plus "geo" lines as exit IPs are geolocated.
+  if (url.pathname === "/debug/proxy/test" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req, 4 * 1024 * 1024); // ~20k proxy lines
+    } catch (err) {
+      return sendJson(req, res, 400, { error: err.message });
+    }
+    const list = Array.isArray(body.proxies) ? body.proxies : [];
+    if (list.length === 0) return sendJson(req, res, 400, { error: "no proxies to test" });
+
+    // Stop checking as soon as the admin page goes away (Stop button, tab closed)
+    let cancelled = false;
+    res.on("close", () => {
+      cancelled = true;
+    });
+    res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+    const write = (obj) => {
+      if (cancelled) return;
+      try {
+        res.write(JSON.stringify(obj) + "\n");
+      } catch {}
+    };
+    // Keeps proxies/tunnels from closing the stream during quiet stretches
+    const heartbeat = setInterval(() => write({ type: "ping" }), 15000);
+    try {
+      await proxyChecker.checkProxies({
+        proxies: list,
+        protocol: body.protocol,
+        timeoutMs: body.timeoutMs,
+        concurrency: body.concurrency,
+        geo: body.geo !== false,
+        isCancelled: () => cancelled,
+        onMeta: (meta) => write({ type: "meta", ...meta }),
+        onResult: (r) => write({ type: "result", ...r }),
+        onGeo: (map) => write({ type: "geo", ips: map }),
+      });
+      write({ type: "done" });
+    } catch (err) {
+      write({ type: "error", error: err.message });
+    } finally {
+      clearInterval(heartbeat);
     }
     return res.end();
   }
