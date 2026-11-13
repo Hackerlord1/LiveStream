@@ -30,7 +30,17 @@ const MIN_TILE_WIDTH = 130;
 
 export default function IptvChannelsPage() {
   const { data, error, status, retry } = useCatalogue<ChannelsResponse>("channels", "/api/channels-all");
-  const channels = useMemo(() => data?.channels ?? [], [data]);
+  // The portal sometimes lists the same channel id more than once; keep the first so
+  // React keys stay unique and a channel isn't shown twice.
+  const channels = useMemo(() => {
+    const seen = new Set<string>();
+    return (data?.channels ?? []).filter((ch) => {
+      const id = String(ch.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [data]);
 
   const [search, setSearch] = useState("");
   const [genre, setGenre] = useState("all");
