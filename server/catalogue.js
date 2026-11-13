@@ -5,6 +5,11 @@
 // uses. If the Xtream API fails, the portal's paged lists are crawled instead (14 items
 // per request: hours). Radio only exists on the portal.
 //
+// Because that crawl takes hours, movies and series only fall back to it when the saved
+// list is incomplete or older than CATALOGUE_PAGED_REFRESH_HOURS (24 by default). Until
+// then a refused Xtream request leaves the saved list in place; Xtream itself is still
+// tried on every refresh, so the list updates as soon as the portal accepts it again.
+//
 // Each catalogue is saved to server/cache/<kind>.json after a load, and read back
 // on startup so a restart serves the list immediately. A list only counts as
 // complete once it has (nearly) every item the portal says it has; incomplete
@@ -27,6 +32,12 @@ const PORTAL_FINGERPRINT = crypto
   .digest("hex")
   .slice(0, 16);
 const REFRESH_HOURS = Number(process.env.CATALOGUE_REFRESH_HOURS) || 6;
+// Movies and series: how old the saved list must be before a refused Xtream request
+// is answered with the hours-long page-by-page crawl (0 = crawl on every refresh)
+const PAGED_REFRESH_HOURS = process.env.CATALOGUE_PAGED_REFRESH_HOURS === undefined
+  || !Number.isFinite(Number(process.env.CATALOGUE_PAGED_REFRESH_HOURS))
+  ? 24
+  : Math.max(0, Number(process.env.CATALOGUE_PAGED_REFRESH_HOURS));
 // A list within this share of the portal's total_items counts as complete
 const COMPLETE_RATIO = 0.98;
 // Incomplete catalogues are loaded again after this pause, up to this many times per cycle
@@ -123,11 +134,13 @@ const SOURCES = {
     categories: { type: "vod", action: "get_categories" },
     // Newest first, like the portal's sortby=added
     xtream: { list: "get_vod_streams", categories: "get_vod_categories", sort: (a, b) => Number(b.added) - Number(a.added) },
+    slowPages: true,
   },
   series: {
     list: { type: "series", action: "get_ordered_list", ...VOD_LIST_PARAMS },
     categories: { type: "series", action: "get_categories" },
     xtream: { list: "get_series", categories: "get_series_categories", sort: (a, b) => Number(b.added) - Number(a.added) },
+    slowPages: true,
   },
 };
 
@@ -288,6 +301,25 @@ async function refresh(kind) {
         via = "xtream";
       } catch (err) {
         xtreamError = err.message;
+        // The page-by-page crawl takes hours for movies and series: while the saved list
+        // is complete and recent enough, keep serving it instead
+        const ageHours = entry.updatedAt ? (Date.now() - entry.updatedAt) / 3600000 : Infinity;
+        if (source.slowPages && entry.complete && entry.items.length > 0 && ageHours < PAGED_REFRESH_HOURS) {
+          const nextCrawlAt = new Date(entry.updatedAt + PAGED_REFRESH_HOURS * 3600000).toISOString();
+          console.warn(`⚠️ ${kind}: Xtream API failed (${err.message}); keeping the saved list (${ageHours.toFixed(1)}h old), page-by-page reload not before ${nextCrawlAt}`);
+          entry.loaded = entry.items.length;
+          entry.lastLoad = {
+            ...timing(),
+            via: "saved list",
+            xtreamError,
+            items: entry.items.length,
+            total: entry.total,
+            complete: true,
+            skippedPagedCrawl: true,
+            nextCrawlAt,
+          };
+          return;
+        }
         console.warn(`⚠️ ${kind}: Xtream API failed (${err.message}); loading page by page from the portal`);
       }
     }
